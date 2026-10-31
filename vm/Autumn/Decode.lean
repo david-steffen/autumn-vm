@@ -49,6 +49,7 @@ def decodeTag (j : Json) : Except StepError Tag := do
   | "atom" => pure .atom
   | "tuple" => pure .tuple
   | "list" => pure .list
+  | "map" => pure .map
   | "pid" => pure .pid
   | other => err s!"unknown tag: {other}"
 
@@ -73,6 +74,15 @@ partial def decodeLit (j : Json) : Except StepError Term := do
   | .ok v =>
     let elems ← asArray v
     return Term.list (← elems.mapM decodeLit)
+  | .error _ => pure ()
+  match j.getObjVal? "map" with
+  | .ok v =>
+    let elems ← asArray v
+    let entries ← elems.mapM fun e => do
+      let k ← decodeLit (← field e "key")
+      let val ← decodeLit (← field e "value")
+      pure (k, val)
+    return Term.map entries
   | .error _ => pure ()
   match j.getObjVal? "pid" with
   | .ok v => return Term.pid (← asNat v)
@@ -103,6 +113,9 @@ def decodeInstr (j : Json) : Except StepError Instr := do
   | "get_list_elem" =>
     pure (.getListElem (← asNat (← field j "dest")) (← asNat (← field j "list"))
       (← asNat (← field j "index")))
+  | "get_list_rest" =>
+    pure (.getListRest (← asNat (← field j "dest")) (← asNat (← field j "list"))
+      (← asNat (← field j "index")))
   | "is_tag" =>
     pure (.isTag (← asNat (← field j "dest")) (← asNat (← field j "reg"))
       (← decodeTag (← field j "tag")))
@@ -113,6 +126,28 @@ def decodeInstr (j : Json) : Except StepError Instr := do
     pure (.send (← asNat (← field j "pid")) (← asNat (← field j "msg")))
   | "recv" =>
     pure (.recv (← asNat (← field j "dest")))
+  | "recv_peek" =>
+    pure (.recvPeek (← asNat (← field j "dest")) (← asNat (← field j "index"))
+      (← asNat (← field j "empty")))
+  | "recv_drop" =>
+    pure (.recvDrop (← asNat (← field j "index")))
+  | "wait" => do
+    let retry ← asNat (← field j "retry")
+    let after ← asNat (← field j "after")
+    let timeout ←
+      match j.getObjVal? "timeout" with
+      | .error _ => pure none
+      | .ok Json.null => pure none
+      | .ok t => pure (some (← asNat t))
+    pure (.wait retry after timeout)
+  | "enter_try" =>
+    pure (.enterTry (← asNat (← field j "rescue")) (← asNat (← field j "exc")))
+  | "leave_try" =>
+    pure .leaveTry
+  | "raise" =>
+    pure (.raise (← asNat (← field j "reg")))
+  | "link" =>
+    pure (.link (← asNat (← field j "pid")))
   | other => err s!"unknown op: {other}"
 
 /-- Resolve `label` ops to jump targets; strip labels from code. -/
@@ -134,7 +169,8 @@ def decodeFunction (j : Json) : Except StepError Function := do
 
 def decodeModule (j : Json) : Except StepError Module := do
   let version ← asNat (← field j "version")
-  if version != 1 && version != 2 && version != 3 then
+  if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 &&
+      version != 6 && version != 7 && version != 8 then
     err s!"unsupported IR version: {version}"
   let entry ← asString (← field j "entry")
   let functions ← (← asArray (← field j "functions")).mapM decodeFunction

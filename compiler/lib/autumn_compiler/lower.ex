@@ -6,9 +6,29 @@ defmodule AutumnCompiler.Lower do
     {:-, 2} => "-/2",
     {:*, 2} => "*/2",
     {:==, 2} => "==/2",
+    {:<, 2} => "</2",
+    {:>, 2} => ">/2",
+    {:<=, 2} => "<=/2",
+    {:>=, 2} => ">=/2",
     {:tuple_size, 1} => "tuple_size/1",
     {:list_size, 1} => "list_size/1",
-    {:elem, 2} => "elem/2"
+    {:elem, 2} => "elem/2",
+    {:map_size, 1} => "map_size/1",
+    {:map_get, 2} => "map_get/2",
+    {:map_put, 3} => "map_put/3",
+    {:self, 0} => "self/0",
+    {:cons, 2} => "cons/2"
+  }
+
+  @type_guards %{
+    is_integer: "int",
+    is_atom: "atom",
+    is_boolean: "bool",
+    is_list: "list",
+    is_tuple: "tuple",
+    is_map: "map",
+    is_pid: "pid",
+    is_nil: "nil"
   }
 
   def lower({:defmodule, _meta, [alias_ast, [do: body]]}) do
@@ -35,10 +55,54 @@ defmodule AutumnCompiler.Lower do
 
   defp module_version(funs) do
     cond do
+      needs_v8?(funs) -> 8
+      needs_v7?(funs) -> 7
+      needs_v6?(funs) -> 6
+      needs_v5?(funs) -> 5
+      needs_v4?(funs) -> 4
       needs_v3?(funs) -> 3
       needs_v2?(funs) -> 2
       true -> 1
     end
+  end
+
+  defp needs_v8?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn instr -> instr["op"] == "link" end)
+    end)
+  end
+
+  defp needs_v7?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn instr ->
+        instr["op"] in ~w(recv_peek recv_drop wait)
+      end)
+    end)
+  end
+
+  defp needs_v6?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn instr ->
+        instr["op"] in ~w(enter_try leave_try raise)
+      end)
+    end)
+  end
+
+  defp needs_v5?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn
+        %{"op" => "load_lit", "lit" => %{"map" => _}} -> true
+        %{"op" => "call", "fun" => fun} when fun in ~w(map_size/1 map_get/2 map_put/3) -> true
+        %{"op" => "is_tag", "tag" => "map"} -> true
+        _ -> false
+      end)
+    end)
+  end
+
+  defp needs_v4?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn instr -> instr["op"] == "get_list_rest" end)
+    end)
   end
 
   defp needs_v3?(funs) do
@@ -65,17 +129,19 @@ defmodule AutumnCompiler.Lower do
   defp flatten_block(other), do: [other]
 
   # Group defs by {name, arity}, preserving first-seen order.
+  # Clause shape: {params, body, guard | nil}
   defp group_defs(defs) do
     Enum.reduce_while(defs, {:ok, [], %{}}, fn def_ast, {:ok, order, map} ->
       case take_def_clause(def_ast) do
-        {:ok, name, params, body} ->
+        {:ok, name, params, body, guard} ->
           key = {name, length(params)}
+          clause = {params, body, guard}
 
           {order, map} =
             if Map.has_key?(map, key) do
-              {order, Map.update!(map, key, &(&1 ++ [{params, body}]))}
+              {order, Map.update!(map, key, &(&1 ++ [clause]))}
             else
-              {order ++ [key], Map.put(map, key, [{params, body}])}
+              {order ++ [key], Map.put(map, key, [clause])}
             end
 
           {:cont, {:ok, order, map}}
@@ -93,14 +159,20 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
+  defp take_def_clause({:def, _meta, [{:when, _, [head, guard]}, [do: body]]}) do
+    with {:ok, name, params} <- parse_head_patterns(head) do
+      {:ok, name, params, body, guard}
+    end
+  end
+
   defp take_def_clause({:def, _meta, [head, [do: body]]}) do
     with {:ok, name, params} <- parse_head_patterns(head) do
-      {:ok, name, params, body}
+      {:ok, name, params, body, nil}
     end
   end
 
   defp take_def_clause({:def, _, _}),
-    do: {:error, "unsupported def form (guards/defaults not allowed)"}
+    do: {:error, "unsupported def form (defaults not allowed)"}
 
   defp take_def_clause(other),
     do: {:error, "unsupported module form: #{Macro.to_string(other)}"}
@@ -114,7 +186,7 @@ defmodule AutumnCompiler.Lower do
     end)
   end
 
-  defp lower_grouped_def(name, arity, [{params, body}], mod_name) do
+  defp lower_grouped_def(name, arity, [{params, body, nil}], mod_name) do
     if all_var_params?(params) do
       names = Enum.map(params, fn {n, _, nil} -> n end)
 
@@ -128,11 +200,11 @@ defmodule AutumnCompiler.Lower do
          }}
       end
     else
-      lower_multi_clause(name, arity, [{params, body}], mod_name)
+      lower_multi_clause(name, arity, [{params, body, nil}], mod_name)
     end
   end
 
-  defp lower_grouped_def(name, arity, clauses, mod_name) when length(clauses) > 1 do
+  defp lower_grouped_def(name, arity, clauses, mod_name) do
     lower_multi_clause(name, arity, clauses, mod_name)
   end
 
@@ -149,14 +221,15 @@ defmodule AutumnCompiler.Lower do
       end
 
     case_clauses =
-      Enum.map(clauses, fn {pats, body} ->
+      Enum.map(clauses, fn {pats, body, guard} ->
         pat =
           case arity do
             1 -> hd(pats)
             _ -> {:{}, [], pats}
           end
 
-        {:->, [], [[pat], body]}
+        lhs = if guard == nil, do: [pat], else: [{:when, [], [pat, guard]}]
+        {:->, [], [lhs, body]}
       end)
 
     body = {:case, [], [scrut, [do: case_clauses]]}
@@ -240,18 +313,26 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
-  # list literal [a, b, c]
+  # list literal [a, b, c] or dynamic [x, y] / [h | t]
   defp expr(list, env, next, code) when is_list(list) do
     case literal_list(list) do
       {:ok, lit} -> emit_lit(lit, env, next, code)
-      :error -> {:error, "list elements must be literals"}
+      :error -> lower_dynamic_list(list, env, next, code)
+    end
+  end
+
+  # map literal %{k => v, ...} (literal keys/values only)
+  defp expr({:%{}, _, pairs}, env, next, code) when is_list(pairs) do
+    case literal_map(pairs) do
+      {:ok, lit} -> emit_lit(lit, env, next, code)
+      :error -> {:error, "map keys and values must be literals"}
     end
   end
 
   defp expr({:{}, _, elems}, env, next, code) when is_list(elems) do
     case literal_tuple(elems) do
       {:ok, lit} -> emit_lit(lit, env, next, code)
-      :error -> {:error, "tuple elements must be literals"}
+      :error -> lower_dynamic_tuple(elems, env, next, code)
     end
   end
 
@@ -264,10 +345,42 @@ defmodule AutumnCompiler.Lower do
     lower_case(scrutinee, List.wrap(clauses), env, next, code)
   end
 
+  # raise expr (language exception; not StepError)
+  defp expr({:raise, _, [arg]}, env, next, code) do
+    with {:ok, code, env, next, reg} <- expr(arg, env, next, code) do
+      {:ok, code ++ [%{"op" => "raise", "reg" => reg}], env, next, reg}
+    end
+  end
+
+  # try do ... rescue ... after ... end
+  defp expr({:try, _, [opts]}, env, next, code) when is_list(opts) do
+    lower_try(opts, env, next, code)
+  end
+
+  # receive do ... after ... end
+  defp expr({:receive, _, [opts]}, env, next, code) when is_list(opts) do
+    lower_receive(opts, env, next, code)
+  end
+
   # spawn(Mod.fun/arity isn't Elixir) — spawn(Main, :worker, [arg]) style via Autumn.spawn
   # We accept spawn(fun_name_atom, arg) as local MFA spawn: spawn(:worker, x) -> Main.worker/1
   defp expr({:spawn, _, [fun_ast, args_ast]}, env, next, code) when is_list(args_ast) or true do
     lower_spawn(fun_ast, args_ast, env, next, code)
+  end
+
+  # spawn_link(fun, args) → spawn then link
+  defp expr({:spawn_link, _, [fun_ast, args_ast]}, env, next, code) do
+    with {:ok, code, env, next, pid_reg} <- lower_spawn(fun_ast, args_ast, env, next, code) do
+      code = code ++ [%{"op" => "link", "pid" => pid_reg}]
+      {:ok, code, env, next, pid_reg}
+    end
+  end
+
+  # link(pid)
+  defp expr({:link, _, [pid_ast]}, env, next, code) do
+    with {:ok, code, env, next, pid_reg} <- expr(pid_ast, env, next, code) do
+      {:ok, code ++ [%{"op" => "link", "pid" => pid_reg}], env, next, pid_reg}
+    end
   end
 
   defp expr({:send, _, [pid_ast, msg_ast]}, env, next, code) do
@@ -300,7 +413,21 @@ defmodule AutumnCompiler.Lower do
 
   defp expr({name, _meta, args}, env, next, code)
        when is_atom(name) and is_list(args) and
-              name not in [:{}, :__aliases__, :__block__, :case, :spawn, :send, :recv] do
+              name not in [
+                :{},
+                :%{},
+                :__aliases__,
+                :__block__,
+                :case,
+                :try,
+                :raise,
+                :receive,
+                :spawn,
+                :spawn_link,
+                :link,
+                :send,
+                :recv
+              ] do
     arity = length(args)
 
     fun =
@@ -366,6 +493,364 @@ defmodule AutumnCompiler.Lower do
   defp desugar_pipe(_left, other),
     do: {:error, "unsupported pipe right-hand side: #{Macro.to_string(other)}"}
 
+  # try/rescue/after — after is a join label, not a VM opcode.
+  # Shape:
+  #   enter_try Lrescue rexc
+  #     body -> result
+  #     leave_try
+  #     jump Lafter
+  #   Lrescue:
+  #     rescue clauses on rexc; match -> result; jump Lafter
+  #     no match -> raise rexc
+  #   Lafter:
+  #     optional after; keep result
+  defp lower_try(opts, env, next, code) do
+    body = Keyword.get(opts, :do)
+    rescue_clauses = opts |> Keyword.get(:rescue, []) |> List.wrap()
+    after_body = Keyword.get(opts, :after)
+
+    if body == nil do
+      {:error, "try requires a do body"}
+    else
+      if rescue_clauses == [] and after_body == nil do
+        expr(body, env, next, code)
+      else
+        if rescue_clauses == [] do
+          # try/after only — handler so `after` runs on uncaught raise, then re-raise
+          lower_try_after(body, after_body, env, next, code)
+        else
+          lower_try_rescue(body, rescue_clauses, after_body, env, next, code)
+        end
+      end
+    end
+  end
+
+  # try/after (no rescue): after runs on success and on raise; raise is re-raised after.
+  #   enter_try Lrescue rexc
+  #     body -> result; leave_try; raised := false; jump Lafter
+  #   Lrescue:
+  #     raised := true; jump Lafter
+  #   Lafter:
+  #     after; jump_if_eq Lraise raised true; jump Lend
+  #   Lraise: raise rexc
+  #   Lend:
+  defp lower_try_after(body, after_body, env, next, code) do
+    result_reg = next
+    exc_reg = next + 1
+    raised_reg = next + 2
+    next = next + 3
+
+    enter_idx = length(code)
+    code = code ++ [%{"op" => "enter_try", "rescue" => 0, "exc" => exc_reg}]
+
+    with {:ok, code, env, next, body_reg} <- expr(body, env, next, code) do
+      code =
+        code ++
+          [
+            %{"op" => "move", "dest" => result_reg, "src" => body_reg},
+            %{"op" => "leave_try"},
+            %{"op" => "load_lit", "reg" => raised_reg, "lit" => %{"bool" => false}},
+            %{"op" => "jump", "target" => 0}
+          ]
+
+      jump_after_success = length(code) - 1
+      rescue_ip = length(code)
+
+      code =
+        List.update_at(code, enter_idx, fn %{"op" => "enter_try"} = i ->
+          %{i | "rescue" => rescue_ip}
+        end)
+
+      code =
+        code ++
+          [
+            %{"op" => "load_lit", "reg" => raised_reg, "lit" => %{"bool" => true}},
+            %{"op" => "jump", "target" => 0}
+          ]
+
+      jump_after_rescue = length(code) - 1
+      after_ip = length(code)
+
+      code =
+        Enum.reduce([jump_after_success, jump_after_rescue], code, fn idx, code ->
+          List.update_at(code, idx, fn %{"op" => "jump"} = j ->
+            %{j | "target" => after_ip}
+          end)
+        end)
+
+      with {:ok, code, env, next, _} <- expr(after_body, env, next, code) do
+        raise_ip = length(code) + 2
+        end_ip = length(code) + 3
+
+        code =
+          code ++
+            [
+              %{
+                "op" => "jump_if_eq",
+                "target" => raise_ip,
+                "reg" => raised_reg,
+                "lit" => %{"bool" => true}
+              },
+              %{"op" => "jump", "target" => end_ip},
+              %{"op" => "raise", "reg" => exc_reg}
+            ]
+
+        {:ok, code, env, next, result_reg}
+      end
+    end
+  end
+
+  defp lower_try_rescue(body, rescue_clauses, after_body, env, next, code) do
+    result_reg = next
+    exc_reg = next + 1
+    next = next + 2
+
+    enter_idx = length(code)
+    # Placeholder rescue target; patched after body.
+    code = code ++ [%{"op" => "enter_try", "rescue" => 0, "exc" => exc_reg}]
+
+    with {:ok, code, env, next, body_reg} <- expr(body, env, next, code) do
+      code =
+        code ++
+          [
+            %{"op" => "move", "dest" => result_reg, "src" => body_reg},
+            %{"op" => "leave_try"},
+            %{"op" => "jump", "target" => 0}
+          ]
+
+      jump_after_success = length(code) - 1
+      rescue_ip = length(code)
+
+      code =
+        List.update_at(code, enter_idx, fn %{"op" => "enter_try"} = i ->
+          %{i | "rescue" => rescue_ip}
+        end)
+
+      rescue_result =
+        Enum.reduce_while(rescue_clauses, {:ok, code, env, next, []}, fn clause,
+                                                                         {:ok, code, env, next,
+                                                                          jumps} ->
+          case lower_clause(clause, exc_reg, result_reg, env, next, code) do
+            {:ok, code, env, next, after_body_jump_slot} ->
+              {:cont, {:ok, code, env, next, jumps ++ [after_body_jump_slot]}}
+
+            {:error, _} = err ->
+              {:halt, err}
+          end
+        end)
+
+      with {:ok, code, env, next, rescue_ends} <- rescue_result do
+        # No rescue matched — re-raise the exception.
+        code = code ++ [%{"op" => "raise", "reg" => exc_reg}]
+        after_ip = length(code)
+
+        code =
+          Enum.reduce([jump_after_success | rescue_ends], code, fn idx, code ->
+            List.update_at(code, idx, fn %{"op" => "jump"} = j ->
+              %{j | "target" => after_ip}
+            end)
+          end)
+
+        if after_body == nil do
+          {:ok, code, env, next, result_reg}
+        else
+          with {:ok, code, env, next, _} <- expr(after_body, env, next, code) do
+            {:ok, code, env, next, result_reg}
+          end
+        end
+      end
+    end
+  end
+
+  # receive do clauses after timeout -> body end
+  # Scan loop: recv_peek; pattern clauses with recv_drop on match; else idx++; wait.
+  defp lower_receive(opts, env, next, code) do
+    clauses = opts |> Keyword.get(:do, []) |> List.wrap()
+    after_clauses = opts |> Keyword.get(:after, []) |> List.wrap()
+
+    if clauses == [] do
+      {:error, "receive requires at least one clause"}
+    else
+      with {:ok, timeout_lit, after_body} <- parse_receive_after(after_clauses) do
+        lower_receive_loop(clauses, timeout_lit, after_body, env, next, code)
+      end
+    end
+  end
+
+  defp parse_receive_after([]) do
+    # Infinity — after label unused (points at end).
+    {:ok, nil, nil}
+  end
+
+  defp parse_receive_after([{:->, _, [[timeout], body]}])
+       when is_integer(timeout) and timeout >= 0 do
+    {:ok, timeout, body}
+  end
+
+  defp parse_receive_after(other) do
+    {:error, "unsupported receive after: #{Macro.to_string(other)}"}
+  end
+
+  defp lower_receive_loop(clauses, timeout_lit, after_body, env, next, code) do
+    idx_reg = next
+    msg_reg = next + 1
+    result_reg = next + 2
+    next = next + 3
+
+    code = code ++ [%{"op" => "load_lit", "reg" => idx_reg, "lit" => %{"int" => 0}}]
+    scan_ip = length(code)
+
+    peek_idx = length(code)
+    code = code ++ [%{"op" => "recv_peek", "dest" => msg_reg, "index" => idx_reg, "empty" => 0}]
+
+    clause_result =
+      Enum.reduce_while(clauses, {:ok, code, env, next, []}, fn clause,
+                                                                {:ok, code, env, next, ends} ->
+        case lower_receive_clause(clause, msg_reg, idx_reg, result_reg, env, next, code) do
+          {:ok, code, env, next, end_jump} ->
+            {:cont, {:ok, code, env, next, ends ++ [end_jump]}}
+
+          {:error, _} = err ->
+            {:halt, err}
+        end
+      end)
+
+    with {:ok, code, env, next, body_ends} <- clause_result do
+      # No clause matched this message — advance index and rescan.
+      one_reg = next
+      sum_reg = next + 1
+      next = next + 2
+
+      code =
+        code ++
+          [
+            %{"op" => "load_lit", "reg" => one_reg, "lit" => %{"int" => 1}},
+            %{"op" => "call", "dest" => sum_reg, "fun" => "+/2", "args" => [idx_reg, one_reg]},
+            %{"op" => "move", "dest" => idx_reg, "src" => sum_reg},
+            %{"op" => "jump", "target" => scan_ip}
+          ]
+
+      wait_ip = length(code)
+
+      code =
+        List.update_at(code, peek_idx, fn %{"op" => "recv_peek"} = i ->
+          %{i | "empty" => wait_ip}
+        end)
+
+      # Placeholder after target; patched below.
+      wait_idx = length(code)
+
+      code =
+        code ++
+          [
+            %{
+              "op" => "wait",
+              "retry" => scan_ip,
+              "after" => 0,
+              "timeout" => timeout_lit
+            }
+          ]
+
+      after_ip = length(code)
+
+      code =
+        List.update_at(code, wait_idx, fn %{"op" => "wait"} = i ->
+          %{i | "after" => after_ip}
+        end)
+
+      after_result =
+        if after_body == nil do
+          # Infinity path should never land here; keep a defined value.
+          {:ok, code ++ [%{"op" => "load_lit", "reg" => result_reg, "lit" => nil}], env, next}
+        else
+          with {:ok, code, env, next, body_reg} <- expr(after_body, env, next, code) do
+            {:ok, code ++ [%{"op" => "move", "dest" => result_reg, "src" => body_reg}], env, next}
+          end
+        end
+
+      with {:ok, code, env, next} <- after_result do
+        end_ip = length(code)
+
+        code =
+          Enum.reduce(body_ends, code, fn idx, code ->
+            List.update_at(code, idx, fn %{"op" => "jump"} = j ->
+              %{j | "target" => end_ip}
+            end)
+          end)
+
+        {:ok, code, env, next, result_reg}
+      end
+    end
+  end
+
+  defp lower_receive_clause(
+         {:->, _, [[{:when, _, [pat, guard]}], body]},
+         msg_reg,
+         idx_reg,
+         result_reg,
+         env,
+         next,
+         code
+       ) do
+    lower_receive_clause_guarded(pat, guard, body, msg_reg, idx_reg, result_reg, env, next, code)
+  end
+
+  defp lower_receive_clause(
+         {:->, _, [[pat], body]},
+         msg_reg,
+         idx_reg,
+         result_reg,
+         env,
+         next,
+         code
+       ) do
+    lower_receive_clause_guarded(pat, nil, body, msg_reg, idx_reg, result_reg, env, next, code)
+  end
+
+  defp lower_receive_clause(other, _, _, _, _, _, _),
+    do: {:error, "unsupported receive clause: #{Macro.to_string(other)}"}
+
+  defp lower_receive_clause_guarded(
+         pat,
+         guard,
+         body,
+         msg_reg,
+         idx_reg,
+         result_reg,
+         env,
+         next,
+         code
+       ) do
+    with {:ok, code, env, next, matched_jump_over} <-
+           emit_pattern_test(pat, msg_reg, env, next, code),
+         {:ok, code, env, next} <- emit_pattern_binds(pat, msg_reg, env, next, code),
+         {:ok, code, env, next, guard_fail} <-
+           maybe_emit_guard(guard, env, next, code) do
+      code = code ++ [%{"op" => "recv_drop", "index" => idx_reg}]
+
+      with {:ok, code, env, next, body_reg} <- expr(body, env, next, code) do
+        code =
+          code ++
+            [
+              %{"op" => "move", "dest" => result_reg, "src" => body_reg},
+              %{"op" => "jump", "target" => 0}
+            ]
+
+        jump_idx = length(code) - 1
+        after_clause = length(code)
+
+        code =
+          Enum.reduce([matched_jump_over | List.wrap(guard_fail)], code, fn idx, code ->
+            List.update_at(code, idx, fn %{"op" => "jump"} = j ->
+              %{j | "target" => after_clause}
+            end)
+          end)
+
+        {:ok, code, env, next, jump_idx}
+      end
+    end
+  end
+
   # Very small case compiler: literal patterns + wildcard + var + tuple + fixed list
   defp lower_case(scrutinee, clauses, env, next, code) do
     with {:ok, code, env, next, scr_reg} <- expr(scrutinee, env, next, code) do
@@ -387,14 +872,17 @@ defmodule AutumnCompiler.Lower do
         end)
 
       with {:ok, code, env, next, body_ends} <- case_result do
-        # Fall-through: no match — load nil into result
-        {:ok, code, env, next, _} = emit_lit(nil, env, next, code)
-        # Last load_lit writes a temp; move to result_reg
-        # Simpler: emit_lit to result_reg directly
-        code = List.delete_at(code, -1)
-        next = next - 1
-        instr = %{"op" => "load_lit", "reg" => result_reg, "lit" => nil}
-        code = code ++ [instr]
+        # Fall-through: no match — raise :match_error (success clauses jump past this)
+        err_reg = next
+        next = next + 1
+
+        code =
+          code ++
+            [
+              %{"op" => "load_lit", "reg" => err_reg, "lit" => %{"atom" => "match_error"}},
+              %{"op" => "raise", "reg" => err_reg}
+            ]
+
         end_ip = length(code)
 
         code =
@@ -410,10 +898,28 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
+  defp lower_clause({:->, _, [[{:when, _, [pat, guard]}], body]}, scr_reg, result_reg, env, next, code) do
+    lower_clause_guarded(pat, guard, body, scr_reg, result_reg, env, next, code)
+  end
+
+  # rescue e in [lit, …] / case-style `x in […]` (value-based tag filter)
+  defp lower_clause({:->, _, [[{:in, _, [var, targets]}], body]}, scr_reg, result_reg, env, next, code) do
+    lower_clause_guarded({:in, [], [var, targets]}, nil, body, scr_reg, result_reg, env, next, code)
+  end
+
   defp lower_clause({:->, _, [[pat], body]}, scr_reg, result_reg, env, next, code) do
+    lower_clause_guarded(pat, nil, body, scr_reg, result_reg, env, next, code)
+  end
+
+  defp lower_clause(other, _, _, _, _, _),
+    do: {:error, "unsupported case clause: #{Macro.to_string(other)}"}
+
+  defp lower_clause_guarded(pat, guard, body, scr_reg, result_reg, env, next, code) do
     with {:ok, code, env, next, matched_jump_over} <-
            emit_pattern_test(pat, scr_reg, env, next, code),
          {:ok, code, env, next} <- emit_pattern_binds(pat, scr_reg, env, next, code),
+         {:ok, code, env, next, guard_fail} <-
+           maybe_emit_guard(guard, env, next, code),
          {:ok, code, env, next, body_reg} <- expr(body, env, next, code) do
       code =
         code ++
@@ -423,20 +929,242 @@ defmodule AutumnCompiler.Lower do
           ]
 
       jump_idx = length(code) - 1
-      # Patch jump_over (failed match) to point here (after clause)
       after_clause = length(code)
 
       code =
-        List.update_at(code, matched_jump_over, fn %{"op" => "jump"} = j ->
-          %{j | "target" => after_clause}
+        Enum.reduce([matched_jump_over | List.wrap(guard_fail)], code, fn idx, code ->
+          List.update_at(code, idx, fn %{"op" => "jump"} = j ->
+            %{j | "target" => after_clause}
+          end)
         end)
 
       {:ok, code, env, next, jump_idx}
     end
   end
 
-  defp lower_clause(other, _, _, _, _, _),
-    do: {:error, "unsupported case clause: #{Macro.to_string(other)}"}
+  defp maybe_emit_guard(nil, env, next, code), do: {:ok, code, env, next, nil}
+
+  defp maybe_emit_guard(guard, env, next, code) do
+    # Evaluate guard to a bool reg; jump_if_eq true → fall through; else jump fail.
+    with {:ok, code, env, next, g_reg} <- emit_guard_bool(guard, env, next, code) do
+      matched = length(code) + 2
+
+      code =
+        code ++
+          [
+            %{
+              "op" => "jump_if_eq",
+              "target" => matched,
+              "reg" => g_reg,
+              "lit" => %{"bool" => true}
+            },
+            %{"op" => "jump", "target" => 0}
+          ]
+
+      fail_idx = length(code) - 1
+      {:ok, code, env, next, fail_idx}
+    end
+  end
+
+  # Guard → bool register. Supports and/or, is_* tags, comparisons, ==.
+  defp emit_guard_bool({:and, _, [a, b]}, env, next, code) do
+    # a and b: if not a → false; else b
+    false_reg = next
+    result_reg = next + 1
+    next = next + 2
+
+    code = code ++ [%{"op" => "load_lit", "reg" => false_reg, "lit" => %{"bool" => false}}]
+
+    with {:ok, code, env, next, a_reg} <- emit_guard_bool(a, env, next, code) do
+      then_ip = length(code) + 2
+
+      code =
+        code ++
+          [
+            %{
+              "op" => "jump_if_eq",
+              "target" => then_ip,
+              "reg" => a_reg,
+              "lit" => %{"bool" => true}
+            },
+            %{"op" => "jump", "target" => 0}
+          ]
+
+      short_idx = length(code) - 1
+
+      with {:ok, code, env, next, b_reg} <- emit_guard_bool(b, env, next, code) do
+        code =
+          code ++
+            [
+              %{"op" => "move", "dest" => result_reg, "src" => b_reg},
+              %{"op" => "jump", "target" => 0}
+            ]
+
+        join_from_b = length(code) - 1
+        false_ip = length(code)
+
+        code =
+          code ++
+            [
+              %{"op" => "move", "dest" => result_reg, "src" => false_reg},
+              %{"op" => "jump", "target" => 0}
+            ]
+
+        join_from_f = length(code) - 1
+        end_ip = length(code)
+
+        code =
+          code
+          |> List.update_at(short_idx, fn j -> %{j | "target" => false_ip} end)
+          |> List.update_at(join_from_b, fn j -> %{j | "target" => end_ip} end)
+          |> List.update_at(join_from_f, fn j -> %{j | "target" => end_ip} end)
+
+        {:ok, code, env, next, result_reg}
+      end
+    end
+  end
+
+  defp emit_guard_bool({:or, _, [a, b]}, env, next, code) do
+    true_reg = next
+    result_reg = next + 1
+    next = next + 2
+
+    code = code ++ [%{"op" => "load_lit", "reg" => true_reg, "lit" => %{"bool" => true}}]
+
+    with {:ok, code, env, next, a_reg} <- emit_guard_bool(a, env, next, code) do
+      code =
+        code ++
+          [
+            %{
+              "op" => "jump_if_eq",
+              "target" => 0,
+              "reg" => a_reg,
+              "lit" => %{"bool" => true}
+            }
+          ]
+
+      true_jump = length(code) - 1
+
+      with {:ok, code, env, next, b_reg} <- emit_guard_bool(b, env, next, code) do
+        code =
+          code ++
+            [
+              %{"op" => "move", "dest" => result_reg, "src" => b_reg},
+              %{"op" => "jump", "target" => 0}
+            ]
+
+        join_b = length(code) - 1
+        true_ip = length(code)
+
+        code =
+          code ++
+            [
+              %{"op" => "move", "dest" => result_reg, "src" => true_reg},
+              %{"op" => "jump", "target" => 0}
+            ]
+
+        join_t = length(code) - 1
+        end_ip = length(code)
+
+        code =
+          code
+          |> List.update_at(true_jump, fn j -> %{j | "target" => true_ip} end)
+          |> List.update_at(join_b, fn j -> %{j | "target" => end_ip} end)
+          |> List.update_at(join_t, fn j -> %{j | "target" => end_ip} end)
+
+        {:ok, code, env, next, result_reg}
+      end
+    end
+  end
+
+  defp emit_guard_bool({name, _, [arg]}, env, next, code)
+       when is_map_key(@type_guards, name) do
+    tag = Map.fetch!(@type_guards, name)
+
+    with {:ok, code, env, next, reg} <- expr(arg, env, next, code) do
+      dest = next
+
+      code =
+        code ++
+          [
+            %{"op" => "is_tag", "dest" => dest, "reg" => reg, "tag" => tag}
+          ]
+
+      {:ok, code, env, next + 1, dest}
+    end
+  end
+
+  defp emit_guard_bool({op, _, [a, b]}, env, next, code)
+       when op in [:<, :>, :<=, :>=, :==] do
+    fun = Map.fetch!(@builtins, {op, 2})
+
+    with {:ok, code, env, next, a_reg} <- expr(a, env, next, code),
+         {:ok, code, env, next, b_reg} <- expr(b, env, next, code) do
+      dest = next
+      instr = %{"op" => "call", "dest" => dest, "fun" => fun, "args" => [a_reg, b_reg]}
+      {:ok, code ++ [instr], env, next + 1, dest}
+    end
+  end
+
+  defp emit_guard_bool(other, _env, _next, _code) do
+    {:error, "unsupported guard: #{Macro.to_string(other)}"}
+  end
+
+  defp lower_dynamic_list(elems, env, next, code) do
+    case split_list_pattern(elems) do
+      {:cons, prefix, head, tail} ->
+        # [p1, p2, h | t] → cons(h, t) then fold prefix right-to-left
+        with {:ok, code, env, next, t_reg} <- expr(tail, env, next, code),
+             {:ok, code, env, next, h_reg} <- expr(head, env, next, code) do
+          dest = next
+          code = code ++ [%{"op" => "call", "dest" => dest, "fun" => "cons/2", "args" => [h_reg, t_reg]}]
+          next = next + 1
+
+          Enum.reduce_while(Enum.reverse(prefix), {:ok, code, env, next, dest}, fn
+            elem, {:ok, code, env, next, acc} ->
+              case expr(elem, env, next, code) do
+                {:ok, code, env, next, er} ->
+                  d = next
+                  code = code ++ [%{"op" => "call", "dest" => d, "fun" => "cons/2", "args" => [er, acc]}]
+                  {:cont, {:ok, code, env, next + 1, d}}
+
+                {:error, _} = err ->
+                  {:halt, err}
+              end
+          end)
+        end
+
+      {:proper, proper} ->
+        # Build from the right: start with []
+        with {:ok, code, env, next, acc} <- emit_lit(%{"list" => []}, env, next, code) do
+          Enum.reduce_while(Enum.reverse(proper), {:ok, code, env, next, acc}, fn
+            elem, {:ok, code, env, next, acc} ->
+              case expr(elem, env, next, code) do
+                {:ok, code, env, next, er} ->
+                  d = next
+                  code = code ++ [%{"op" => "call", "dest" => d, "fun" => "cons/2", "args" => [er, acc]}]
+                  {:cont, {:ok, code, env, next + 1, d}}
+
+                {:error, _} = err ->
+                  {:halt, err}
+              end
+          end)
+        end
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp lower_dynamic_tuple(elems, env, next, code) do
+    with {:ok, code, env, next, regs} <- map_exprs(elems, env, next, code) do
+      dest = next
+      arity = length(regs)
+      fun = "make_tuple/#{arity}"
+      instr = %{"op" => "call", "dest" => dest, "fun" => fun, "args" => regs}
+      {:ok, code ++ [instr], env, next + 1, dest}
+    end
+  end
 
   # Returns {:ok, code, env, next, jump_over_idx} where jump_over skips the clause on failure.
   # Strategy: for literal L: jump_if_eq match_label; jump fail; match_label: ...
@@ -501,53 +1229,211 @@ defmodule AutumnCompiler.Lower do
     emit_compound_pattern_test("tuple", "get_tuple_elem", "tuple", elems, scr, env, next, code)
   end
 
-  # Empty list / fixed-length list patterns. Reject [h | t].
+  # `e in [lit, …]` or `e in lit` — or of literal equality tests (rescue tags).
+  defp emit_pattern_test({:in, _, [var, targets]}, scr, env, next, code) do
+    emit_in_pattern_test(var, targets, scr, env, next, code)
+  end
+
+  # Map patterns %{lit_key => pat, ...} (literal keys only).
+  defp emit_pattern_test({:%{}, _, pairs}, scr, env, next, code) when is_list(pairs) do
+    emit_map_pattern_test(pairs, scr, env, next, code)
+  end
+
+  # Empty list / fixed-length list / cons [… | t] patterns.
   defp emit_pattern_test(elems, scr, env, next, code) when is_list(elems) do
-    if list_has_cons?(elems) do
-      {:error, "cons list patterns [h | t] are not lowered yet"}
-    else
-      case elems do
-        [] ->
-          matched = length(code) + 2
+    case split_list_pattern(elems) do
+      {:error, _} = err ->
+        err
 
-          code =
-            code ++
-              [
-                %{
-                  "op" => "jump_if_eq",
-                  "target" => matched,
-                  "reg" => scr,
-                  "lit" => %{"list" => []}
-                },
-                %{"op" => "jump", "target" => 0}
-              ]
+      {:proper, []} ->
+        matched = length(code) + 2
 
-          fail_idx = length(code) - 1
-          {:ok, code, env, next, fail_idx}
+        code =
+          code ++
+            [
+              %{
+                "op" => "jump_if_eq",
+                "target" => matched,
+                "reg" => scr,
+                "lit" => %{"list" => []}
+              },
+              %{"op" => "jump", "target" => 0}
+            ]
 
-        _ ->
-          emit_compound_pattern_test(
-            "list",
-            "get_list_elem",
-            "list",
-            elems,
-            scr,
-            env,
-            next,
-            code,
-            length_check: true
-          )
-      end
+        fail_idx = length(code) - 1
+        {:ok, code, env, next, fail_idx}
+
+      {:proper, proper} ->
+        emit_compound_pattern_test(
+          "list",
+          "get_list_elem",
+          "list",
+          proper,
+          scr,
+          env,
+          next,
+          code,
+          length_check: true
+        )
+
+      {:cons, prefix, head, tail} ->
+        emit_cons_pattern_test(prefix, head, tail, scr, env, next, code)
     end
   end
 
   defp emit_pattern_test(other, _, _, _, _),
     do: {:error, "unsupported pattern: #{Macro.to_string(other)}"}
 
-  defp list_has_cons?(elems) when is_list(elems) do
-    Enum.any?(elems, fn
-      {:|, _, _} -> true
-      _ -> false
+  defp split_list_pattern(elems) when is_list(elems) do
+    {prefix, rest} =
+      Enum.split_while(elems, fn
+        {:|, _, _} -> false
+        _ -> true
+      end)
+
+    case rest do
+      [] ->
+        {:proper, elems}
+
+      [{:|, _, [h, t]}] ->
+        {:cons, prefix, h, t}
+
+      _ ->
+        {:error, "unsupported list pattern: #{Macro.to_string(elems)}"}
+    end
+  end
+
+  defp emit_cons_pattern_test(prefix, head, tail, scr, env, next, code) do
+    min_len = length(prefix) + 1
+    tag_reg = next
+    next = next + 1
+    code = code ++ [%{"op" => "is_tag", "dest" => tag_reg, "reg" => scr, "tag" => "list"}]
+    matched_after_tag = length(code) + 2
+
+    code =
+      code ++
+        [
+          %{
+            "op" => "jump_if_eq",
+            "target" => matched_after_tag,
+            "reg" => tag_reg,
+            "lit" => %{"bool" => true}
+          },
+          %{"op" => "jump", "target" => 0}
+        ]
+
+    fail_idx = length(code) - 1
+
+    with {:ok, code, env, next, fail_idx} <-
+           emit_fail_if_size_lt(scr, min_len, fail_idx, env, next, code),
+         {:ok, code, env, next, fail_idx} <-
+           emit_list_elem_lit_tests(prefix ++ [head], scr, fail_idx, env, next, code) do
+      rest_reg = next
+      next = next + 1
+      rest_idx = length(prefix)
+
+      code =
+        code ++
+          [
+            %{
+              "op" => "get_list_rest",
+              "dest" => rest_reg,
+              "list" => scr,
+              "index" => rest_idx
+            }
+          ]
+
+      case emit_pattern_test(tail, rest_reg, env, next, code) do
+        {:ok, code, env, next, inner_fail} ->
+          code =
+            List.update_at(code, inner_fail, fn j ->
+              %{j | "target" => fail_idx}
+            end)
+
+          {:ok, code, env, next, fail_idx}
+
+        {:error, _} = err ->
+          err
+      end
+    end
+  end
+
+  # Fail the clause if list_size(scr) is in 0..min_len-1.
+  defp emit_fail_if_size_lt(scr, min_len, fail_idx, env, next, code) do
+    size_reg = next
+    next = next + 1
+
+    code =
+      code ++
+        [%{"op" => "call", "dest" => size_reg, "fun" => "list_size/1", "args" => [scr]}]
+
+    code =
+      Enum.reduce(0..(min_len - 1), code, fn i, code ->
+        size_is_i = length(code) + 2
+        continue = size_is_i + 1
+
+        code ++
+          [
+            %{
+              "op" => "jump_if_eq",
+              "target" => size_is_i,
+              "reg" => size_reg,
+              "lit" => %{"int" => i}
+            },
+            %{"op" => "jump", "target" => continue},
+            %{"op" => "jump", "target" => fail_idx}
+          ]
+      end)
+
+    {:ok, code, env, next, fail_idx}
+  end
+
+  defp emit_list_elem_lit_tests(elems, scr, fail_idx, env, next, code) do
+    Enum.reduce_while(Enum.with_index(elems), {:ok, code, env, next, fail_idx}, fn
+      {elem, idx}, {:ok, code, env, next, fail_idx} ->
+        case lit_value(elem) do
+          {:ok, jlit} ->
+            er = next
+            next = next + 1
+
+            code =
+              code ++
+                [
+                  %{
+                    "op" => "get_list_elem",
+                    "dest" => er,
+                    "list" => scr,
+                    "index" => idx
+                  }
+                ]
+
+            matched = length(code) + 2
+
+            code =
+              code ++
+                [
+                  %{"op" => "jump_if_eq", "target" => matched, "reg" => er, "lit" => jlit},
+                  %{"op" => "jump", "target" => 0}
+                ]
+
+            new_fail = length(code) - 1
+
+            code =
+              List.update_at(code, new_fail, fn j ->
+                %{j | "target" => fail_idx}
+              end)
+
+            {:cont, {:ok, code, env, next, fail_idx}}
+
+          :error ->
+            case elem do
+              {name, _, nil} when is_atom(name) ->
+                {:cont, {:ok, code, env, next, fail_idx}}
+
+              _ ->
+                {:halt, {:error, "unsupported list pattern element"}}
+            end
+        end
     end)
   end
 
@@ -676,15 +1562,212 @@ defmodule AutumnCompiler.Lower do
     emit_pattern_binds({:{}, [], [a, b]}, scr, env, next, code)
   end
 
+  defp emit_pattern_binds({:in, _, [var, _targets]}, scr, env, next, code) do
+    emit_pattern_binds(var, scr, env, next, code)
+  end
+
+  defp emit_pattern_binds({:%{}, _, pairs}, scr, env, next, code) when is_list(pairs) do
+    emit_map_pattern_binds(pairs, scr, env, next, code)
+  end
+
   defp emit_pattern_binds(elems, scr, env, next, code) when is_list(elems) do
-    if list_has_cons?(elems) do
-      {:error, "cons list patterns [h | t] are not lowered yet"}
-    else
-      emit_compound_pattern_binds("get_list_elem", "list", elems, scr, env, next, code)
+    case split_list_pattern(elems) do
+      {:error, _} = err ->
+        err
+
+      {:proper, proper} ->
+        emit_compound_pattern_binds("get_list_elem", "list", proper, scr, env, next, code)
+
+      {:cons, prefix, head, tail} ->
+        emit_cons_pattern_binds(prefix, head, tail, scr, env, next, code)
     end
   end
 
   defp emit_pattern_binds(_, _scr, env, next, code), do: {:ok, code, env, next}
+
+  # Match scr against any literal in `targets` (list or single lit). Fail jump on miss.
+  defp emit_in_pattern_test(_var, targets, scr, env, next, code) do
+    lits =
+      case targets do
+        list when is_list(list) -> list
+        one -> [one]
+      end
+
+    with {:ok, jlits} <-
+           Enum.reduce_while(lits, {:ok, []}, fn lit, {:ok, acc} ->
+             case lit_value(lit) do
+               {:ok, jlit} -> {:cont, {:ok, acc ++ [jlit]}}
+               :error -> {:halt, {:error, "rescue in-list elements must be literals"}}
+             end
+           end) do
+      if jlits == [] do
+        {:error, "empty rescue in-list"}
+      else
+        # For each lit: jump_if_eq matched; after all: jump fail; matched: fall through.
+        fail_placeholder = length(code)
+        # We'll emit: for lit in jlits: jump_if_eq MATCH lit; then jump FAIL; MATCH:
+        {code, match_jumps} =
+          Enum.reduce(jlits, {code, []}, fn jlit, {code, jumps} ->
+            code =
+              code ++
+                [
+                  %{
+                    "op" => "jump_if_eq",
+                    "target" => 0,
+                    "reg" => scr,
+                    "lit" => jlit
+                  }
+                ]
+
+            {code, jumps ++ [length(code) - 1]}
+          end)
+
+        code = code ++ [%{"op" => "jump", "target" => 0}]
+        fail_idx = length(code) - 1
+        matched_ip = length(code)
+
+        code =
+          Enum.reduce(match_jumps, code, fn idx, code ->
+            List.update_at(code, idx, fn j -> %{j | "target" => matched_ip} end)
+          end)
+
+        _ = fail_placeholder
+        {:ok, code, env, next, fail_idx}
+      end
+    end
+  end
+
+  defp emit_map_pattern_test(pairs, scr, env, next, code) do
+    tag_reg = next
+    next = next + 1
+    code = code ++ [%{"op" => "is_tag", "dest" => tag_reg, "reg" => scr, "tag" => "map"}]
+    matched_after_tag = length(code) + 2
+
+    code =
+      code ++
+        [
+          %{
+            "op" => "jump_if_eq",
+            "target" => matched_after_tag,
+            "reg" => tag_reg,
+            "lit" => %{"bool" => true}
+          },
+          %{"op" => "jump", "target" => 0}
+        ]
+
+    fail_idx = length(code) - 1
+
+    Enum.reduce_while(pairs, {:ok, code, env, next, fail_idx}, fn
+      {key, val_pat}, {:ok, code, env, next, fail_idx} ->
+        case lit_value(key) do
+          {:ok, jkey} ->
+            key_reg = next
+            next = next + 1
+            val_reg = next
+            next = next + 1
+
+            code =
+              code ++
+                [
+                  %{"op" => "load_lit", "reg" => key_reg, "lit" => jkey},
+                  %{
+                    "op" => "call",
+                    "dest" => val_reg,
+                    "fun" => "map_get/2",
+                    "args" => [scr, key_reg]
+                  }
+                ]
+
+            case emit_pattern_test(val_pat, val_reg, env, next, code) do
+              {:ok, code, env, next, inner_fail} ->
+                code =
+                  List.update_at(code, inner_fail, fn j ->
+                    %{j | "target" => fail_idx}
+                  end)
+
+                {:cont, {:ok, code, env, next, fail_idx}}
+
+              {:error, _} = err ->
+                {:halt, err}
+            end
+
+          :error ->
+            {:halt, {:error, "map pattern keys must be literals"}}
+        end
+
+      _, _ ->
+        {:halt, {:error, "unsupported map pattern"}}
+    end)
+  end
+
+  defp emit_map_pattern_binds(pairs, scr, env, next, code) do
+    Enum.reduce_while(pairs, {:ok, code, env, next}, fn
+      {key, val_pat}, {:ok, code, env, next} ->
+        case lit_value(key) do
+          {:ok, jkey} ->
+            key_reg = next
+            next = next + 1
+            val_reg = next
+            next = next + 1
+
+            code =
+              code ++
+                [
+                  %{"op" => "load_lit", "reg" => key_reg, "lit" => jkey},
+                  %{
+                    "op" => "call",
+                    "dest" => val_reg,
+                    "fun" => "map_get/2",
+                    "args" => [scr, key_reg]
+                  }
+                ]
+
+            case emit_pattern_binds(val_pat, val_reg, env, next, code) do
+              {:ok, code, env, next} ->
+                {:cont, {:ok, code, env, next}}
+
+              {:error, _} = err ->
+                {:halt, err}
+            end
+
+          :error ->
+            {:halt, {:error, "map pattern keys must be literals"}}
+        end
+
+      _, _ ->
+        {:halt, {:error, "unsupported map pattern"}}
+    end)
+  end
+
+  defp emit_cons_pattern_binds(prefix, head, tail, scr, env, next, code) do
+    with {:ok, code, env, next} <-
+           emit_compound_pattern_binds(
+             "get_list_elem",
+             "list",
+             prefix ++ [head],
+             scr,
+             env,
+             next,
+             code
+           ) do
+      rest_reg = next
+      next = next + 1
+      rest_idx = length(prefix)
+
+      code =
+        code ++
+          [
+            %{
+              "op" => "get_list_rest",
+              "dest" => rest_reg,
+              "list" => scr,
+              "index" => rest_idx
+            }
+          ]
+
+      emit_pattern_binds(tail, rest_reg, env, next, code)
+    end
+  end
 
   defp emit_compound_pattern_binds(get_op, get_field, elems, scr, env, next, code) do
     Enum.reduce_while(Enum.with_index(elems), {:ok, code, env, next}, fn
@@ -762,11 +1845,32 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
+  defp literal_map(pairs) do
+    Enum.reduce_while(pairs, {:ok, []}, fn
+      {k, v}, {:ok, acc} ->
+        with {:ok, kl} <- lit_value(k),
+             {:ok, vl} <- lit_value(v) do
+          {:cont, {:ok, acc ++ [%{"key" => kl, "value" => vl}]}}
+        else
+          :error -> {:halt, :error}
+        end
+
+      _, _ ->
+        {:halt, :error}
+    end)
+    |> case do
+      {:ok, entries} -> {:ok, %{"map" => entries}}
+      :error -> :error
+    end
+  end
+
   defp lit_value(nil), do: {:ok, nil}
   defp lit_value(b) when is_boolean(b), do: {:ok, %{"bool" => b}}
   defp lit_value(n) when is_integer(n), do: {:ok, %{"int" => n}}
   defp lit_value(a) when is_atom(a), do: {:ok, %{"atom" => Atom.to_string(a)}}
   defp lit_value(list) when is_list(list), do: literal_list(list)
+
+  defp lit_value({:%{}, _, pairs}) when is_list(pairs), do: literal_map(pairs)
 
   defp lit_value({:{}, _, elems}) do
     case literal_tuple(elems) do

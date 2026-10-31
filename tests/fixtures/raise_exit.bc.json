@@ -1,0 +1,28 @@
+{
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 0,
+      "code": [
+        {
+          "lit": {
+            "atom": "bye"
+          },
+          "op": "load_lit",
+          "reg": 0
+        },
+        {
+          "op": "raise",
+          "reg": 0
+        },
+        {
+          "op": "return",
+          "reg": 0
+        }
+      ],
+      "locals": 1,
+      "name": "Main.main/0"
+    }
+  ],
+  "version": 6
+}

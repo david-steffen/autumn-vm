@@ -1,0 +1,229 @@
+{
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 0,
+      "code": [
+        {
+          "lit": {
+            "atom": "boom"
+          },
+          "op": "load_lit",
+          "reg": 0
+        },
+        {
+          "op": "raise",
+          "reg": 0
+        },
+        {
+          "op": "return",
+          "reg": 0
+        }
+      ],
+      "locals": 1,
+      "name": "Main.worker/0"
+    },
+    {
+      "arity": 0,
+      "code": [
+        {
+          "args": [],
+          "dest": 0,
+          "fun": "Main.worker/0",
+          "op": "spawn"
+        },
+        {
+          "op": "link",
+          "pid": 0
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 1
+        },
+        {
+          "dest": 2,
+          "empty": 31,
+          "index": 1,
+          "op": "recv_peek"
+        },
+        {
+          "dest": 4,
+          "op": "is_tag",
+          "reg": 2,
+          "tag": "tuple"
+        },
+        {
+          "lit": {
+            "bool": true
+          },
+          "op": "jump_if_eq",
+          "reg": 4,
+          "target": 7
+        },
+        {
+          "op": "jump",
+          "target": 27
+        },
+        {
+          "dest": 5,
+          "index": 0,
+          "op": "get_tuple_elem",
+          "tuple": 2
+        },
+        {
+          "lit": {
+            "atom": "EXIT"
+          },
+          "op": "jump_if_eq",
+          "reg": 5,
+          "target": 10
+        },
+        {
+          "op": "jump",
+          "target": 6
+        },
+        {
+          "dest": 6,
+          "index": 1,
+          "op": "get_tuple_elem",
+          "tuple": 2
+        },
+        {
+          "dest": 7,
+          "index": 2,
+          "op": "get_tuple_elem",
+          "tuple": 2
+        },
+        {
+          "index": 1,
+          "op": "recv_drop"
+        },
+        {
+          "lit": {
+            "atom": "boom"
+          },
+          "op": "jump_if_eq",
+          "reg": 7,
+          "target": 15
+        },
+        {
+          "op": "jump",
+          "target": 18
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 9
+        },
+        {
+          "dest": 8,
+          "op": "move",
+          "src": 9
+        },
+        {
+          "op": "jump",
+          "target": 25
+        },
+        {
+          "op": "jump",
+          "target": 20
+        },
+        {
+          "op": "jump",
+          "target": 23
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 10
+        },
+        {
+          "dest": 8,
+          "op": "move",
+          "src": 10
+        },
+        {
+          "op": "jump",
+          "target": 25
+        },
+        {
+          "lit": {
+            "atom": "match_error"
+          },
+          "op": "load_lit",
+          "reg": 11
+        },
+        {
+          "op": "raise",
+          "reg": 11
+        },
+        {
+          "dest": 3,
+          "op": "move",
+          "src": 8
+        },
+        {
+          "op": "jump",
+          "target": 34
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 12
+        },
+        {
+          "args": [
+            1,
+            12
+          ],
+          "dest": 13,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "dest": 1,
+          "op": "move",
+          "src": 13
+        },
+        {
+          "op": "jump",
+          "target": 3
+        },
+        {
+          "after": 32,
+          "op": "wait",
+          "retry": 3,
+          "timeout": 50
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 14
+        },
+        {
+          "dest": 3,
+          "op": "move",
+          "src": 14
+        },
+        {
+          "op": "return",
+          "reg": 3
+        }
+      ],
+      "locals": 15,
+      "name": "Main.main/0"
+    }
+  ],
+  "version": 8
+}

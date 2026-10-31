@@ -2,7 +2,7 @@
 
 Versioned bytecode exchanged as JSON between the Mix lowerer and the Lean VM.
 
-Supported `version` values: `1` (literals/calls), `2` (lists, case ops, processes), and `3` (`get_list_elem`, `list_size/1`).
+Supported `version` values: `1` (literals/calls), `2` (lists, case ops, processes), `3` (`get_list_elem`, `list_size/1`), `4` (`get_list_rest` / cons patterns), `5` (maps), `6` (exceptions: `enter_try` / `leave_try` / `raise`), `7` (selective receive: `recv_peek` / `recv_drop` / `wait`), and `8` (process links: `link`; exit signals).
 
 ## Module
 
@@ -37,6 +37,7 @@ Registers: dense `r0 .. r(locals-1)`. Params occupy `r0 .. r(arity-1)`.
 | `{"atom": "ok"}` | atom |
 | `{"tuple": [lit, ...]}` | tuple |
 | `{"list": [lit, ...]}` | list (v2) |
+| `{"map": [{"key": lit, "value": lit}, ...]}` | map (v5); keys sorted at alloc |
 | `{"pid": 0}` | process id (v2, usually runtime-only) |
 
 ## Instructions
@@ -54,17 +55,59 @@ Registers: dense `r0 .. r(locals-1)`. Params occupy `r0 .. r(arity-1)`.
 - `{"op":"jump","target":12}` — absolute instruction index
 - `{"op":"jump_if_eq","target":12,"reg":0,"lit":...}` — jump if reg equals lit
 - `{"op":"get_tuple_elem","dest":1,"tuple":0,"index":0}`
-- `{"op":"is_tag","dest":1,"reg":0,"tag":"tuple"}` — tag ∈ nil\|bool\|int\|atom\|tuple\|list\|pid
+- `{"op":"is_tag","dest":1,"reg":0,"tag":"tuple"}` — tag ∈ nil\|bool\|int\|atom\|tuple\|list\|map\|pid
 
 ### v2 processes
 
 - `{"op":"spawn","dest":0,"fun":"Main.worker/1","args":[1]}` — dest ← pid
 - `{"op":"send","pid":0,"msg":1}`
-- `{"op":"recv","dest":0}` — pop mailbox or park until message
+- `{"op":"recv","dest":0}` — pop mailbox head or park until any message (non-selective)
+
+### v7 selective receive
+
+- `{"op":"recv_peek","dest":0,"index":1,"empty":12}` — if `index` (int reg) `< mailbox.size`, `dest ← mailbox[index]` and fall through; else jump to `empty` (no park)
+- `{"op":"recv_drop","index":1}` — remove `mailbox[index]` (int reg)
+- `{"op":"wait","retry":10,"after":20,"timeout":5}` — if the mailbox is non-empty, jump to `retry`. If a parked deadline is due, jump to `after`. Otherwise park until `send` wakes the process (re-executes `wait`) or the scheduler wakes it for timeout. `timeout` is clock ticks from now; `null`/omit means infinity; `0` jumps to `after` immediately.
+
+`receive` / `after` is lowered to a mailbox scan loop (`recv_peek` + pattern tests + `recv_drop`) plus `wait`. The machine `clock` advances on each step and jumps to the next deadline when every process is waiting with a finite timeout.
 
 ### v3 list patterns
 
 - `{"op":"get_list_elem","dest":1,"list":0,"index":0}` — 0-based list element (mirror of `get_tuple_elem`)
+
+### v4 cons / list rest
+
+- `{"op":"get_list_rest","dest":1,"list":0,"index":0}` — allocate a new list of elements after `index` (for `[h|t]`, head at 0 and rest uses `index` 0). May GC while allocating.
+
+### v6 exceptions
+
+- `{"op":"enter_try","rescue":12,"exc":3}` — push a handler; on `raise`, unwind to this frame, store the value in `exc`, set `ip` to `rescue`
+- `{"op":"leave_try"}` — pop the innermost handler (normal try completion)
+- `{"op":"raise","reg":0}` — unwind to innermost handler, or exit the process with that value as `result` if none
+
+`after` is lowered as a shared join label (jumps from success and rescue paths), not a VM opcode. `try`/`after` without `rescue` still uses `enter_try` so `after` runs on an uncaught raise, then re-raises. Builtin `typeError` remains a stepper error (not a language exception).
+
+Unmatched `case` / multi-clause fallthrough lowers to `raise` of atom `match_error` (not `nil`).
+
+`rescue e in [lit, …]` (and `rescue lit ->`) stays **value-based**: the raised value is matched with `jump_if_eq` / patterns (no BEAM exception structs). `rescue e in [:a, :b]` is an or of literal tests that binds `e` on match.
+
+### Catchable language exceptions vs stepper `typeError`
+
+| Kind | Mechanism | Catchable? |
+| --- | --- | --- |
+| Language `raise` | `raise` opcode; value in a register | Yes — `enter_try` / rescue patterns |
+| Match miss | Lowered to `raise` of atom `match_error` | Yes — same as `raise` |
+| Linked peer exit | `{:EXIT, from_pid, reason}` mailbox message (v8) | Yes — via `receive` / patterns |
+| Stepper `typeError` | `StepError` (bad arity, wrong tag, return through try, …) | **No** — aborts the step; not a process value |
+
+Teaching rule: anything that should be handled in Elixir-shaped code goes through `raise` or EXIT messages. `typeError` means the IR/VM was asked to do something ill-typed.
+
+### v8 process links
+
+- `{"op":"link","pid":0}` — bidirectional link between the current process and the pid in the register. Linking an exited pid is a `typeError`. Self-link is a no-op.
+- `spawn_link` lowers as `spawn` then `link` on the new pid.
+
+When a process **exits** (uncaught `raise`, root `return`, or `halt`), each linked peer receives mailbox message `{:EXIT, from_pid, reason}` (`reason` = the exit value), is woken if waiting, and the link is cleared both ways. Peers always “trap” EXIT (teaching subset — no separate `process_flag`); they do not auto-exit.
 
 ## Builtins
 
@@ -72,13 +115,22 @@ Registers: dense `r0 .. r(locals-1)`. Params occupy `r0 .. r(arity-1)`.
 | --- | --- |
 | `+/2` `-/2` `*/2` | integer arithmetic |
 | `==/2` | structural equality → bool |
+| `</2` `>/2` `<=/2` `>=/2` | integer compare → bool (for guards) |
 | `tuple_size/1` | tuple length → int |
 | `list_size/1` | list length → int (v3) |
 | `elem/2` | `(tuple, index)` → element (0-based) |
+| `map_size/1` | map entry count → int (v5) |
+| `map_get/2` | `(map, key)` → value or nil (v5) |
+| `map_put/3` | `(map, key, value)` → new map (v5; may GC) |
+| `self/0` | current process pid (v2+) |
+| `cons/2` | `(head, list)` → new list `[head \| list]` (may GC) |
+| `make_tuple/N` | `N` args → new tuple (may GC; lowered for non-literal `{…}`) |
+
+Guard helpers `is_integer/1`, `is_atom/1`, `is_list/1`, `is_tuple/1`, `is_map/1`, `is_boolean/1`, `is_pid/1`, `is_nil/1` lower to `is_tag` (not separate MFAs). Map patterns `%{lit_key => pat}` lower via `map_get/2` + value tests. Handler-stack bounds (`handlersWF`) are part of runnable/waiting `Process.WF`.
 
 ## Scheduling
 
-Cooperative: each process runs a small reduction budget then yields. `recv` on an empty mailbox parks the process (`waiting`); `send` wakes a waiting target. Machine result is the **entry process** return/halt value.
+Cooperative: each process runs a small reduction budget then yields. `recv` / `wait` parks the process (`waiting`); `send` wakes a waiting target (IP unchanged so `wait`/`recv` re-runs). Finite `wait` deadlines use a machine `clock`; if nothing is runnable, the scheduler advances to the next deadline and makes those processes runnable so `wait` can take the `after` path. Machine result is the **entry process** return/halt value.
 
 ## Runtime heap (Lean VM)
 
@@ -91,6 +143,7 @@ Compound terms (`tuple` / `list`) are **heap-allocated** at runtime; immediates 
 - Allocation failure path (`allocNode` / `allocCompound`): `alloc?` → `gc` (minor, then major if needed) → `alloc?` → `growAlloc` (grow capacity/nursery, force-alloc).
 - Registers, mailboxes, and process results hold `Value`s (immediate or `Ref`).
 - **Nested compound allocation is GC-safe**: while building a `tuple`/`list` literal, already-built children are parked on the process mailbox (a GC root), and the parent node is rebuilt from the live (post-GC) mailbox suffix. A GC triggered mid-term therefore never leaves stale refs. `installHeap` never inflates `capacity`/`youngCapacity`, so a full nursery still triggers GC. `GCDemo` forces minor and major collections on tiny heaps (including retained roots filling old) and checks `toTerm` round-trips.
-- Both collections share one root-rewriting pass (`collectWith`) and satisfy `GcRel` (`minorGc_rel`, `majorGc_rel`, `gc_rel`): they preserve immediates in registers/mailbox/result exactly (`{minor_gc,majorGc,gc}_frame_reg_immediate`, `*_mailbox_immediate`, `*_result_immediate`), process well-formedness (`minor_gc_preserves_process_WF`, `majorGc_preserves_process_WF`, `gc_preserves_process_WF`), and keep all root refs well-formed (`*_rootsWF` / `*_preserves_obs`). `toTerm` is `partial`, so full compound preservation is checked by `GCDemo` rather than proved.
+- Both collections share one root-rewriting pass (`collectWith`) and satisfy `GcRel` (`minorGc_rel`, `majorGc_rel`, `gc_rel`): they preserve immediates in registers/mailbox/result exactly (`{minor_gc,majorGc,gc}_frame_reg_immediate`, `*_mailbox_immediate`, `*_result_immediate`), process well-formedness (`minor_gc_preserves_process_WF`, `majorGc_preserves_process_WF`, `gc_preserves_process_WF`), and keep all root refs well-formed (`*_rootsWF` / `*_preserves_obs`).
+- Compound observational equality uses total `Heap.toTermFuel` / `toTerm'` (sentinel on fuel/OOB). Lemmas: immediate roots via `GcRel.toTermFuel_*_immediate` / `*_mailbox_toTermFuel_immediate` / `*_result_toTermFuel_immediate`; flat compounds via `toTermFuel_flatCompound_congr`. Nested compounds are checked by `#guard` in `GCDemo` (including maps).
 - **`send` / `spawn` copy** values into the target process heap (no cross-heap refs).
-- IR JSON is unchanged: the Mix lowerer still emits term trees; the VM allocates them on `load_lit` / spawn args.
+- IR JSON is unchanged: the Mix lowerer still emits term trees; the VM allocates them on `load_lit` / spawn args. Compound heap shapes are `tuple` / `list` / `map`.

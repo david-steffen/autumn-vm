@@ -1,11 +1,13 @@
 import Autumn.State
+import Autumn.Process
 
 namespace Autumn
 
 namespace Step
 
-/-- Builtins operate on materialized views where needed; arithmetic uses immediates. -/
-def builtin (h : Heap) (name : FunName) (args : Array Value) :
+/-- Builtins operate on materialized views where needed; arithmetic uses immediates.
+`selfPid` is the calling process id (used by `self/0`). -/
+def builtin (h : Heap) (selfPid : Nat) (name : FunName) (args : Array Value) :
     Except StepError Value :=
   match name with
   | "+/2" =>
@@ -26,6 +28,26 @@ def builtin (h : Heap) (name : FunName) (args : Array Value) :
   | "==/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else .ok (.bool (Heap.beq h args[0]! args[1]!))
+  | "</2" =>
+    if args.size != 2 then .error (.badArity name 2 args.size)
+    else match args[0]!, args[1]! with
+      | .int a, .int b => .ok (.bool (decide (a < b)))
+      | _, _ => .error (.typeError "</2 expects two integers")
+  | ">/2" =>
+    if args.size != 2 then .error (.badArity name 2 args.size)
+    else match args[0]!, args[1]! with
+      | .int a, .int b => .ok (.bool (decide (a > b)))
+      | _, _ => .error (.typeError ">/2 expects two integers")
+  | "<=/2" =>
+    if args.size != 2 then .error (.badArity name 2 args.size)
+    else match args[0]!, args[1]! with
+      | .int a, .int b => .ok (.bool (decide (a ≤ b)))
+      | _, _ => .error (.typeError "<=/2 expects two integers")
+  | ">=/2" =>
+    if args.size != 2 then .error (.badArity name 2 args.size)
+    else match args[0]!, args[1]! with
+      | .int a, .int b => .ok (.bool (decide (a ≥ b)))
+      | _, _ => .error (.typeError ">=/2 expects two integers")
   | "tuple_size/1" =>
     if args.size != 1 then .error (.badArity name 1 args.size)
     else match args[0]! with
@@ -42,6 +64,31 @@ def builtin (h : Heap) (name : FunName) (args : Array Value) :
         | some (.list elems) => .ok (.int elems.size)
         | _ => .error (.typeError "list_size/1 expects a list")
       | _ => .error (.typeError "list_size/1 expects a list")
+  | "map_size/1" =>
+    if args.size != 1 then .error (.badArity name 1 args.size)
+    else match args[0]! with
+      | .ref r =>
+        match h.get? r with
+        | some (.map entries) => .ok (.int entries.size)
+        | _ => .error (.typeError "map_size/1 expects a map")
+      | _ => .error (.typeError "map_size/1 expects a map")
+  | "map_get/2" =>
+    if args.size != 2 then .error (.badArity name 2 args.size)
+    else match args[0]! with
+      | .ref r =>
+        match h.get? r with
+        | some (.map entries) =>
+          let key := args[1]!
+          .ok <|
+            Id.run do
+              let mut i := 0
+              while hlt : i < entries.size do
+                let (k, v) := entries[i]
+                if Heap.beq h k key then return v
+                i := i + 1
+              return .nil
+        | _ => .error (.typeError "map_get/2 expects a map")
+      | _ => .error (.typeError "map_get/2 expects a map")
   | "elem/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
@@ -54,6 +101,9 @@ def builtin (h : Heap) (name : FunName) (args : Array Value) :
             .ok elems[i.toNat]!
         | _ => .error (.typeError "elem/2 expects (tuple, int)")
       | _, _ => .error (.typeError "elem/2 expects (tuple, int)")
+  | "self/0" =>
+    if args.size != 0 then .error (.badArity name 0 args.size)
+    else .ok (.pid selfPid)
   | _ => .error (.unknownFunction name)
 
 def getReg! (f : Frame) (r : Reg) : Value := f.regs[r]!
@@ -66,12 +116,74 @@ def readArgs! (f : Frame) (regs : Array Reg) : Array Value :=
 
 def tagOf (h : Heap) (v : Value) : Tag := Value.tagOf h v
 
+/-- Build updated map entries (overwrite key; sort by materialized key). -/
+def mapPutEntries (h : Heap) (entries : Array (Value × Value)) (key val : Value) :
+    Array (Value × Value) :=
+  let kept := entries.filter fun (k, _) => !(Heap.beq h k key)
+  let entries := kept.push (key, val)
+  entries.qsort fun (k1, _) (k2, _) =>
+    Term.lt (Heap.toTerm h k1) (Heap.toTerm h k2)
+
+/-- `map_put/3` allocates a new map (GC-safe). -/
+def mapPut (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (mapV key val : Value) : Except StepError State := do
+  match mapV with
+  | .ref r =>
+    match p.heap.get? r with
+    | some (.map entries) =>
+      let entries := mapPutEntries p.heap entries key val
+      let p := State.setCurrentFrame p frame
+      let (p, v) := Process.allocMap p entries
+      let frame := p.stack[p.stack.size - 1]!
+      let frame := setReg! frame dest v
+      let frame := { frame with ip := frame.ip + 1 }
+      pure (s.setCurrentProcess (State.setCurrentFrame p frame))
+    | _ => throw (.typeError "map_put/3 expects a map")
+  | _ => throw (.typeError "map_put/3 expects a map")
+
+/-- `cons/2` allocates `[head | tail]` (GC-safe). -/
+def cons (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (head tail : Value) : Except StepError State := do
+  match tail with
+  | .ref r =>
+    match p.heap.get? r with
+    | some (.list elems) =>
+      let p := State.setCurrentFrame p frame
+      let (p, v) := Process.allocCompound p Node.list (#[head] ++ elems)
+      let frame := p.stack[p.stack.size - 1]!
+      let frame := setReg! frame dest v
+      let frame := { frame with ip := frame.ip + 1 }
+      pure (s.setCurrentProcess (State.setCurrentFrame p frame))
+    | _ => throw (.typeError "cons/2 expects a list tail")
+  | _ => throw (.typeError "cons/2 expects a list tail")
+
+/-- `make_tuple/N` allocates a tuple from argument registers (GC-safe). -/
+def makeTuple (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (elems : Array Value) : State :=
+  let p := State.setCurrentFrame p frame
+  let (p, v) := Process.allocCompound p Node.tuple elems
+  let frame := p.stack[p.stack.size - 1]!
+  let frame := setReg! frame dest v
+  let frame := { frame with ip := frame.ip + 1 }
+  s.setCurrentProcess (State.setCurrentFrame p frame)
+
 /-- `loadLit` installs the frame before alloc so GC sees current regs as roots. -/
 def loadLit (s : State) (p : Process) (frame : Frame) (reg : Reg) (lit : Term) : State :=
   let p := State.setCurrentFrame p frame
   let (p, v) := Process.allocTerm p lit
   let frame := p.stack[p.stack.size - 1]!
   let frame := setReg! frame reg v
+  let frame := { frame with ip := frame.ip + 1 }
+  s.setCurrentProcess (State.setCurrentFrame p frame)
+
+/-- Allocate list suffix after `index` into `dest` (GC-safe via `allocCompound`). -/
+def getListRest (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (elems : Array Value) (index : Nat) : State :=
+  let suffix := elems.extract (index + 1) elems.size
+  let p := State.setCurrentFrame p frame
+  let (p, v) := Process.allocCompound p Node.list suffix
+  let frame := p.stack[p.stack.size - 1]!
+  let frame := setReg! frame dest v
   let frame := { frame with ip := frame.ip + 1 }
   s.setCurrentProcess (State.setCurrentFrame p frame)
 
@@ -91,8 +203,20 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
     pure (s.setCurrentProcess (State.setCurrentFrame p frame))
   | .call dest funName argRegs =>
     let args := readArgs! frame argRegs
-    if isBuiltinName funName then
-      let v ← builtin p.heap funName args
+    if funName == "map_put/3" then
+      if args.size != 3 then
+        throw (.badArity funName 3 args.size)
+      else
+        mapPut s p frame dest args[0]! args[1]! args[2]!
+    else if funName == "cons/2" then
+      if args.size != 2 then
+        throw (.badArity funName 2 args.size)
+      else
+        cons s p frame dest args[0]! args[1]!
+    else if isMakeTupleName funName then
+      pure (makeTuple s p frame dest args)
+    else if isBuiltinName funName then
+      let v ← builtin p.heap p.pid funName args
       let frame := setReg! frame dest v
       let frame := { frame with ip := frame.ip + 1 }
       pure (s.setCurrentProcess (State.setCurrentFrame p frame))
@@ -113,25 +237,74 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
   | .return_ reg =>
     let v := getReg! frame reg
     if p.stack.size == 1 then
-      let p := { p with stack := #[], result := some v, status := .exited }
+      let p := { p with stack := #[], result := some v, status := .exited, handlers := #[] }
       let s := s.setCurrentProcess p
+      let s := State.propagateExit s s.current v
       if p.pid == s.entryPid then
         pure { s with result := some (Heap.toTerm p.heap v) }
       else
         State.scheduleNext s s.current
     else
       let stack := p.stack.pop
-      let caller := stack[stack.size - 1]!
-      let caller := setReg! caller frame.retDest v
-      pure (s.setCurrentProcess { p with stack := stack.setIfInBounds (stack.size - 1) caller })
+      -- Must `leave_try` before returning out of a try frame.
+      if p.handlers.any (fun h => decide (h.stackDepth > stack.size)) then
+        throw (.typeError "return through active try")
+      else
+        let caller := stack[stack.size - 1]!
+        let caller := setReg! caller frame.retDest v
+        pure (s.setCurrentProcess
+          { p with stack := stack.setIfInBounds (stack.size - 1) caller })
   | .halt reg =>
     let v := getReg! frame reg
-    let p := { p with stack := #[], result := some v, status := .exited }
+    let p := { p with stack := #[], result := some v, status := .exited, handlers := #[] }
     let s := s.setCurrentProcess p
+    let s := State.propagateExit s s.current v
     if p.pid == s.entryPid then
       pure { s with result := some (Heap.toTerm p.heap v) }
     else
       State.scheduleNext s s.current
+  | .enterTry rescueIp excReg =>
+    let h : Handler := {
+      stackDepth := p.stack.size
+      rescueIp
+      excReg
+    }
+    let frame := { frame with ip := frame.ip + 1 }
+    let p := State.setCurrentFrame { p with handlers := p.handlers.push h } frame
+    pure (s.setCurrentProcess p)
+  | .leaveTry =>
+    if p.handlers.isEmpty then
+      throw (.typeError "leave_try with empty handler stack")
+    else
+      let frame := { frame with ip := frame.ip + 1 }
+      let p := State.setCurrentFrame { p with handlers := p.handlers.pop } frame
+      pure (s.setCurrentProcess p)
+  | .raise reg =>
+    let v := getReg! frame reg
+    if p.handlers.isEmpty then
+      let p := { p with stack := #[], result := some v, status := .exited, handlers := #[] }
+      let s := s.setCurrentProcess p
+      let s := State.propagateExit s s.current v
+      if p.pid == s.entryPid then
+        pure { s with result := some (Heap.toTerm p.heap v) }
+      else
+        State.scheduleNext s s.current
+    else
+      let h := p.handlers[p.handlers.size - 1]!
+      if h.stackDepth == 0 || p.stack.size < h.stackDepth then
+        throw (.typeError "raise: bad handler stackDepth")
+      else
+        let stack := p.stack.extract 0 h.stackDepth
+        let top0 := stack[stack.size - 1]!
+        if h.rescueIp >= top0.function.code.size || h.excReg >= top0.function.locals then
+          throw (.typeError "raise: bad handler rescue/exc")
+        else
+          let handlers := p.handlers.pop
+          let handlers := handlers.filter (fun hh => hh.stackDepth ≤ stack.size)
+          let top := setReg! top0 h.excReg v
+          let top := { top with ip := h.rescueIp }
+          let stack := stack.setIfInBounds (stack.size - 1) top
+          pure (s.setCurrentProcess { p with stack, handlers })
   | .jump target =>
     let frame := { frame with ip := target }
     pure (s.setCurrentProcess (State.setCurrentFrame p frame))
@@ -169,6 +342,18 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
           pure (s.setCurrentProcess (State.setCurrentFrame p frame))
       | _ => throw (.typeError "get_list_elem expects a list")
     | _ => throw (.typeError "get_list_elem expects a list")
+  | .getListRest dest listReg index =>
+    let v := getReg! frame listReg
+    match v with
+    | .ref r =>
+      match p.heap.get? r with
+      | some (.list elems) =>
+        if index ≥ elems.size then
+          throw (.typeError "get_list_rest index out of range")
+        else
+          pure (getListRest s p frame dest elems index)
+      | _ => throw (.typeError "get_list_rest expects a list")
+    | _ => throw (.typeError "get_list_rest expects a list")
   | .isTag dest reg tag =>
     let v := getReg! frame reg
     let frame := setReg! frame dest (.bool (tagOf p.heap v == tag))
@@ -187,6 +372,7 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
       status := .runnable
       result := none
       heap := Heap.empty
+      handlers := #[]
     }
     let (child0, args') := child0.copyArrayFrom p.heap args
     let newFrame : Frame := {
@@ -214,11 +400,9 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
     let s := s.setCurrentProcess p
     let target0 := s.processes[idx]!
     let (target0, msg') := target0.copyFrom p.heap msg
-    let status :=
-      match target0.status with
-      | .waiting => ProcStatus.runnable
-      | st => st
-    let target := { target0 with mailbox := target0.mailbox.push msg', status }
+    let target1 := { target0 with mailbox := target0.mailbox.push msg' }
+    let target :=
+      if target0.status == .waiting then State.wakeOnMessage target1 else target1
     pure { s with processes := s.processes.setIfInBounds idx target }
   | .recv dest =>
     if p.mailbox.size > 0 then
@@ -228,9 +412,80 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
       let frame := { frame with ip := frame.ip + 1 }
       pure (s.setCurrentProcess (State.setCurrentFrame { p with mailbox } frame))
     else
-      let p := { p with status := .waiting }
+      let p := State.clearWait { p with status := .waiting }
       let s := s.setCurrentProcess p
       State.scheduleNext s s.current
+  | .recvPeek dest indexReg empty =>
+    match getReg! frame indexReg with
+    | .int i =>
+      if i < 0 then
+        throw (.typeError "recv_peek index must be ≥ 0")
+      else
+        let idx := i.toNat
+        if idx < p.mailbox.size then
+          let frame := setReg! frame dest p.mailbox[idx]!
+          let frame := { frame with ip := frame.ip + 1 }
+          pure (s.setCurrentProcess (State.setCurrentFrame p frame))
+        else
+          let frame := { frame with ip := empty }
+          pure (s.setCurrentProcess (State.setCurrentFrame p frame))
+    | _ => throw (.typeError "recv_peek expects an int index")
+  | .recvDrop indexReg =>
+    match getReg! frame indexReg with
+    | .int i =>
+      if i < 0 then
+        throw (.typeError "recv_drop index must be ≥ 0")
+      else
+        let idx := i.toNat
+        if idx ≥ p.mailbox.size then
+          throw (.typeError "recv_drop index out of range")
+        else
+          let mailbox := p.mailbox.eraseIdx! idx
+          let frame := { frame with ip := frame.ip + 1 }
+          pure (s.setCurrentProcess (State.setCurrentFrame { p with mailbox } frame))
+    | _ => throw (.typeError "recv_drop expects an int index")
+  | .wait retry after timeout =>
+    -- Message present (including after `send` woke us): restart the receive scan.
+    if p.mailbox.size > 0 then
+      let frame := { frame with ip := retry }
+      pure (s.setCurrentProcess (State.setCurrentFrame (State.clearWait p) frame))
+    else
+      -- Timed out while parked: scheduler made us runnable with deadline still set.
+      match p.waitDeadline with
+      | some d =>
+        if d ≤ s.clock then
+          let frame := { frame with ip := after }
+          pure (s.setCurrentProcess (State.setCurrentFrame (State.clearWait p) frame))
+        else
+          let p := { p with status := .waiting }
+          let s := s.setCurrentProcess p
+          State.scheduleNext s s.current
+      | none =>
+        match timeout with
+        | some 0 =>
+          let frame := { frame with ip := after }
+          pure (s.setCurrentProcess (State.setCurrentFrame p frame))
+        | some n =>
+          let p := {
+            p with
+            status := .waiting
+            waitDeadline := some (s.clock + n)
+          }
+          let s := s.setCurrentProcess p
+          State.scheduleNext s s.current
+        | none =>
+          let p := State.clearWait { p with status := .waiting }
+          let s := s.setCurrentProcess p
+          State.scheduleNext s s.current
+  | .link pidReg =>
+    let pidT := getReg! frame pidReg
+    let other ← match pidT with
+      | .pid id => pure id
+      | _ => throw (.typeError "link expects a pid")
+    let frame := { frame with ip := frame.ip + 1 }
+    let p := State.setCurrentFrame p frame
+    let s := s.setCurrentProcess p
+    State.linkWith s other
 
 def step (s : State) : Except StepError State :=
   if s.result.isSome then
@@ -250,6 +505,7 @@ def step (s : State) : Except StepError State :=
         match stepInstr s p frame code[frame.ip]! with
         | .error e => .error e
         | .ok s =>
+          let s := { s with clock := s.clock + 1 }
           if s.result.isSome then
             .ok s
           else if s.reductions ≤ 1 then

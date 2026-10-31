@@ -19,6 +19,7 @@ inductive Value where
 inductive Node where
   | tuple (elems : Array Value)
   | list (elems : Array Value)
+  | map (entries : Array (Value × Value))
   deriving Repr, Inhabited
 
 /--
@@ -109,6 +110,7 @@ mutual
       | none => .atom "<dangling>"
       | some (.tuple elems) => .tuple (toTermArray h elems 0 #[])
       | some (.list elems) => .list (toTermArray h elems 0 #[])
+      | some (.map entries) => .map (toTermEntries h entries 0 #[])
 
   partial def toTermArray (h : Heap) (elems : Array Value) (i : Nat)
       (acc : Array Term) : Array Term :=
@@ -116,7 +118,71 @@ mutual
       toTermArray h elems (i + 1) (acc.push (toTerm h elems[i]!))
     else
       acc
+
+  partial def toTermEntries (h : Heap) (entries : Array (Value × Value)) (i : Nat)
+      (acc : Array (Term × Term)) : Array (Term × Term) :=
+    if _hlt : i < entries.size then
+      let (k, v) := entries[i]!
+      toTermEntries h entries (i + 1) (acc.push (toTerm h k, toTerm h v))
+    else
+      acc
 end
+
+/-- Sentinel returned when fueled materialization runs out of fuel or hits OOB. -/
+def toTermSentinel : Term := .atom "<exhausted>"
+
+/- Total fueled materialization (kernel-visible). Fuel/OOB yield `toTermSentinel`. -/
+mutual
+  /-- Fuel-bounded `toTerm`; exhausted fuel or OOB refs yield `toTermSentinel`. -/
+  def toTermFuel (fuel : Nat) (h : Heap) (v : Value) : Term :=
+    match fuel with
+    | 0 => toTermSentinel
+    | fuel + 1 =>
+      match v with
+      | .nil => .nil
+      | .bool b => .bool b
+      | .int n => .int n
+      | .atom s => .atom s
+      | .pid id => .pid id
+      | .ref r =>
+        match get? h r with
+        | none => toTermSentinel
+        | some (.tuple elems) => .tuple (toTermArrayFuel fuel h elems 0 #[])
+        | some (.list elems) => .list (toTermArrayFuel fuel h elems 0 #[])
+        | some (.map entries) => .map (toTermEntriesFuel fuel h entries 0 #[])
+  termination_by fuel
+
+  def toTermArrayFuel (fuel : Nat) (h : Heap) (elems : Array Value) (i : Nat)
+      (acc : Array Term) : Array Term :=
+    match fuel with
+    | 0 => acc
+    | fuel + 1 =>
+      if _hlt : i < elems.size then
+        toTermArrayFuel fuel h elems (i + 1) (acc.push (toTermFuel fuel h (elems[i]!)))
+      else
+        acc
+  termination_by fuel
+
+  def toTermEntriesFuel (fuel : Nat) (h : Heap) (entries : Array (Value × Value))
+      (i : Nat) (acc : Array (Term × Term)) : Array (Term × Term) :=
+    match fuel with
+    | 0 => acc
+    | fuel + 1 =>
+      if _hlt : i < entries.size then
+        let (k, v) := entries[i]!
+        toTermEntriesFuel fuel h entries (i + 1)
+          (acc.push (toTermFuel fuel h k, toTermFuel fuel h v))
+      else
+        acc
+  termination_by fuel
+end
+
+/-- Enough fuel to walk any graph whose refs stay below `nodes.size` (DAG or not). -/
+def toTermFuelBound (h : Heap) : Nat := h.nodes.size * 64 + 64
+
+/-- Materialize with a heap-size fuel bound (total; preferred over partial `toTerm`). -/
+def toTerm' (h : Heap) (v : Value) : Term :=
+  toTermFuel (toTermFuelBound h) h v
 
 -- Structural equality of values under a heap.
 mutual
@@ -133,12 +199,22 @@ mutual
         xa.size == xb.size && beqArray h xa xb 0
       | some (.list xa), some (.list xb) =>
         xa.size == xb.size && beqArray h xa xb 0
+      | some (.map xa), some (.map xb) =>
+        xa.size == xb.size && beqEntries h xa xb 0
       | _, _ => false
     | _, _ => false
 
   partial def beqArray (h : Heap) (a b : Array Value) (i : Nat) : Bool :=
     if _hlt : i < a.size then
       beq h a[i]! b[i]! && beqArray h a b (i + 1)
+    else
+      true
+
+  partial def beqEntries (h : Heap) (a b : Array (Value × Value)) (i : Nat) : Bool :=
+    if _hlt : i < a.size then
+      let (ka, va) := a[i]!
+      let (kb, vb) := b[i]!
+      beq h ka kb && beq h va vb && beqEntries h a b (i + 1)
     else
       true
 end
@@ -162,11 +238,25 @@ mutual
       | some (.list ve) =>
         ve.size == te.size && beqTermArray h ve te 0
       | _ => false
+    | .ref r, .map te =>
+      match get? h r with
+      | some (.map ve) =>
+        ve.size == te.size && beqTermEntries h ve te 0
+      | _ => false
     | _, _ => false
 
   partial def beqTermArray (h : Heap) (a : Array Value) (b : Array Term) (i : Nat) : Bool :=
     if _hlt : i < a.size then
       beqTerm h a[i]! b[i]! && beqTermArray h a b (i + 1)
+    else
+      true
+
+  partial def beqTermEntries (h : Heap) (a : Array (Value × Value)) (b : Array (Term × Term))
+      (i : Nat) : Bool :=
+    if _hlt : i < a.size then
+      let (ka, va) := a[i]!
+      let (kb, vb) := b[i]!
+      beqTerm h ka kb && beqTerm h va vb && beqTermEntries h a b (i + 1)
     else
       true
 end
@@ -202,6 +292,10 @@ mutual
           let (dst, elems') := copyArrayFuel fuel src dst elems 0 #[]
           let (dst, r') := allocGrow dst (.list elems')
           (dst, .ref r')
+        | some (.map entries) =>
+          let (dst, entries') := copyEntriesFuel fuel src dst entries 0 #[]
+          let (dst, r') := allocGrow dst (.map entries')
+          (dst, .ref r')
   termination_by fuel
 
   def copyArrayFuel (fuel : Nat) (src dst : Heap) (elems : Array Value) (i : Nat)
@@ -212,6 +306,20 @@ mutual
       if hlt : i < elems.size then
         let (dst, v) := copyValueFuel fuel src dst (elems[i]'hlt)
         copyArrayFuel fuel src dst elems (i + 1) (acc.push v)
+      else
+        (dst, acc)
+  termination_by fuel
+
+  def copyEntriesFuel (fuel : Nat) (src dst : Heap) (entries : Array (Value × Value))
+      (i : Nat) (acc : Array (Value × Value)) : Heap × Array (Value × Value) :=
+    match fuel with
+    | 0 => (dst, acc)
+    | fuel + 1 =>
+      if hlt : i < entries.size then
+        let (k, v) := entries[i]'hlt
+        let (dst, k') := copyValueFuel fuel src dst k
+        let (dst, v') := copyValueFuel fuel src dst v
+        copyEntriesFuel fuel src dst entries (i + 1) (acc.push (k', v'))
       else
         (dst, acc)
   termination_by fuel
@@ -251,6 +359,14 @@ mutual
         | none =>
           let (h, r) := allocGrow h (.list vs)
           (h, .ref r)
+      | .map entries =>
+        let entries := Term.sortMapEntries entries
+        let (h, vs) := allocTermEntriesFuel fuel h entries 0 #[]
+        match alloc? h (.map vs) with
+        | some (h, r) => (h, .ref r)
+        | none =>
+          let (h, r) := allocGrow h (.map vs)
+          (h, .ref r)
   termination_by fuel
 
   def allocTermArrayFuel (fuel : Nat) (h : Heap) (elems : Array Term) (i : Nat)
@@ -264,13 +380,29 @@ mutual
       else
         (h, acc)
   termination_by fuel
+
+  def allocTermEntriesFuel (fuel : Nat) (h : Heap) (entries : Array (Term × Term))
+      (i : Nat) (acc : Array (Value × Value)) : Heap × Array (Value × Value) :=
+    match fuel with
+    | 0 => (h, acc)
+    | fuel + 1 =>
+      if hlt : i < entries.size then
+        let (k, v) := entries[i]'hlt
+        let (h, k') := allocTermFuel fuel h k
+        let (h, v') := allocTermFuel fuel h v
+        allocTermEntriesFuel fuel h entries (i + 1) (acc.push (k', v'))
+      else
+        (h, acc)
+  termination_by fuel
 end
 
 /-- Structural size for fuel (avoids `sizeOf` in compiled code). -/
-def termFuel : Term → Nat
+partial def termFuel : Term → Nat
   | .nil | .bool _ | .int _ | .atom _ | .pid _ => 1
   | .tuple elems => elems.foldl (fun n e => n + termFuel e) 1
   | .list elems => elems.foldl (fun n e => n + termFuel e) 1
+  | .map entries =>
+    entries.foldl (fun n (k, v) => n + termFuel k + termFuel v) 1
 
 def allocTerm (h : Heap) (t : Term) : Heap × Value :=
   allocTermFuel (termFuel t + 1) h t
@@ -329,6 +461,9 @@ mutual
       | .list elems =>
         let (fwd, neu, elems') := evacuateArray fuel old fwd neu elems 0 #[]
         (fwd, neu, .list elems')
+      | .map entries =>
+        let (fwd, neu, entries') := evacuateEntries fuel old fwd neu entries 0 #[]
+        (fwd, neu, .map entries')
   termination_by fuel
 
   def evacuateArray (fuel : Nat) (old : Heap) (fwd : Fwd) (neu : Array Node)
@@ -343,6 +478,21 @@ mutual
       else
         (fwd, neu, acc)
   termination_by fuel
+
+  def evacuateEntries (fuel : Nat) (old : Heap) (fwd : Fwd) (neu : Array Node)
+      (entries : Array (Value × Value)) (i : Nat) (acc : Array (Value × Value)) :
+      Fwd × Array Node × Array (Value × Value) :=
+    match fuel with
+    | 0 => (fwd, neu, acc)
+    | fuel + 1 =>
+      if hlt : i < entries.size then
+        let (k, v) := entries[i]'hlt
+        let (fwd, neu, k') := evacuateValue fuel old fwd neu k
+        let (fwd, neu, v') := evacuateValue fuel old fwd neu v
+        evacuateEntries fuel old fwd neu entries (i + 1) (acc.push (k', v'))
+      else
+        (fwd, neu, acc)
+  termination_by fuel
 end
 
 /-- Replace out-of-range refs with `nil` (no-op on a well-evacuated to-space). -/
@@ -353,6 +503,8 @@ def sanitizeValue (bound : Nat) : Value → Value
 def sanitizeNode (bound : Nat) : Node → Node
   | .tuple elems => .tuple (elems.map (sanitizeValue bound))
   | .list elems => .list (elems.map (sanitizeValue bound))
+  | .map entries =>
+    .map (entries.map fun (k, v) => (sanitizeValue bound k, sanitizeValue bound v))
 
 def sanitizeNodes (neu : Array Node) : Array Node :=
   neu.map (sanitizeNode neu.size)
@@ -436,6 +588,9 @@ mutual
       | .list elems =>
         let (fwd, neu, elems') := evacuateYoungArray fuel old fwd neu elems 0 #[]
         (fwd, neu, .list elems')
+      | .map entries =>
+        let (fwd, neu, entries') := evacuateYoungEntries fuel old fwd neu entries 0 #[]
+        (fwd, neu, .map entries')
   termination_by fuel
 
   def evacuateYoungArray (fuel : Nat) (old : Heap) (fwd : Fwd) (neu : Array Node)
@@ -447,6 +602,21 @@ mutual
       if hlt : i < elems.size then
         let (fwd, neu, v) := evacuateYoungValue fuel old fwd neu (elems[i]'hlt)
         evacuateYoungArray fuel old fwd neu elems (i + 1) (acc.push v)
+      else
+        (fwd, neu, acc)
+  termination_by fuel
+
+  def evacuateYoungEntries (fuel : Nat) (old : Heap) (fwd : Fwd) (neu : Array Node)
+      (entries : Array (Value × Value)) (i : Nat) (acc : Array (Value × Value)) :
+      Fwd × Array Node × Array (Value × Value) :=
+    match fuel with
+    | 0 => (fwd, neu, acc)
+    | fuel + 1 =>
+      if hlt : i < entries.size then
+        let (k, v) := entries[i]'hlt
+        let (fwd, neu, k') := evacuateYoungValue fuel old fwd neu k
+        let (fwd, neu, v') := evacuateYoungValue fuel old fwd neu v
+        evacuateYoungEntries fuel old fwd neu entries (i + 1) (acc.push (k', v'))
       else
         (fwd, neu, acc)
   termination_by fuel
@@ -467,6 +637,7 @@ def tagOf (h : Heap) (v : Value) : Tag :=
     match Heap.get? h r with
     | some (.tuple _) => .tuple
     | some (.list _) => .list
+    | some (.map _) => .map
     | none => .nil
 
 end Value

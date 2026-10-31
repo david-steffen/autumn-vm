@@ -1,0 +1,105 @@
+{
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 0,
+      "code": [
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 0
+        },
+        {
+          "dest": 1,
+          "empty": 12,
+          "index": 0,
+          "op": "recv_peek"
+        },
+        {
+          "lit": {
+            "atom": "never"
+          },
+          "op": "jump_if_eq",
+          "reg": 1,
+          "target": 4
+        },
+        {
+          "op": "jump",
+          "target": 8
+        },
+        {
+          "index": 0,
+          "op": "recv_drop"
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 3
+        },
+        {
+          "dest": 2,
+          "op": "move",
+          "src": 3
+        },
+        {
+          "op": "jump",
+          "target": 15
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 4
+        },
+        {
+          "args": [
+            0,
+            4
+          ],
+          "dest": 5,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "dest": 0,
+          "op": "move",
+          "src": 5
+        },
+        {
+          "op": "jump",
+          "target": 1
+        },
+        {
+          "after": 13,
+          "op": "wait",
+          "retry": 1,
+          "timeout": 0
+        },
+        {
+          "lit": {
+            "int": 11
+          },
+          "op": "load_lit",
+          "reg": 6
+        },
+        {
+          "dest": 2,
+          "op": "move",
+          "src": 6
+        },
+        {
+          "op": "return",
+          "reg": 2
+        }
+      ],
+      "locals": 7,
+      "name": "Main.main/0"
+    }
+  ],
+  "version": 7
+}

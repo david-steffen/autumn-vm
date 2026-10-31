@@ -1,4 +1,5 @@
 import Autumn.State
+import Autumn.Process
 import Autumn.Step
 import Autumn.Examples
 
@@ -18,6 +19,7 @@ def tinyProcessWith (capacity youngCapacity : Nat) : Process where
   status := .runnable
   result := none
   heap := Heap.empty capacity youngCapacity
+  handlers := #[]
 
 /-- Tiny-heap process used to force collections via `allocNode`. -/
 def tinyProcess : Process := tinyProcessWith 2 2
@@ -61,7 +63,7 @@ def retainUntilMajor (n : Nat) : Nat × Nat × Nat × Bool :=
       p := { p1 with mailbox := p1.mailbox.push (.ref r) }
     let mut ok := true
     for i in [0:n] do
-      if p.heap.toTerm p.mailbox[i]! != .tuple #[.int i] then ok := false
+      if Heap.toTerm' p.heap p.mailbox[i]! != .tuple #[.int i] then ok := false
     pure (p.heap.minorCount, p.heap.gcCount, p.mailbox.size, ok)
 
 /-- Both generations get exercised: minors promote retained roots into old, and the
@@ -82,46 +84,64 @@ def nestedTerm : Term :=
     .tuple #[.list #[.int 4], .tuple #[.int 5, .bool true]]]
 
 /-- Nested `allocTerm` under a tiny heap: GC fires mid-build, the term must still
-materialize identically via `toTerm` (children parked on the mailbox). -/
+materialize identically via fueled `toTerm'` (children parked on the mailbox). -/
 def nestedAllocRoundtrip : Nat × Nat × Bool × Bool :=
   let (p, v) := Process.allocTerm tinyProcess nestedTerm
-  (p.heap.minorCount, p.heap.gcCount, p.mailbox.isEmpty, p.heap.toTerm v == nestedTerm)
+  (p.heap.minorCount, p.heap.gcCount, p.mailbox.isEmpty, Heap.toTerm' p.heap v == nestedTerm)
 
 /-- Same, but a tiny nursery with roomy total heap (minor-only collections). -/
 def nestedAllocRoundtripMinor : Nat × Nat × Bool × Bool :=
   let (p, v) := Process.allocTerm (tinyProcessWith 64 2) nestedTerm
-  (p.heap.minorCount, p.heap.gcCount, p.mailbox.isEmpty, p.heap.toTerm v == nestedTerm)
+  (p.heap.minorCount, p.heap.gcCount, p.mailbox.isEmpty, Heap.toTerm' p.heap v == nestedTerm)
 
 /-- Alloc nested term, then force one more explicit GC with the value rooted in the
-mailbox; `toTerm` of the evacuated root must agree with the original term. -/
+mailbox; fueled materialization of the evacuated root must agree with the original. -/
 def nestedGcPreservesToTerm : Bool :=
   let (p, v) := Process.allocTerm tinyProcess nestedTerm
+  let before := Heap.toTerm' p.heap v
   let p := { p with mailbox := #[v] }
   let p := Process.gc p
-  p.heap.toTerm p.mailbox[0]! == nestedTerm
+  Heap.toTerm' p.heap p.mailbox[0]! == before && before == nestedTerm
 
-/-- Explicit minor GC with the nested value rooted: promoted into old, `toTerm` agrees. -/
+/-- Explicit minor GC with the nested value rooted: promoted into old, `toTerm'` agrees. -/
 def nestedMinorPreservesToTerm : Bool :=
   let (p, v) := Process.allocTerm (tinyProcessWith 64 2) nestedTerm
+  let before := Heap.toTerm' p.heap v
   let p := { p with mailbox := #[v] }
-  let before := p.heap.minorCount
+  let mc := p.heap.minorCount
   let p := Process.minorGc p
-  p.heap.minorCount == before + 1 && p.heap.oldSize == p.heap.nodes.size &&
-    p.heap.toTerm p.mailbox[0]! == nestedTerm
+  p.heap.minorCount == mc + 1 && p.heap.oldSize == p.heap.nodes.size &&
+    Heap.toTerm' p.heap p.mailbox[0]! == before && before == nestedTerm
 
 /-- Explicit major GC with the nested value rooted. -/
 def nestedMajorPreservesToTerm : Bool :=
   let (p, v) := Process.allocTerm (tinyProcessWith 64 2) nestedTerm
+  let before := Heap.toTerm' p.heap v
   let p := { p with mailbox := #[v] }
-  let before := p.heap.gcCount
+  let gc0 := p.heap.gcCount
   let p := Process.majorGc p
-  p.heap.gcCount == before + 1 && p.heap.toTerm p.mailbox[0]! == nestedTerm
+  p.heap.gcCount == gc0 + 1 &&
+    Heap.toTerm' p.heap p.mailbox[0]! == before && before == nestedTerm
+
+/-- Map literal rooted across a major GC: fueled materialization agrees. -/
+def mapMajorPreservesToTerm : Bool :=
+  let t : Term := .map #[(.atom "a", .int 3), (.atom "b", .list #[.int 1, .int 2])]
+  let (p, v) := Process.allocTerm (tinyProcessWith 64 2) t
+  let before := Heap.toTerm' p.heap v
+  let p := { p with mailbox := #[v] }
+  let p := Process.majorGc p
+  Heap.toTerm' p.heap p.mailbox[0]! == before && before == t
 
 #eval nestedAllocRoundtrip
 #eval nestedAllocRoundtripMinor
 #eval nestedGcPreservesToTerm
 #eval nestedMinorPreservesToTerm
 #eval nestedMajorPreservesToTerm
+#eval mapMajorPreservesToTerm
+#guard nestedGcPreservesToTerm
+#guard nestedMinorPreservesToTerm
+#guard nestedMajorPreservesToTerm
+#guard mapMajorPreservesToTerm
 
 /-- Same program as `add_main` but with a tiny heap (exercises GC during run). -/
 def runAddMainTinyHeap : Except StepError Term :=

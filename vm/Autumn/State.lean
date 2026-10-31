@@ -1,330 +1,7 @@
-import Autumn.Instr
-import Autumn.Heap
+import Autumn.StateTypes
+import Autumn.Process
 
 namespace Autumn
-
-structure Frame where
-  function : Function
-  regs : Array Value
-  ip : Nat
-  retDest : Reg
-  deriving Repr, Inhabited
-
-inductive ProcStatus where
-  | runnable
-  | waiting
-  | exited
-  deriving Repr, BEq, Inhabited
-
-structure Process where
-  pid : Nat
-  stack : Array Frame
-  mailbox : Array Value
-  status : ProcStatus
-  /-- Set when this process's root frame returns/halts. -/
-  result : Option Value
-  heap : Heap
-  deriving Repr, Inhabited
-
-/-- Whole-machine state: cooperative multi-process VM. -/
-structure State where
-  module : Module
-  processes : Array Process
-  /-- Index into `processes` of the currently running process (if any). -/
-  current : Nat
-  /-- Reductions left before forced yield. -/
-  reductions : Nat
-  /-- Entry process pid (machine result comes from this process). -/
-  entryPid : Nat
-  /-- Machine-level result (materialized `Term`) once the entry process has exited. -/
-  result : Option Term
-  nextPid : Nat
-  deriving Repr, Inhabited
-
-inductive StepError where
-  | emptyStack
-  | unknownFunction (name : FunName)
-  | badArity (name : FunName) (expected got : Nat)
-  | badRegister (reg : Reg) (locals : Nat)
-  | badIp (ip : Nat) (size : Nat)
-  | typeError (msg : String)
-  | decodeError (msg : String)
-  | badPid (id : Nat)
-  | noRunnable
-  deriving Repr, Inhabited
-
-namespace StepError
-
-def toString : StepError → String
-  | .emptyStack => "empty call stack"
-  | .unknownFunction name => s!"unknown function: {name}"
-  | .badArity name expected got =>
-      s!"bad arity for {name}: expected {expected}, got {got}"
-  | .badRegister reg locals =>
-      s!"register r{reg} out of range (locals={locals})"
-  | .badIp ip size => s!"instruction pointer {ip} out of range (size={size})"
-  | .typeError msg => s!"type error: {msg}"
-  | .decodeError msg => s!"decode error: {msg}"
-  | .badPid id => s!"bad pid: {id}"
-  | .noRunnable => "no runnable process"
-
-instance : ToString StepError where
-  toString := StepError.toString
-
-end StepError
-
-namespace Process
-
-/-- Flatten GC roots: all frame registers, mailbox, optional result. -/
-def collectRoots (p : Process) : Array Value :=
-  let fromStack := p.stack.foldl (fun acc f => acc ++ f.regs) (#[] : Array Value)
-  let withMb := fromStack ++ p.mailbox
-  match p.result with
-  | some v => withMb.push v
-  | none => withMb
-
-/-- Evacuator for one value: forward table, to-space, value ↦ updated triple. -/
-abbrev Evac := Heap.Fwd → Array Node → Value → Heap.Fwd × Array Node × Value
-
-/-- Evacuate one value array through a shared forward-table / to-space. -/
-def evacuateVals.go (ev : Evac) (vals : Array Value)
-    (i : Nat) (fwd : Heap.Fwd) (neu : Array Node) (acc : Array Value) :
-    Heap.Fwd × Array Node × Array Value :=
-  if hlt : i < vals.size then
-    let (fwd, neu, v') := ev fwd neu (vals[i]'hlt)
-    evacuateVals.go ev vals (i + 1) fwd neu (acc.push v')
-  else
-    (fwd, neu, acc)
-termination_by vals.size - i
-
-def evacuateVals (ev : Evac) (fwd : Heap.Fwd) (neu : Array Node)
-    (vals : Array Value) : Heap.Fwd × Array Node × Array Value :=
-  evacuateVals.go ev vals 0 fwd neu #[]
-
-def evacuateFrame (ev : Evac) (fwd : Heap.Fwd) (neu : Array Node)
-    (frame : Frame) : Heap.Fwd × Array Node × Frame :=
-  let (fwd, neu, regs) := evacuateVals ev fwd neu frame.regs
-  (fwd, neu, { frame with regs })
-
-def evacuateStack.go (ev : Evac) (stack : Array Frame)
-    (i : Nat) (fwd : Heap.Fwd) (neu : Array Node) (acc : Array Frame) :
-    Heap.Fwd × Array Node × Array Frame :=
-  if hlt : i < stack.size then
-    let (fwd, neu, f') := evacuateFrame ev fwd neu (stack[i]'hlt)
-    evacuateStack.go ev stack (i + 1) fwd neu (acc.push f')
-  else
-    (fwd, neu, acc)
-termination_by stack.size - i
-
-/-- Rewrite every root of `p` through `ev` (stack regs, mailbox, result), then
-sanitize. Shared by minor and major GC; they differ only in `ev` / initial to-space.
-Returns `(to-space, stack, mailbox, result)`. -/
-def collectWith (ev : Evac) (fwd0 : Heap.Fwd) (neu0 : Array Node) (p : Process) :
-    Array Node × Array Frame × Array Value × Option Value :=
-  let r1 := evacuateStack.go ev p.stack 0 fwd0 neu0 #[]
-  let r2 := evacuateVals ev r1.1 r1.2.1 p.mailbox
-  let r3 : Array Node × Option Value :=
-    match p.result with
-    | none => (r2.2.1, none)
-    | some v =>
-      let r := ev r2.1 r2.2.1 v
-      (r.2.1, some r.2.2)
-  let neu := Heap.sanitizeNodes r3.1
-  let sanitizeV := Heap.sanitizeValue neu.size
-  (neu,
-   r1.2.2.map (fun f => { f with regs := f.regs.map sanitizeV }),
-   r2.2.2.map sanitizeV,
-   r3.2.map sanitizeV)
-
-/-- Install a collected to-space: everything in `neu` is old, young is empty.
-Total capacity never shrinks and always covers `neu`; `want c.1.size` lets a
-collection ask for headroom (major GC does, minor GC does not). -/
-def commitCollect (p : Process)
-    (c : Array Node × Array Frame × Array Value × Option Value)
-    (gcCount minorCount : Nat) (want : Nat → Nat) : Process :=
-  let cap := max p.heap.capacity (max (want c.1.size) (max c.1.size 1))
-  { p with
-    heap :=
-      { nodes := c.1
-        oldSize := c.1.size
-        youngCapacity := p.heap.youngCapacity
-        capacity := cap
-        gcCount
-        minorCount }
-    stack := c.2.1
-    mailbox := c.2.2.1
-    result := c.2.2.2 }
-
-/-- Minor GC: evacuate young objects reachable from roots; promote into old.
-Old refs are leaves (old prefix is kept verbatim at the front of the to-space). -/
-def minorGc (p : Process) : Process :=
-  let h := p.heap
-  let fuel := Heap.evacuateFuel h.nodes.size
-  commitCollect p
-    (collectWith (Heap.evacuateYoungValue fuel h)
-      (Array.replicate h.nodes.size none) (h.nodes.extract 0 h.oldSize) p)
-    h.gcCount (h.minorCount + 1) (fun _ => 0)
-
-/-- Major GC: full-heap Cheney; result is entirely old generation. -/
-def majorGc (p : Process) : Process :=
-  let h := p.heap
-  let fuel := Heap.evacuateFuel h.nodes.size
-  commitCollect p
-    (collectWith (Heap.evacuateValue fuel h)
-      (Array.replicate h.nodes.size none) #[] p)
-    (h.gcCount + 1) h.minorCount (fun n => max (n * 2) (n + h.youngCapacity))
-
-/-- Alloc-failure GC: minor first (promote survivors); if old can no longer hold a
-full nursery (`nodes.size + youngCapacity > capacity`, or young still full), major. -/
-def gc (p : Process) : Process :=
-  let p := minorGc p
-  if p.heap.youngSize >= p.heap.youngCapacity ||
-      p.heap.nodes.size >= p.heap.capacity ||
-      p.heap.nodes.size + p.heap.youngCapacity > p.heap.capacity then
-    majorGc p
-  else
-    p
-
-/-- Grow total capacity (and young room if needed) then force-alloc. -/
-def growAlloc (p : Process) (n : Node) : Process × Ref :=
-  let cap := max (p.heap.capacity * 2) (p.heap.nodes.size + 1)
-  let ycap := max p.heap.youngCapacity (p.heap.youngSize + 1)
-  let h := { p.heap with capacity := cap, youngCapacity := ycap }
-  let (h, r) := h.allocForce n
-  ({ p with heap := h }, r)
-
-/-- Allocate a node; minor → major → grow if young/total is full.
-Prefer `allocCompound` when the node embeds child refs that must survive GC. -/
-def allocNode (p : Process) (n : Node) : Process × Ref :=
-  match p.heap.alloc? n with
-  | some (h, r) => ({ p with heap := h }, r)
-  | none =>
-    let p := gc p
-    match p.heap.alloc? n with
-    | some (h, r) => ({ p with heap := h }, r)
-    | none => growAlloc p n
-
-/-- Park `temps` as mailbox roots for the duration of `k`, then restore length. -/
-def withTempRoots (p : Process) (temps : Array Value)
-    (k : Process → Process × Value) : Process × Value :=
-  let mb0 := p.mailbox.size
-  let p := { p with mailbox := p.mailbox ++ temps }
-  let (p, v) := k p
-  let p := { p with mailbox := p.mailbox.extract 0 mb0 }
-  (p, v)
-
-/-- Install allocated heap and sanitize so `Heap.WF` holds even if fuel truncated.
-Does not inflate capacity/youngCapacity (only covers `nodes.size`). -/
-def installHeap (p : Process) (h0 : Heap) : Process :=
-  let neu := Heap.sanitizeNodes h0.nodes
-  let h : Heap :=
-    { nodes := neu
-      oldSize := min h0.oldSize neu.size
-      youngCapacity := h0.youngCapacity
-      capacity := max h0.capacity (max neu.size 1)
-      gcCount := h0.gcCount
-      minorCount := h0.minorCount }
-  { p with heap := h }
-
-/-- Allocate a compound node whose children are `vs`.
-Children are parked on the mailbox so Cheney rewrites them; after GC the node is
-**rebuilt from the live mailbox suffix** (never from stale pre-GC `vs`). -/
-def allocCompound (p : Process) (mk : Array Value → Node) (vs : Array Value) :
-    Process × Value :=
-  let mb0 := p.mailbox.size
-  let p := { p with mailbox := p.mailbox ++ vs }
-  let vsLive := p.mailbox.extract mb0 p.mailbox.size
-  let (p, v) :=
-    match p.heap.alloc? (mk vsLive) with
-    | some (h, r) =>
-      let p := installHeap p h
-      (p, Heap.sanitizeValue p.heap.nodes.size (.ref r))
-    | none =>
-      let p := gc p
-      let vsLive := p.mailbox.extract mb0 p.mailbox.size
-      match p.heap.alloc? (mk vsLive) with
-      | some (h, r) =>
-        let p := installHeap p h
-        (p, Heap.sanitizeValue p.heap.nodes.size (.ref r))
-      | none =>
-        let (p, r) := growAlloc p (mk vsLive)
-        let p := installHeap p p.heap
-        (p, Heap.sanitizeValue p.heap.nodes.size (.ref r))
-  ({ p with mailbox := p.mailbox.extract 0 mb0 }, v)
-
--- Allocate an IR term; compound nodes go through `allocCompound` (GC-safe).
-mutual
-  def allocTermFuel (fuel : Nat) (p : Process) (t : Term) : Process × Value :=
-    match fuel with
-    | 0 => (p, .nil)
-    | fuel + 1 =>
-      match t with
-      | .nil => (p, .nil)
-      | .bool b => (p, .bool b)
-      | .int n => (p, .int n)
-      | .atom s => (p, .atom s)
-      | .pid id => (p, .pid id)
-      | .tuple elems =>
-        let (p, vs) := allocTermArrayFuel fuel p elems 0 #[]
-        allocCompound p Node.tuple vs
-      | .list elems =>
-        let (p, vs) := allocTermArrayFuel fuel p elems 0 #[]
-        allocCompound p Node.list vs
-  termination_by fuel
-
-  def allocTermArrayFuel (fuel : Nat) (p : Process) (elems : Array Term) (i : Nat)
-      (acc : Array Value) : Process × Array Value :=
-    match fuel with
-    | 0 => (p, acc)
-    | fuel + 1 =>
-      if hlt : i < elems.size then
-        -- Park already-built siblings so a GC inside the next child cannot
-        -- invalidate refs held only in `acc`.
-        let mb0 := p.mailbox.size
-        let p := { p with mailbox := p.mailbox ++ acc }
-        let (p, v) := allocTermFuel fuel p (elems[i]'hlt)
-        let acc' := p.mailbox.extract mb0 p.mailbox.size
-        let p := { p with mailbox := p.mailbox.extract 0 mb0 }
-        allocTermArrayFuel fuel p elems (i + 1) (acc'.push v)
-      else
-        (p, acc)
-  termination_by fuel
-end
-
-def allocTerm (p : Process) (t : Term) : Process × Value :=
-  allocTermFuel (Heap.termFuel t + 1) p t
-
-def allocTermArray (p : Process) (elems : Array Term) (i : Nat)
-    (acc : Array Value) : Process × Array Value :=
-  allocTermArrayFuel (elems.foldl (fun n e => n + Heap.termFuel e) 1) p elems i acc
-/-- Copy values from another heap into this process (may grow; no GC of src).
-Sanitize so destination heap WF holds even if copy fuel truncates. -/
-def copyFrom (p : Process) (src : Heap) (v : Value) : Process × Value :=
-  let (h0, v0) := Heap.copyValue src p.heap v
-  let neu := Heap.sanitizeNodes h0.nodes
-  let h : Heap :=
-    { nodes := neu
-      oldSize := min h0.oldSize neu.size
-      youngCapacity := h0.youngCapacity
-      capacity := max h0.capacity (max neu.size 1)
-      gcCount := h0.gcCount
-      minorCount := h0.minorCount }
-  let v' := Heap.sanitizeValue neu.size v0
-  ({ p with heap := h }, v')
-
-def copyArrayFrom.go (p : Process) (src : Heap) (vs : Array Value) (i : Nat)
-    (acc : Array Value) : Process × Array Value :=
-  if hlt : i < vs.size then
-    let (p, v') := copyFrom p src (vs[i]'hlt)
-    copyArrayFrom.go p src vs (i + 1) (acc.push v')
-  else
-    (p, acc)
-termination_by vs.size - i
-
-def copyArrayFrom (p : Process) (src : Heap) (vs : Array Value) : Process × Array Value :=
-  copyArrayFrom.go p src vs 0 (Array.mkEmpty vs.size)
-
-end Process
 
 namespace State
 
@@ -364,6 +41,39 @@ def setCurrentProcess (s : State) (p : Process) : State :=
 def findProcessIdx (s : State) (pid : Nat) : Option Nat :=
   s.processes.findIdx? (fun p => p.pid == pid)
 
+/-- Drop `pid` from a links array. -/
+def unlinkPid (links : Array Nat) (pid : Nat) : Array Nat :=
+  links.filter (fun id => id != pid)
+
+/-- True if `pid` is already in `links`. -/
+def hasLink (links : Array Nat) (pid : Nat) : Bool :=
+  links.any (fun id => id == pid)
+
+/-- Bidirectional link between the current process and `otherPid`. -/
+def linkWith (s : State) (otherPid : Nat) : Except StepError State :=
+  match s.findProcessIdx otherPid with
+  | none => .error (.badPid otherPid)
+  | some idx =>
+    if ¬(s.current < s.processes.size) then
+      .error .noRunnable
+    else
+      let cur0 := s.processes[s.current]!
+      if otherPid == cur0.pid then
+        .ok s
+      else
+        let other0 := s.processes[idx]!
+        if other0.status == .exited then
+          .error (.typeError "link to exited process")
+        else
+          let curLinks :=
+            if hasLink cur0.links otherPid then cur0.links else cur0.links.push otherPid
+          let otherLinks :=
+            if hasLink other0.links cur0.pid then other0.links else other0.links.push cur0.pid
+          let cur := { cur0 with links := curLinks }
+          let other := { other0 with links := otherLinks }
+          let s := s.setCurrentProcess cur
+          .ok { s with processes := s.processes.setIfInBounds idx other }
+
 def setCurrentFrame (p : Process) (f : Frame) : Process :=
   if h : 0 < p.stack.size then
     { p with stack := p.stack.set (p.stack.size - 1) f (Nat.sub_one_lt_of_lt h) }
@@ -389,6 +99,7 @@ def initial (m : Module) (heapCapacity : Nat := defaultHeapCapacity) :
     status := .runnable
     result := none
     heap := Heap.empty heapCapacity
+    handlers := #[]
   }
   pure {
     module := m
@@ -398,7 +109,95 @@ def initial (m : Module) (heapCapacity : Nat := defaultHeapCapacity) :
     entryPid := 0
     result := none
     nextPid := 1
+    clock := 0
   }
+
+def clearWait (p : Process) : Process :=
+  { p with waitDeadline := none }
+
+/-- Wake a waiting process after `send`. Leaves IP on `wait`/`recv` so the
+instruction re-runs (`wait` jumps to `retry` when the mailbox is non-empty). -/
+def wakeOnMessage (p : Process) : Process :=
+  match p.status with
+  | .waiting => { clearWait p with status := .runnable }
+  | _ => clearWait p
+
+/-- Deliver one `{:EXIT, fromPid, reason}` notification to `peerPid`, if present and alive. -/
+def notifyExitPeer (s : State) (fromPid : Nat) (heap : Heap) (reason : Value)
+    (peerPid : Nat) : State :=
+  match s.findProcessIdx peerPid with
+  | none => s
+  | some idx =>
+    if hpeer : idx < s.processes.size then
+      let peer0 := s.processes[idx]'hpeer
+      if peer0.status == .exited then
+        s
+      else
+        let peer0 := { peer0 with links := unlinkPid peer0.links fromPid }
+        let (peer0, reason') := peer0.copyFrom heap reason
+        let (peer0, msg) :=
+          Process.allocCompound peer0 Node.tuple
+            #[.atom "EXIT", .pid fromPid, reason']
+        let peer1 := { peer0 with mailbox := peer0.mailbox.push msg }
+        let peer :=
+          if peer0.status == .waiting then wakeOnMessage peer1 else peer1
+        { s with processes := s.processes.set idx peer hpeer }
+    else
+      s
+
+/-- Fold `notifyExitPeer` over a peer-pid list (proof-friendly form of the old `for` loop). -/
+def propagateExit.go (s : State) (fromPid : Nat) (heap : Heap) (reason : Value) :
+    List Nat → State
+  | [] => s
+  | peerPid :: rest =>
+    propagateExit.go (notifyExitPeer s fromPid heap reason peerPid) fromPid heap reason rest
+
+/--
+Notify linked peers that the process at `exitedIdx` has exited with `reason`.
+The exited process must already be stored at `exitedIdx` with its exit `result`.
+Peers receive `{:EXIT, from_pid, reason}` (copied into their heap) and are woken;
+links are cleared both ways. Teaching subset: peers always trap EXIT (mailbox only).
+-/
+def propagateExit (s : State) (exitedIdx : Nat) (reason : Value) : State :=
+  if hlt : exitedIdx < s.processes.size then
+    let exited0 := s.processes[exitedIdx]'hlt
+    let fromPid := exited0.pid
+    let linkPids := exited0.links
+    let heap := exited0.heap
+    let exited := { exited0 with links := #[] }
+    let s := { s with processes := s.processes.set exitedIdx exited hlt }
+    propagateExit.go s fromPid heap reason linkPids.toList
+  else
+    s
+
+/-- Wake a waiting process after a timeout deadline. Leaves IP on `wait` and
+keeps `waitDeadline` so `wait` jumps to its `after` label. -/
+def wakeOnTimeout (p : Process) : Process :=
+  match p.status with
+  | .waiting => { p with status := .runnable }
+  | _ => p
+
+/-- Wake every waiting process whose deadline is ≤ `clock`. -/
+def wakeExpired (procs : Array Process) (clock : Nat) : Array Process :=
+  procs.map fun p =>
+    match p.status, p.waitDeadline with
+    | .waiting, some d =>
+      if d ≤ clock then wakeOnTimeout p else p
+    | _, _ => p
+
+/-- Earliest finite wait deadline among waiting processes, if any. -/
+def nextDeadline (procs : Array Process) : Option Nat :=
+  Id.run do
+    let mut best : Option Nat := none
+    for p in procs do
+      match p.status, p.waitDeadline with
+      | .waiting, some d =>
+        best :=
+          match best with
+          | none => some d
+          | some b => some (min b d)
+      | _, _ => pure ()
+    pure best
 
 /-- Look for a runnable process in the next `fuel` slots after `idx` (exclusive start). -/
 def findRunnable (procs : Array Process) (idx : Nat) : Nat → Option Nat
@@ -411,22 +210,40 @@ def findRunnable (procs : Array Process) (idx : Nat) : Nat → Option Nat
       if p.status == .runnable && p.result.isNone then some idx
       else findRunnable procs idx fuel
 
-/-- Round-robin: find next runnable process starting after `fromIdx`. -/
+/-- Round-robin: find next runnable process starting after `fromIdx`.
+Wakes timed-out waiters (advancing `clock` to the next deadline if needed). -/
 def scheduleNext (s : State) (fromIdx : Nat) : Except StepError State :=
   if s.processes.size = 0 then
     .error .noRunnable
   else
+    let procs := wakeExpired s.processes s.clock
+    let s := { s with processes := procs }
     match findRunnable s.processes fromIdx s.processes.size with
     | some idx =>
       .ok { s with current := idx, reductions := reductionBudget }
     | none =>
-      match s.processes.toList.find? (fun p => p.pid == s.entryPid) with
-      | some ep =>
-        match ep.result with
-        | some v =>
-          .ok { s with result := some (Heap.toTerm ep.heap v), reductions := reductionBudget }
+      match nextDeadline s.processes with
+      | some t =>
+        let s := { s with clock := max s.clock t, processes := wakeExpired s.processes (max s.clock t) }
+        match findRunnable s.processes fromIdx s.processes.size with
+        | some idx =>
+          .ok { s with current := idx, reductions := reductionBudget }
+        | none =>
+          match s.processes.toList.find? (fun p => p.pid == s.entryPid) with
+          | some ep =>
+            match ep.result with
+            | some v =>
+              .ok { s with result := some (Heap.toTerm ep.heap v), reductions := reductionBudget }
+            | none => .error .noRunnable
+          | none => .error .noRunnable
+      | none =>
+        match s.processes.toList.find? (fun p => p.pid == s.entryPid) with
+        | some ep =>
+          match ep.result with
+          | some v =>
+            .ok { s with result := some (Heap.toTerm ep.heap v), reductions := reductionBudget }
+          | none => .error .noRunnable
         | none => .error .noRunnable
-      | none => .error .noRunnable
 
 end State
 

@@ -1,0 +1,551 @@
+{
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 1,
+      "code": [
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 1
+        },
+        {
+          "dest": 2,
+          "empty": 67,
+          "index": 1,
+          "op": "recv_peek"
+        },
+        {
+          "lit": {
+            "atom": "add"
+          },
+          "op": "jump_if_eq",
+          "reg": 2,
+          "target": 4
+        },
+        {
+          "op": "jump",
+          "target": 37
+        },
+        {
+          "index": 1,
+          "op": "recv_drop"
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 4
+        },
+        {
+          "dest": 5,
+          "empty": 33,
+          "index": 4,
+          "op": "recv_peek"
+        },
+        {
+          "op": "jump",
+          "target": 9
+        },
+        {
+          "op": "jump",
+          "target": 29
+        },
+        {
+          "index": 4,
+          "op": "recv_drop"
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 7
+        },
+        {
+          "dest": 8,
+          "empty": 25,
+          "index": 7,
+          "op": "recv_peek"
+        },
+        {
+          "op": "jump",
+          "target": 14
+        },
+        {
+          "op": "jump",
+          "target": 21
+        },
+        {
+          "index": 7,
+          "op": "recv_drop"
+        },
+        {
+          "args": [
+            0,
+            5
+          ],
+          "dest": 10,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "msg": 10,
+          "op": "send",
+          "pid": 8
+        },
+        {
+          "args": [
+            0,
+            5
+          ],
+          "dest": 11,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "args": [
+            11
+          ],
+          "dest": 12,
+          "fun": "Main.server/1",
+          "op": "call"
+        },
+        {
+          "dest": 9,
+          "op": "move",
+          "src": 12
+        },
+        {
+          "op": "jump",
+          "target": 27
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 13
+        },
+        {
+          "args": [
+            7,
+            13
+          ],
+          "dest": 14,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "dest": 7,
+          "op": "move",
+          "src": 14
+        },
+        {
+          "op": "jump",
+          "target": 11
+        },
+        {
+          "after": 26,
+          "op": "wait",
+          "retry": 11,
+          "timeout": null
+        },
+        {
+          "lit": null,
+          "op": "load_lit",
+          "reg": 9
+        },
+        {
+          "dest": 6,
+          "op": "move",
+          "src": 9
+        },
+        {
+          "op": "jump",
+          "target": 35
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 15
+        },
+        {
+          "args": [
+            4,
+            15
+          ],
+          "dest": 16,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "dest": 4,
+          "op": "move",
+          "src": 16
+        },
+        {
+          "op": "jump",
+          "target": 6
+        },
+        {
+          "after": 34,
+          "op": "wait",
+          "retry": 6,
+          "timeout": null
+        },
+        {
+          "lit": null,
+          "op": "load_lit",
+          "reg": 6
+        },
+        {
+          "dest": 3,
+          "op": "move",
+          "src": 6
+        },
+        {
+          "op": "jump",
+          "target": 69
+        },
+        {
+          "lit": {
+            "atom": "get"
+          },
+          "op": "jump_if_eq",
+          "reg": 2,
+          "target": 39
+        },
+        {
+          "op": "jump",
+          "target": 57
+        },
+        {
+          "index": 1,
+          "op": "recv_drop"
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 17
+        },
+        {
+          "dest": 18,
+          "empty": 53,
+          "index": 17,
+          "op": "recv_peek"
+        },
+        {
+          "op": "jump",
+          "target": 44
+        },
+        {
+          "op": "jump",
+          "target": 49
+        },
+        {
+          "index": 17,
+          "op": "recv_drop"
+        },
+        {
+          "msg": 0,
+          "op": "send",
+          "pid": 18
+        },
+        {
+          "args": [
+            0
+          ],
+          "dest": 20,
+          "fun": "Main.server/1",
+          "op": "call"
+        },
+        {
+          "dest": 19,
+          "op": "move",
+          "src": 20
+        },
+        {
+          "op": "jump",
+          "target": 55
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 21
+        },
+        {
+          "args": [
+            17,
+            21
+          ],
+          "dest": 22,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "dest": 17,
+          "op": "move",
+          "src": 22
+        },
+        {
+          "op": "jump",
+          "target": 41
+        },
+        {
+          "after": 54,
+          "op": "wait",
+          "retry": 41,
+          "timeout": null
+        },
+        {
+          "lit": null,
+          "op": "load_lit",
+          "reg": 19
+        },
+        {
+          "dest": 3,
+          "op": "move",
+          "src": 19
+        },
+        {
+          "op": "jump",
+          "target": 69
+        },
+        {
+          "lit": {
+            "atom": "stop"
+          },
+          "op": "jump_if_eq",
+          "reg": 2,
+          "target": 59
+        },
+        {
+          "op": "jump",
+          "target": 63
+        },
+        {
+          "index": 1,
+          "op": "recv_drop"
+        },
+        {
+          "lit": {
+            "atom": "ok"
+          },
+          "op": "load_lit",
+          "reg": 23
+        },
+        {
+          "dest": 3,
+          "op": "move",
+          "src": 23
+        },
+        {
+          "op": "jump",
+          "target": 69
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 24
+        },
+        {
+          "args": [
+            1,
+            24
+          ],
+          "dest": 25,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "dest": 1,
+          "op": "move",
+          "src": 25
+        },
+        {
+          "op": "jump",
+          "target": 1
+        },
+        {
+          "after": 68,
+          "op": "wait",
+          "retry": 1,
+          "timeout": null
+        },
+        {
+          "lit": null,
+          "op": "load_lit",
+          "reg": 3
+        },
+        {
+          "op": "return",
+          "reg": 3
+        }
+      ],
+      "locals": 26,
+      "name": "Main.server/1"
+    },
+    {
+      "arity": 0,
+      "code": [
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 0
+        },
+        {
+          "args": [
+            0
+          ],
+          "dest": 1,
+          "fun": "Main.server/1",
+          "op": "spawn"
+        },
+        {
+          "args": [],
+          "dest": 2,
+          "fun": "self/0",
+          "op": "call"
+        },
+        {
+          "lit": {
+            "atom": "add"
+          },
+          "op": "load_lit",
+          "reg": 3
+        },
+        {
+          "msg": 3,
+          "op": "send",
+          "pid": 1
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 4
+        },
+        {
+          "msg": 4,
+          "op": "send",
+          "pid": 1
+        },
+        {
+          "msg": 2,
+          "op": "send",
+          "pid": 1
+        },
+        {
+          "dest": 5,
+          "op": "recv"
+        },
+        {
+          "lit": {
+            "atom": "add"
+          },
+          "op": "load_lit",
+          "reg": 6
+        },
+        {
+          "msg": 6,
+          "op": "send",
+          "pid": 1
+        },
+        {
+          "lit": {
+            "int": 2
+          },
+          "op": "load_lit",
+          "reg": 7
+        },
+        {
+          "msg": 7,
+          "op": "send",
+          "pid": 1
+        },
+        {
+          "msg": 2,
+          "op": "send",
+          "pid": 1
+        },
+        {
+          "dest": 8,
+          "op": "recv"
+        },
+        {
+          "lit": {
+            "atom": "get"
+          },
+          "op": "load_lit",
+          "reg": 9
+        },
+        {
+          "msg": 9,
+          "op": "send",
+          "pid": 1
+        },
+        {
+          "msg": 2,
+          "op": "send",
+          "pid": 1
+        },
+        {
+          "dest": 10,
+          "op": "recv"
+        },
+        {
+          "lit": {
+            "atom": "stop"
+          },
+          "op": "load_lit",
+          "reg": 11
+        },
+        {
+          "msg": 11,
+          "op": "send",
+          "pid": 1
+        },
+        {
+          "args": [
+            5,
+            8
+          ],
+          "dest": 12,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "args": [
+            12,
+            10
+          ],
+          "dest": 13,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "op": "return",
+          "reg": 13
+        }
+      ],
+      "locals": 14,
+      "name": "Main.main/0"
+    }
+  ],
+  "version": 7
+}

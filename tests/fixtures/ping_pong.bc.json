@@ -1,29 +1,67 @@
 {
-  "version": 2,
   "entry": "Main.main/0",
   "functions": [
     {
-      "name": "Main.pong/1",
       "arity": 1,
-      "locals": 3,
       "code": [
-        {"op": "recv", "dest": 1},
-        {"op": "send", "pid": 0, "msg": 1},
-        {"op": "return", "reg": 1}
-      ]
+        {
+          "dest": 1,
+          "op": "recv"
+        },
+        {
+          "msg": 1,
+          "op": "send",
+          "pid": 0
+        },
+        {
+          "op": "return",
+          "reg": 1
+        }
+      ],
+      "locals": 2,
+      "name": "Main.pong/1"
     },
     {
-      "name": "Main.main/0",
       "arity": 0,
-      "locals": 4,
       "code": [
-        {"op": "load_lit", "reg": 0, "lit": {"pid": 0}},
-        {"op": "spawn", "dest": 1, "fun": "Main.pong/1", "args": [0]},
-        {"op": "load_lit", "reg": 2, "lit": {"int": 42}},
-        {"op": "send", "pid": 1, "msg": 2},
-        {"op": "recv", "dest": 3},
-        {"op": "return", "reg": 3}
-      ]
+        {
+          "args": [],
+          "dest": 0,
+          "fun": "self/0",
+          "op": "call"
+        },
+        {
+          "args": [
+            0
+          ],
+          "dest": 1,
+          "fun": "Main.pong/1",
+          "op": "spawn"
+        },
+        {
+          "lit": {
+            "int": 42
+          },
+          "op": "load_lit",
+          "reg": 2
+        },
+        {
+          "msg": 2,
+          "op": "send",
+          "pid": 1
+        },
+        {
+          "dest": 3,
+          "op": "recv"
+        },
+        {
+          "op": "return",
+          "reg": 3
+        }
+      ],
+      "locals": 4,
+      "name": "Main.main/0"
     }
-  ]
+  ],
+  "version": 2
 }

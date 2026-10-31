@@ -29,4 +29,40 @@ def addMainModule : Module where
     }
   ]
 
+/-- Hand-built `try_rescue` module (same as tests/fixtures/try_rescue.bc.json). -/
+def tryRescueModule : Module where
+  version := 6
+  entry := "Main.main/0"
+  functions := #[
+    {
+      name := "Main.boom/0"
+      arity := 0
+      locals := 1
+      code := #[
+        .loadLit 0 (.atom "boom"),
+        .raise 0,
+        .return_ 0
+      ]
+    },
+    {
+      name := "Main.main/0"
+      arity := 0
+      locals := 4
+      code := #[
+        .enterTry 5 1,
+        .call 2 "Main.boom/0" #[],
+        .move 0 2,
+        .leaveTry,
+        .jump 11,
+        .jumpIfEq 7 1 (.atom "boom"),
+        .jump 10,
+        .loadLit 3 (.int 3),
+        .move 0 3,
+        .jump 11,
+        .raise 1,
+        .return_ 0
+      ]
+    }
+  ]
+
 end Autumn

@@ -30,7 +30,7 @@
         },
         {
           "op": "jump",
-          "target": 12
+          "target": 13
         },
         {
           "op": "jump",
@@ -63,19 +63,25 @@
         },
         {
           "op": "jump",
-          "target": 12
+          "target": 13
         },
         {
-          "lit": null,
+          "lit": {
+            "atom": "match_error"
+          },
           "op": "load_lit",
-          "reg": 1
+          "reg": 5
+        },
+        {
+          "op": "raise",
+          "reg": 5
         },
         {
           "op": "return",
           "reg": 1
         }
       ],
-      "locals": 5,
+      "locals": 6,
       "name": "Main.f/1"
     },
     {
@@ -129,5 +135,5 @@
       "name": "Main.main/0"
     }
   ],
-  "version": 2
+  "version": 6
 }

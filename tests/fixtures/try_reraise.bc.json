@@ -1,0 +1,143 @@
+{
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 0,
+      "code": [
+        {
+          "lit": {
+            "atom": "boom"
+          },
+          "op": "load_lit",
+          "reg": 0
+        },
+        {
+          "op": "raise",
+          "reg": 0
+        },
+        {
+          "op": "return",
+          "reg": 0
+        }
+      ],
+      "locals": 1,
+      "name": "Main.boom/0"
+    },
+    {
+      "arity": 0,
+      "code": [
+        {
+          "exc": 1,
+          "op": "enter_try",
+          "rescue": 15
+        },
+        {
+          "exc": 3,
+          "op": "enter_try",
+          "rescue": 6
+        },
+        {
+          "args": [],
+          "dest": 4,
+          "fun": "Main.boom/0",
+          "op": "call"
+        },
+        {
+          "dest": 2,
+          "op": "move",
+          "src": 4
+        },
+        {
+          "op": "leave_try"
+        },
+        {
+          "op": "jump",
+          "target": 12
+        },
+        {
+          "lit": {
+            "atom": "other"
+          },
+          "op": "jump_if_eq",
+          "reg": 3,
+          "target": 8
+        },
+        {
+          "op": "jump",
+          "target": 11
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 5
+        },
+        {
+          "dest": 2,
+          "op": "move",
+          "src": 5
+        },
+        {
+          "op": "jump",
+          "target": 12
+        },
+        {
+          "op": "raise",
+          "reg": 3
+        },
+        {
+          "dest": 0,
+          "op": "move",
+          "src": 2
+        },
+        {
+          "op": "leave_try"
+        },
+        {
+          "op": "jump",
+          "target": 21
+        },
+        {
+          "lit": {
+            "atom": "boom"
+          },
+          "op": "jump_if_eq",
+          "reg": 1,
+          "target": 17
+        },
+        {
+          "op": "jump",
+          "target": 20
+        },
+        {
+          "lit": {
+            "int": 9
+          },
+          "op": "load_lit",
+          "reg": 6
+        },
+        {
+          "dest": 0,
+          "op": "move",
+          "src": 6
+        },
+        {
+          "op": "jump",
+          "target": 21
+        },
+        {
+          "op": "raise",
+          "reg": 1
+        },
+        {
+          "op": "return",
+          "reg": 0
+        }
+      ],
+      "locals": 7,
+      "name": "Main.main/0"
+    }
+  ],
+  "version": 6
+}

@@ -1,0 +1,112 @@
+{
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 0,
+      "code": [
+        {
+          "exc": 1,
+          "op": "enter_try",
+          "rescue": 12
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 2
+        },
+        {
+          "lit": {
+            "int": 2
+          },
+          "op": "jump_if_eq",
+          "reg": 2,
+          "target": 4
+        },
+        {
+          "op": "jump",
+          "target": 7
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 4
+        },
+        {
+          "dest": 3,
+          "op": "move",
+          "src": 4
+        },
+        {
+          "op": "jump",
+          "target": 9
+        },
+        {
+          "lit": {
+            "atom": "match_error"
+          },
+          "op": "load_lit",
+          "reg": 5
+        },
+        {
+          "op": "raise",
+          "reg": 5
+        },
+        {
+          "dest": 0,
+          "op": "move",
+          "src": 3
+        },
+        {
+          "op": "leave_try"
+        },
+        {
+          "op": "jump",
+          "target": 18
+        },
+        {
+          "lit": {
+            "atom": "match_error"
+          },
+          "op": "jump_if_eq",
+          "reg": 1,
+          "target": 14
+        },
+        {
+          "op": "jump",
+          "target": 17
+        },
+        {
+          "lit": {
+            "int": 5
+          },
+          "op": "load_lit",
+          "reg": 6
+        },
+        {
+          "dest": 0,
+          "op": "move",
+          "src": 6
+        },
+        {
+          "op": "jump",
+          "target": 18
+        },
+        {
+          "op": "raise",
+          "reg": 1
+        },
+        {
+          "op": "return",
+          "reg": 0
+        }
+      ],
+      "locals": 7,
+      "name": "Main.main/0"
+    }
+  ],
+  "version": 6
+}

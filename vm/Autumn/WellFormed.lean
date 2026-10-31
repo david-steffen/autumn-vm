@@ -18,18 +18,29 @@ def regsOk (locals : Nat) : Instr → Bool
   | .jumpIfEq _ r _ => r < locals
   | .getTupleElem d t _ => d < locals && t < locals
   | .getListElem d t _ => d < locals && t < locals
+  | .getListRest d t _ => d < locals && t < locals
   | .isTag d r _ => d < locals && r < locals
   | .spawn d _ args => d < locals && args.all (· < locals)
   | .send p m => p < locals && m < locals
   | .recv d => d < locals
+  | .recvPeek d i _ => d < locals && i < locals
+  | .recvDrop i => i < locals
+  | .wait _ _ _ => true
+  | .enterTry _ exc => exc < locals
+  | .leaveTry => true
+  | .raise r => r < locals
+  | .link p => p < locals
 
 def jumpTargetOk (codeSize : Nat) : Instr → Bool
   | .jump t => t < codeSize
   | .jumpIfEq t _ _ => t < codeSize
+  | .enterTry t _ => t < codeSize
+  | .recvPeek _ _ empty => empty < codeSize
+  | .wait retry after _ => retry < codeSize && after < codeSize
   | _ => true
 
 def isTerminal : Instr → Bool
-  | .return_ _ | .halt _ => true
+  | .return_ _ | .halt _ | .raise _ => true
   | _ => false
 
 end Instr
@@ -78,7 +89,8 @@ def uniqueNames (m : Module) : Prop :=
     i ≠ j → m.functions[i].name ≠ m.functions[j].name
 
 def WF (m : Module) : Prop :=
-  (m.version = 1 ∨ m.version = 2 ∨ m.version = 3) ∧
+  (m.version = 1 ∨ m.version = 2 ∨ m.version = 3 ∨ m.version = 4 ∨ m.version = 5 ∨
+    m.version = 6 ∨ m.version = 7) ∧
   (m.findFunction m.entry).isSome ∧
   uniqueNames m ∧
   ∀ i : Fin m.functions.size, Function.WF m m.functions[i]
@@ -109,6 +121,9 @@ def valueBound (bound : Nat) : Value → Prop
 def nodeBound (bound : Nat) : Node → Prop
   | .tuple elems => ∀ i, (hi : i < elems.size) → valueBound bound (elems[i]'hi)
   | .list elems => ∀ i, (hi : i < elems.size) → valueBound bound (elems[i]'hi)
+  | .map entries =>
+    ∀ i, (hi : i < entries.size) →
+      valueBound bound (entries[i]'hi).1 ∧ valueBound bound (entries[i]'hi).2
 
 /-- Heap well-formedness: frontier in range, capacities positive, child refs in-range. -/
 def WF (h : Heap) : Prop :=
@@ -155,6 +170,9 @@ theorem nodeBound_mono {b₁ b₂ : Nat} (hle : b₁ ≤ b₂) (n : Node)
   | list elems =>
     intro i hi
     exact valueBound_mono hle _ (hb i hi)
+  | map entries =>
+    intro i hi
+    exact ⟨valueBound_mono hle _ (hb i hi).1, valueBound_mono hle _ (hb i hi).2⟩
 
 theorem empty_WF (cap : Nat) (hcap : 0 < cap) : WF (empty cap) := by
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
@@ -202,20 +220,30 @@ def rootsWF (h : Heap) (p : Process) : Prop :=
   | some v => Heap.valueWF h v
   | none => True
 
+/-- Handler indices are in range for the given stack (used by step lemmas, not `Process.WF`). -/
+def handlersWF (stack : Array Frame) (handlers : Array Handler) : Prop :=
+  ∀ i, (hi : i < handlers.size) →
+    let h := handlers[i]'hi
+    0 < h.stackDepth ∧ h.stackDepth ≤ stack.size ∧
+      h.rescueIp < (stack[h.stackDepth - 1]!).function.code.size ∧
+      h.excReg < (stack[h.stackDepth - 1]!).function.locals
+
 /--
 Process well-formedness: heap in-bounds, plus the classic stack/status rules.
 Root `valueWF` (`rootsWF`) is maintained by GC (`Process.gc_preserves_*`) and
 is available as a separate conjunct for observational theorems.
+Runnable/waiting processes also satisfy `handlersWF` (handler stack bounds).
+Exited processes must have an empty handler stack.
 -/
 def WF (m : Module) (p : Process) : Prop :=
   Heap.WF p.heap ∧
   match p.result with
-  | some _ => p.stack.size = 0 ∧ p.status = .exited
+  | some _ => p.stack.size = 0 ∧ p.status = .exited ∧ p.handlers = #[]
   | none =>
       match p.status with
       | .exited => False
       | .waiting | .runnable =>
-          p.stack.size > 0 ∧ stackWF m p.stack
+          p.stack.size > 0 ∧ stackWF m p.stack ∧ handlersWF p.stack p.handlers
 
 end Process
 

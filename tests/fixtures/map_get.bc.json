@@ -1,0 +1,64 @@
+{
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 0,
+      "code": [
+        {
+          "lit": {
+            "map": []
+          },
+          "op": "load_lit",
+          "reg": 0
+        },
+        {
+          "lit": {
+            "atom": "a"
+          },
+          "op": "load_lit",
+          "reg": 1
+        },
+        {
+          "lit": {
+            "int": 3
+          },
+          "op": "load_lit",
+          "reg": 2
+        },
+        {
+          "args": [
+            0,
+            1,
+            2
+          ],
+          "dest": 3,
+          "fun": "map_put/3",
+          "op": "call"
+        },
+        {
+          "lit": {
+            "atom": "a"
+          },
+          "op": "load_lit",
+          "reg": 4
+        },
+        {
+          "args": [
+            3,
+            4
+          ],
+          "dest": 5,
+          "fun": "map_get/2",
+          "op": "call"
+        },
+        {
+          "op": "return",
+          "reg": 5
+        }
+      ],
+      "locals": 6,
+      "name": "Main.main/0"
+    }
+  ],
+  "version": 5
+}

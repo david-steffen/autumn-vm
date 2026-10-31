@@ -84,7 +84,7 @@
         },
         {
           "op": "jump",
-          "target": 18
+          "target": 19
         },
         {
           "op": "jump",
@@ -108,21 +108,27 @@
         },
         {
           "op": "jump",
-          "target": 18
+          "target": 19
         },
         {
-          "lit": null,
+          "lit": {
+            "atom": "match_error"
+          },
           "op": "load_lit",
-          "reg": 1
+          "reg": 8
+        },
+        {
+          "op": "raise",
+          "reg": 8
         },
         {
           "op": "return",
           "reg": 1
         }
       ],
-      "locals": 8,
+      "locals": 9,
       "name": "Main.main/0"
     }
   ],
-  "version": 3
+  "version": 6
 }

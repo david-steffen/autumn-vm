@@ -1,0 +1,162 @@
+{
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 1,
+      "code": [
+        {
+          "dest": 2,
+          "op": "is_tag",
+          "reg": 0,
+          "tag": "map"
+        },
+        {
+          "lit": {
+            "bool": true
+          },
+          "op": "jump_if_eq",
+          "reg": 2,
+          "target": 3
+        },
+        {
+          "op": "jump",
+          "target": 11
+        },
+        {
+          "lit": {
+            "atom": "a"
+          },
+          "op": "load_lit",
+          "reg": 3
+        },
+        {
+          "args": [
+            0,
+            3
+          ],
+          "dest": 4,
+          "fun": "map_get/2",
+          "op": "call"
+        },
+        {
+          "op": "jump",
+          "target": 7
+        },
+        {
+          "op": "jump",
+          "target": 2
+        },
+        {
+          "lit": {
+            "atom": "a"
+          },
+          "op": "load_lit",
+          "reg": 5
+        },
+        {
+          "args": [
+            0,
+            5
+          ],
+          "dest": 6,
+          "fun": "map_get/2",
+          "op": "call"
+        },
+        {
+          "dest": 1,
+          "op": "move",
+          "src": 6
+        },
+        {
+          "op": "jump",
+          "target": 18
+        },
+        {
+          "op": "jump",
+          "target": 13
+        },
+        {
+          "op": "jump",
+          "target": 16
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 7
+        },
+        {
+          "dest": 1,
+          "op": "move",
+          "src": 7
+        },
+        {
+          "op": "jump",
+          "target": 18
+        },
+        {
+          "lit": {
+            "atom": "match_error"
+          },
+          "op": "load_lit",
+          "reg": 8
+        },
+        {
+          "op": "raise",
+          "reg": 8
+        },
+        {
+          "op": "return",
+          "reg": 1
+        }
+      ],
+      "locals": 9,
+      "name": "Main.get_a/1"
+    },
+    {
+      "arity": 0,
+      "code": [
+        {
+          "lit": {
+            "map": [
+              {
+                "key": {
+                  "atom": "a"
+                },
+                "value": {
+                  "int": 7
+                }
+              },
+              {
+                "key": {
+                  "atom": "b"
+                },
+                "value": {
+                  "int": 1
+                }
+              }
+            ]
+          },
+          "op": "load_lit",
+          "reg": 0
+        },
+        {
+          "args": [
+            0
+          ],
+          "dest": 1,
+          "fun": "Main.get_a/1",
+          "op": "call"
+        },
+        {
+          "op": "return",
+          "reg": 1
+        }
+      ],
+      "locals": 2,
+      "name": "Main.main/0"
+    }
+  ],
+  "version": 6
+}

@@ -13,6 +13,7 @@ def encodeTag : Tag → Json
   | .atom => "atom"
   | .tuple => "tuple"
   | .list => "list"
+  | .map => "map"
   | .pid => "pid"
 
 partial def encodeLit : Term → Json
@@ -22,6 +23,9 @@ partial def encodeLit : Term → Json
   | .atom s => Json.mkObj [("atom", s)]
   | .tuple elems => Json.mkObj [("tuple", Json.arr (elems.map encodeLit))]
   | .list elems => Json.mkObj [("list", Json.arr (elems.map encodeLit))]
+  | .map entries =>
+      Json.mkObj [("map", Json.arr (entries.map fun (k, v) =>
+        Json.mkObj [("key", encodeLit k), ("value", encodeLit v)]))]
   | .pid id => Json.mkObj [("pid", id)]
 
 def encodeInstr : Instr → Json
@@ -41,6 +45,8 @@ def encodeInstr : Instr → Json
       Json.mkObj [("op", "get_tuple_elem"), ("dest", d), ("tuple", t), ("index", i)]
   | .getListElem d t i =>
       Json.mkObj [("op", "get_list_elem"), ("dest", d), ("list", t), ("index", i)]
+  | .getListRest d t i =>
+      Json.mkObj [("op", "get_list_rest"), ("dest", d), ("list", t), ("index", i)]
   | .isTag d r tag =>
       Json.mkObj [("op", "is_tag"), ("dest", d), ("reg", r), ("tag", encodeTag tag)]
   | .spawn d f args =>
@@ -48,6 +54,21 @@ def encodeInstr : Instr → Json
         ("args", Json.arr (args.map (fun a => toJson a)))]
   | .send p m => Json.mkObj [("op", "send"), ("pid", p), ("msg", m)]
   | .recv d => Json.mkObj [("op", "recv"), ("dest", d)]
+  | .recvPeek d i empty =>
+      Json.mkObj [("op", "recv_peek"), ("dest", d), ("index", i), ("empty", empty)]
+  | .recvDrop i => Json.mkObj [("op", "recv_drop"), ("index", i)]
+  | .wait retry after timeout =>
+      let base := [("op", Json.str "wait"), ("retry", toJson retry), ("after", toJson after)]
+      let fields :=
+        match timeout with
+        | none => base ++ [("timeout", Json.null)]
+        | some n => base ++ [("timeout", toJson n)]
+      Json.mkObj fields
+  | .enterTry rescueIp exc =>
+      Json.mkObj [("op", "enter_try"), ("rescue", rescueIp), ("exc", exc)]
+  | .leaveTry => Json.mkObj [("op", "leave_try")]
+  | .raise r => Json.mkObj [("op", "raise"), ("reg", r)]
+  | .link p => Json.mkObj [("op", "link"), ("pid", p)]
 
 def encodeFunction (f : Function) : Json :=
   Json.mkObj [

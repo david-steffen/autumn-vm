@@ -1,0 +1,331 @@
+{
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 1,
+      "code": [
+        {
+          "op": "jump",
+          "target": 2
+        },
+        {
+          "op": "jump",
+          "target": 17
+        },
+        {
+          "lit": {
+            "bool": false
+          },
+          "op": "load_lit",
+          "reg": 2
+        },
+        {
+          "dest": 4,
+          "op": "is_tag",
+          "reg": 0,
+          "tag": "int"
+        },
+        {
+          "lit": {
+            "bool": true
+          },
+          "op": "jump_if_eq",
+          "reg": 4,
+          "target": 6
+        },
+        {
+          "op": "jump",
+          "target": 10
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 5
+        },
+        {
+          "args": [
+            0,
+            5
+          ],
+          "dest": 6,
+          "fun": ">/2",
+          "op": "call"
+        },
+        {
+          "dest": 3,
+          "op": "move",
+          "src": 6
+        },
+        {
+          "op": "jump",
+          "target": 12
+        },
+        {
+          "dest": 3,
+          "op": "move",
+          "src": 2
+        },
+        {
+          "op": "jump",
+          "target": 12
+        },
+        {
+          "lit": {
+            "bool": true
+          },
+          "op": "jump_if_eq",
+          "reg": 3,
+          "target": 14
+        },
+        {
+          "op": "jump",
+          "target": 17
+        },
+        {
+          "lit": {
+            "atom": "pos"
+          },
+          "op": "load_lit",
+          "reg": 7
+        },
+        {
+          "dest": 1,
+          "op": "move",
+          "src": 7
+        },
+        {
+          "op": "jump",
+          "target": 41
+        },
+        {
+          "op": "jump",
+          "target": 19
+        },
+        {
+          "op": "jump",
+          "target": 34
+        },
+        {
+          "lit": {
+            "bool": false
+          },
+          "op": "load_lit",
+          "reg": 8
+        },
+        {
+          "dest": 10,
+          "op": "is_tag",
+          "reg": 0,
+          "tag": "int"
+        },
+        {
+          "lit": {
+            "bool": true
+          },
+          "op": "jump_if_eq",
+          "reg": 10,
+          "target": 23
+        },
+        {
+          "op": "jump",
+          "target": 27
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 11
+        },
+        {
+          "args": [
+            0,
+            11
+          ],
+          "dest": 12,
+          "fun": "</2",
+          "op": "call"
+        },
+        {
+          "dest": 9,
+          "op": "move",
+          "src": 12
+        },
+        {
+          "op": "jump",
+          "target": 29
+        },
+        {
+          "dest": 9,
+          "op": "move",
+          "src": 8
+        },
+        {
+          "op": "jump",
+          "target": 29
+        },
+        {
+          "lit": {
+            "bool": true
+          },
+          "op": "jump_if_eq",
+          "reg": 9,
+          "target": 31
+        },
+        {
+          "op": "jump",
+          "target": 34
+        },
+        {
+          "lit": {
+            "atom": "neg"
+          },
+          "op": "load_lit",
+          "reg": 13
+        },
+        {
+          "dest": 1,
+          "op": "move",
+          "src": 13
+        },
+        {
+          "op": "jump",
+          "target": 41
+        },
+        {
+          "op": "jump",
+          "target": 36
+        },
+        {
+          "op": "jump",
+          "target": 39
+        },
+        {
+          "lit": {
+            "atom": "other"
+          },
+          "op": "load_lit",
+          "reg": 14
+        },
+        {
+          "dest": 1,
+          "op": "move",
+          "src": 14
+        },
+        {
+          "op": "jump",
+          "target": 41
+        },
+        {
+          "lit": {
+            "atom": "match_error"
+          },
+          "op": "load_lit",
+          "reg": 15
+        },
+        {
+          "op": "raise",
+          "reg": 15
+        },
+        {
+          "op": "return",
+          "reg": 1
+        }
+      ],
+      "locals": 16,
+      "name": "Main.classify/1"
+    },
+    {
+      "arity": 0,
+      "code": [
+        {
+          "lit": {
+            "int": 3
+          },
+          "op": "load_lit",
+          "reg": 0
+        },
+        {
+          "args": [
+            0
+          ],
+          "dest": 1,
+          "fun": "Main.classify/1",
+          "op": "call"
+        },
+        {
+          "lit": {
+            "atom": "pos"
+          },
+          "op": "jump_if_eq",
+          "reg": 1,
+          "target": 4
+        },
+        {
+          "op": "jump",
+          "target": 7
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 3
+        },
+        {
+          "dest": 2,
+          "op": "move",
+          "src": 3
+        },
+        {
+          "op": "jump",
+          "target": 14
+        },
+        {
+          "op": "jump",
+          "target": 9
+        },
+        {
+          "op": "jump",
+          "target": 12
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 4
+        },
+        {
+          "dest": 2,
+          "op": "move",
+          "src": 4
+        },
+        {
+          "op": "jump",
+          "target": 14
+        },
+        {
+          "lit": {
+            "atom": "match_error"
+          },
+          "op": "load_lit",
+          "reg": 5
+        },
+        {
+          "op": "raise",
+          "reg": 5
+        },
+        {
+          "op": "return",
+          "reg": 2
+        }
+      ],
+      "locals": 6,
+      "name": "Main.main/0"
+    }
+  ],
+  "version": 6
+}

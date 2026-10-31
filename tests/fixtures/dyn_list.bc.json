@@ -1,0 +1,75 @@
+{
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 2,
+      "code": [
+        {
+          "args": [
+            0,
+            1
+          ],
+          "dest": 2,
+          "fun": "cons/2",
+          "op": "call"
+        },
+        {
+          "op": "return",
+          "reg": 2
+        }
+      ],
+      "locals": 3,
+      "name": "Main.prepend/2"
+    },
+    {
+      "arity": 0,
+      "code": [
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 0
+        },
+        {
+          "lit": {
+            "list": [
+              {
+                "int": 2
+              },
+              {
+                "int": 3
+              }
+            ]
+          },
+          "op": "load_lit",
+          "reg": 1
+        },
+        {
+          "args": [
+            0,
+            1
+          ],
+          "dest": 2,
+          "fun": "Main.prepend/2",
+          "op": "call"
+        },
+        {
+          "args": [
+            2
+          ],
+          "dest": 3,
+          "fun": "list_size/1",
+          "op": "call"
+        },
+        {
+          "op": "return",
+          "reg": 3
+        }
+      ],
+      "locals": 4,
+      "name": "Main.main/0"
+    }
+  ],
+  "version": 2
+}
