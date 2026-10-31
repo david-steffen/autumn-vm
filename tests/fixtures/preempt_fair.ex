@@ -13,13 +13,18 @@ defmodule Main do
 
   def main do
     h = spawn(:helper, [])
-    _ = spawn(:hog, [])
+    hog = spawn(:hog, [])
     me = self()
     _ = send(h, {me, :ping})
 
     case recv() do
-      :pong -> 1
-      _ -> 0
+      :pong ->
+        # Durable drain would otherwise never idle while `hog` runs forever.
+        _ = Process.exit(hog, :kill)
+        1
+
+      _ ->
+        0
     end
   end
 end

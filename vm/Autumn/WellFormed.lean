@@ -157,17 +157,23 @@ def uniqueModuleNames (m : Module) : Prop :=
 
 def versionOk (v : Nat) : Prop :=
   v = 1 ∨ v = 2 ∨ v = 3 ∨ v = 4 ∨ v = 5 ∨ v = 6 ∨ v = 7 ∨ v = 8 ∨ v = 9 ∨
-    v = 10 ∨ v = 11 ∨ v = 12 ∨ v = 13
+    v = 10 ∨ v = 11 ∨ v = 12 ∨ v = 13 ∨ v = 14
 
 def versionOkB (v : Nat) : Bool :=
-  (1 ≤ v) && (v ≤ 13)
+  (1 ≤ v) && (v ≤ 14)
 
 theorem versionOkB_sound (v : Nat) (h : versionOkB v = true) : versionOk v := by
   simp only [versionOkB, Bool.and_eq_true, decide_eq_true_eq] at h
   match v with
   | 0 => omega
-  | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 => simp [versionOk]
-  | n + 14 => omega
+  | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 => simp [versionOk]
+  | n + 15 => omega
+
+theorem versionOkB_complete (v : Nat) (h : versionOk v) : versionOkB v = true := by
+  simp only [versionOk] at h
+  simp only [versionOkB, Bool.and_eq_true, decide_eq_true_eq]
+  rcases h with
+    h | h | h | h | h | h | h | h | h | h | h | h | h | h <;> subst h <;> decide
 
 def uniqueFunNamesB (m : Module) : Bool :=
   (List.range m.allFunctions.size).all fun i =>
@@ -242,6 +248,12 @@ theorem findFunction_mem {m : Module} {name : FunName} {f : Function}
   rcases (List.find?_eq_some_iff_append).1 h with ⟨_, as, bs, heq, _⟩
   have : f ∈ as ++ f :: bs := List.mem_append.2 (Or.inr (List.mem_cons_self))
   exact heq ▸ this
+
+theorem findFunction_name {m : Module} {name : FunName} {f : Function}
+    (h : m.findFunction name = some f) : f.name = name := by
+  simp only [Module.findFunction] at h
+  have ⟨hbeq, _⟩ := (List.find?_eq_some_iff_append).1 h
+  exact (beq_iff_eq).1 hbeq
 
 theorem findFunction_WF {m : Module} {name : FunName} {f : Function}
     (hwf : Module.WF m) (h : m.findFunction name = some f) : Function.WF m f := by

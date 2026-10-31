@@ -1,23 +1,17 @@
-import Autumn.StepProgress
-import Autumn.StepPreserve
+import Autumn.Step.ProgressInstr
+import Autumn.Step.PreserveInstr
 import Autumn.Examples
-import Autumn.Decode
-import Autumn.FixtureJson
+import Autumn.Json.Lemmas
 
 namespace Autumn
 namespace Step
 
-/-! # Step safety: progress + preservation barrel -/
+/-! # Step safety: progress + preservation barrel
 
-/-- Decode a golden fixture JSON and run it. -/
-def runFixtureJson (json : String) (fuel : Nat := 100000) : Option Term :=
-  match Decode.fromString json with
-  | .error _ => none
-  | .ok m =>
-    match runModule m (fuel := fuel) with
-    | .ok v => some v
-    | .error _ => none
-
+Larger Mix goldens (`counter_server`, `monitored_call`, `monitored_down`, …) stay on
+disk under `tests/fixtures/*.bc.json` and are exercised by Mix + `lake exe autumn`,
+not embedded here (avoids a multi-kLoC dual source of truth).
+-/
 
 /-- Preservation: successful steps stay well-formed. -/
 theorem step_preserves (s s' : State)
@@ -71,6 +65,56 @@ theorem step_preserves (s s' : State)
           · cases h
             exact reductions_preserves _ (s1.reductions - 1) hs1c
 
+/-! ## Multi-step `run` -/
+
+/-- After a successful instruction, clock/reductions/`scheduleNext` keep WF. -/
+theorem afterInstr_preserves (s s' : State)
+    (hs : State.WF s) (h : afterInstr s = .ok s') : State.WF s' := by
+  simp [afterInstr] at h
+  split at h
+  · cases h
+    exact clock_preserves s (s.clock + 1) hs
+  · split at h
+    · exact scheduleNext_preserves { s with clock := s.clock + 1 } s.current
+        (clock_preserves s (s.clock + 1) hs) h
+    · cases h
+      exact reductions_preserves { s with clock := s.clock + 1 } (s.reductions - 1)
+        (clock_preserves s (s.clock + 1) hs)
+
+/-- Well-formed states never fail `run` structurally (only fuel or non-structural errors). -/
+theorem run_progress (fuel : Nat) (s : State) (hs : State.WF s) {e : StepError}
+    (h : run fuel s = .error e) :
+    e = .typeError "out of fuel" ∨ isStructuralError e = false := by
+  induction fuel generalizing s with
+  | zero =>
+    simp [run] at h
+    left; cases h; rfl
+  | succ fuel ih =>
+    simp [run] at h
+    cases hr : s.result with
+    | some _ => simp [hr] at h; exact nomatch h
+    | none =>
+      simp [hr] at h
+      cases hs' : step s with
+      | error e' =>
+        simp [hs'] at h
+        cases h
+        right
+        have hp := step_progress s hs hr
+        simpa [hs'] using hp
+      | ok s' =>
+        simp [hs'] at h
+        exact ih s' (step_preserves s s' hs hs') h
+
+/-- If `initial` succeeds, `runModule` errors are only fuel or non-structural. -/
+theorem runModule_progress (m : Module) (fuel cap : Nat)
+    (hm : Module.WF m) (hcap : 0 < cap) {s : State} {e : StepError}
+    (hi : State.initial m cap = .ok s)
+    (h : runModule m fuel cap = .error e) :
+    e = .typeError "out of fuel" ∨ isStructuralError e = false := by
+  simp [runModule, hi] at h
+  exact run_progress fuel s (initial_WF m cap hm hcap hi) h
+
 theorem addMain_has_entry :
     (addMainModule.findFunction addMainModule.entry).isSome := by
   native_decide
@@ -84,16 +128,6 @@ theorem tryRescue_has_entry :
 #guard (match Step.runModule tryRescueModule (fuel := 100) with
   | .ok (.int 3) => true
   | _ => false)
-
--- Phase 6: tagged counter server → 1+3+3 = 7.
-#guard (runFixtureJson counterServerJson == some (.int 7))
-
--- Phase 6: monitored call happy path → 7.
-#guard (runFixtureJson monitoredCallJson == some (.int 7))
-
--- Phase 6: monitored call crash / DOWN path → 1.
-#guard (runFixtureJson monitoredDownJson == some (.int 1))
-
 
 end Step
 end Autumn

@@ -1,4 +1,4 @@
-import Autumn.StateProcessLemmas
+import Autumn.State.ProcessLemmas
 
 namespace Autumn
 
@@ -34,13 +34,13 @@ theorem processes_set_WF (s : State) (idx : Nat) (p : Process)
         Array.getElem_set_ne (v := p) hidx hi0 (Ne.symm heq)
       rw [hget]; exact hs.2.2.2 i hi0
 
-theorem notifyExitPeer_preserves (s : State) (fromPid : Nat) (heap : Heap)
+theorem notifyExitMailbox_preserves (s : State) (fromPid : Nat) (heap : Heap)
     (reason : Value) (peerPid : Nat) (hs : State.WF s) :
-    State.WF (State.notifyExitPeer s fromPid heap reason peerPid) := by
+    State.WF (State.notifyExitMailbox s fromPid heap reason peerPid) := by
   cases hfnd : s.findProcessIdx peerPid with
-  | none => simp [State.notifyExitPeer, hfnd]; exact hs
+  | none => simp [State.notifyExitMailbox, hfnd]; exact hs
   | some idx =>
-    simp [State.notifyExitPeer, hfnd]
+    simp [State.notifyExitMailbox, hfnd]
     split
     · rename_i hpeer
       split
@@ -63,7 +63,6 @@ theorem notifyExitPeer_preserves (s : State) (fromPid : Nat) (heap : Heap)
             (let p1 := { allocated.1 with mailbox := allocated.1.mailbox.push allocated.2 }
               if allocated.1.status == .waiting then State.wakeOnMessage p1 else p1) :=
           process_wake_mailbox_WF _ allocated.1 allocated.2 hpA
-        -- Goal is the same update spelled with nested matches/`have`
         change State.WF
           { s with
             processes :=
@@ -73,6 +72,29 @@ theorem notifyExitPeer_preserves (s : State) (fromPid : Nat) (heap : Heap)
                 hpeer }
         exact processes_set_WF s idx _ hs hpeer hpW
     · exact hs
+
+theorem notifyExitPeer_preserves (s : State) (fromPid : Nat) (heap : Heap)
+    (reason : Value) (peerPid : Nat) (hs : State.WF s) :
+    State.WF (State.notifyExitPeer s fromPid heap reason peerPid) := by
+  simpa [State.notifyExitPeer] using notifyExitMailbox_preserves s fromPid heap reason peerPid hs
+
+theorem process_set_trapExit_WF (m : Module) (p : Process) (b : Bool)
+    (hp : Process.WF m p) :
+    Process.WF m { p with trapExit := b } := hp
+
+theorem exited_force_process_WF (m : Module) (p : Process) (reason : Value)
+    (hp : Process.WF m p) :
+    Process.WF m
+      { p with
+        stack := #[]
+        result := some reason
+        status := .exited
+        handlers := #[]
+        links := #[]
+        monitors := #[]
+        monitoredBy := #[]
+        waitDeadline := none } :=
+  ⟨hp.1, by simp⟩
 
 theorem notifyDownPeer_preserves (s : State) (fromPid : Nat) (heap : Heap)
     (reason : Value) (monitorerPid refId : Nat) (hs : State.WF s) :
@@ -130,14 +152,6 @@ theorem clearTargetMonitor_preserves (s : State) (fromPid targetPid refId : Nat)
       exact processes_set_WF s idx _ hs h ht
     · exact hs
 
-theorem propagateExit.go_preserves (s : State) (fromPid : Nat) (heap : Heap)
-    (reason : Value) (peers : List Nat) (hs : State.WF s) :
-    State.WF (State.propagateExit.go s fromPid heap reason peers) := by
-  induction peers generalizing s with
-  | nil => exact hs
-  | cons peerPid rest ih =>
-    exact ih _ (notifyExitPeer_preserves s fromPid heap reason peerPid hs)
-
 theorem propagateExit.goDown_preserves (s : State) (fromPid : Nat) (heap : Heap)
     (reason : Value) (downs : List (Nat × Nat)) (hs : State.WF s) :
     State.WF (State.propagateExit.goDown s fromPid heap reason downs) := by
@@ -154,6 +168,81 @@ theorem propagateExit.goClear_preserves (s : State) (fromPid : Nat)
   | cons head rest ih =>
     exact ih _ (clearTargetMonitor_preserves s fromPid head.1 head.2 hs)
 
+mutual
+  theorem signalLink_preserves (fuel : Nat) (s : State) (fromPid : Nat) (heap : Heap)
+      (reason : Value) (peerPid : Nat) (hs : State.WF s) :
+      State.WF (State.signalLink fuel s fromPid heap reason peerPid) := by
+    cases fuel with
+    | zero =>
+      simp only [State.signalLink]
+      cases hfnd : s.findProcessIdx peerPid with
+      | none => simpa [hfnd] using hs
+      | some idx =>
+        simp [hfnd]
+        split
+        · rename_i hpeer
+          split
+          · exact hs
+          · exact notifyExitMailbox_preserves s fromPid heap reason peerPid hs
+        · exact hs
+    | succ fuel =>
+      simp only [State.signalLink]
+      cases hfnd : s.findProcessIdx peerPid with
+      | none => simpa [hfnd] using hs
+      | some idx =>
+        simp [hfnd]
+        split
+        · rename_i hpeer
+          split
+          · exact hs
+          · split
+            · exact notifyExitMailbox_preserves s fromPid heap reason peerPid hs
+            · let peer0 := s.processes[idx]'hpeer
+              have hpeer0 : Process.WF s.module peer0 := hs.2.2.2 idx hpeer
+              have hpLinks : Process.WF s.module
+                  { peer0 with links := State.unlinkPid peer0.links fromPid } :=
+                process_set_links_WF _ _ _ hpeer0
+              let copied :=
+                ({ peer0 with links := State.unlinkPid peer0.links fromPid }).copyFrom heap reason
+              have hpC : Process.WF s.module copied.1 :=
+                Process.copyFrom_preserves_WF _ _ _ _ hpLinks
+              let peer := {
+                copied.1 with
+                stack := #[]
+                result := some copied.2
+                status := .exited
+                handlers := #[]
+                links := #[]
+                monitors := #[]
+                monitoredBy := #[]
+                waitDeadline := none
+              }
+              have hpE : Process.WF s.module peer := exited_force_process_WF _ _ _ hpC
+              have hs1 : State.WF
+                  { s with processes := s.processes.set idx peer hpeer } :=
+                processes_set_WF s idx _ hs hpeer hpE
+              exact propagateExit.from_preserves fuel _ _ _ _ _ _ _ hs1
+        · exact hs
+
+  theorem signalLinks_preserves (fuel : Nat) (s : State) (fromPid : Nat) (heap : Heap)
+      (reason : Value) (peers : List Nat) (hs : State.WF s) :
+      State.WF (State.signalLinks fuel s fromPid heap reason peers) := by
+    induction peers generalizing s with
+    | nil => simpa [State.signalLinks] using hs
+    | cons peerPid rest ih =>
+      simp only [State.signalLinks]
+      exact ih _ (signalLink_preserves fuel s fromPid heap reason peerPid hs)
+
+  theorem propagateExit.from_preserves (fuel : Nat) (s : State) (fromPid : Nat)
+      (heap : Heap) (reason : Value) (links : List Nat) (downs : List (Nat × Nat))
+      (outs : List (Nat × Nat)) (hs : State.WF s) :
+      State.WF (State.propagateExit.from fuel s fromPid heap reason links downs outs) := by
+    simp only [State.propagateExit.from]
+    have hs1 := signalLinks_preserves fuel s fromPid heap reason links hs
+    have hs2 := propagateExit.goDown_preserves _ fromPid heap reason downs hs1
+    exact propagateExit.goClear_preserves _ fromPid outs hs2
+end
+
 theorem propagateExit_preserves (s : State) (exitedIdx : Nat) (reason : Value)
     (hs : State.WF s) :
     State.WF (State.propagateExit s exitedIdx reason) := by
@@ -166,19 +255,64 @@ theorem propagateExit_preserves (s : State) (exitedIdx : Nat) (reason : Value)
         { exited0 with links := #[], monitors := #[], monitoredBy := #[] } :=
       process_set_monitors_WF _ _
         #[] #[] (process_set_links_WF _ _ #[] hex0)
-    have hs1 : State.WF
-        { s with
-          processes :=
-            s.processes.set exitedIdx
-              { exited0 with links := #[], monitors := #[], monitoredBy := #[] } hlt } :=
-      processes_set_WF s exitedIdx _ hs hlt hex
-    have hs2 :=
-      propagateExit.go_preserves _ exited0.pid exited0.heap reason exited0.links.toList hs1
-    have hs3 :=
-      propagateExit.goDown_preserves _ exited0.pid exited0.heap reason
-        exited0.monitoredBy.toList hs2
-    exact propagateExit.goClear_preserves _ exited0.pid exited0.monitors.toList hs3
+    let s1 :=
+      { s with
+        processes :=
+          s.processes.set exitedIdx
+            { exited0 with links := #[], monitors := #[], monitoredBy := #[] } hlt }
+    have hs1 : State.WF s1 := processes_set_WF s exitedIdx _ hs hlt hex
+    simpa [s1] using
+      propagateExit.from_preserves s1.processes.size s1 exited0.pid exited0.heap reason
+        exited0.links.toList exited0.monitoredBy.toList exited0.monitors.toList hs1
   · exact hs
+
+theorem forceExitPid_preserves (s : State) (pid : Nat) (reason : Value)
+    (hs : State.WF s) :
+    State.WF (State.forceExitPid s pid reason) := by
+  cases hfnd : s.findProcessIdx pid with
+  | none => simp [State.forceExitPid, hfnd]; exact hs
+  | some idx =>
+    simp [State.forceExitPid, hfnd]
+    split
+    · rename_i h
+      split
+      · exact hs
+      · split
+        · rename_i hcur
+          let p0 := s.processes[idx]'h
+          have hp0 : Process.WF s.module p0 := hs.2.2.2 idx h
+          let srcHeap := s.processes[s.current]'hcur |>.heap
+          let copied := p0.copyFrom srcHeap reason
+          have hpC : Process.WF s.module copied.1 :=
+            Process.copyFrom_preserves_WF s.module p0 srcHeap reason hp0
+          have h1 := exited_process_WF s.module copied.1 copied.2 hpC.1
+          have hpE : Process.WF s.module
+              { copied.1 with
+                stack := #[]
+                result := some copied.2
+                status := .exited
+                handlers := #[]
+                waitDeadline := none } :=
+            process_set_waitDeadline_WF s.module _ none h1
+          have hs1 := processes_set_WF s idx _ hs h hpE
+          exact propagateExit_preserves _ _ _ hs1
+        · let p0 := s.processes[idx]'h
+          have hp0 : Process.WF s.module p0 := hs.2.2.2 idx h
+          let copied := p0.copyFrom p0.heap reason
+          have hpC : Process.WF s.module copied.1 :=
+            Process.copyFrom_preserves_WF s.module p0 p0.heap reason hp0
+          have h1 := exited_process_WF s.module copied.1 copied.2 hpC.1
+          have hpE : Process.WF s.module
+              { copied.1 with
+                stack := #[]
+                result := some copied.2
+                status := .exited
+                handlers := #[]
+                waitDeadline := none } :=
+            process_set_waitDeadline_WF s.module _ none h1
+          have hs1 := processes_set_WF s idx _ hs h hpE
+          exact propagateExit_preserves _ _ _ hs1
+    · exact hs
 
 theorem nextRef_preserves (s : State) (n : Nat) (hs : State.WF s) :
     State.WF { s with nextRef := n } :=
@@ -332,5 +466,19 @@ theorem linkWith_error_not_structural (s : State) (otherPid : Nat) {e}
       · split at h
         · cases h; rfl
         · exact nomatch h
+
+/-! ## Observational OTP: `trap_exit` delivers mailbox EXIT (does not kill) -/
+
+/-- With positive fuel and `trapExit`, `signalLink` is mailbox EXIT delivery. -/
+theorem signalLink_trapExit_eq_mailbox
+    (fuel : Nat) (s : State) (fromPid : Nat) (heap : Heap) (reason : Value)
+    (peerPid : Nat) {idx : Nat}
+    (hfnd : s.findProcessIdx peerPid = some idx)
+    (hpeer : idx < s.processes.size)
+    (hlive : ((s.processes[idx]'hpeer).status == .exited) = false)
+    (htrap : (s.processes[idx]'hpeer).trapExit = true) :
+    State.signalLink (fuel + 1) s fromPid heap reason peerPid =
+      State.notifyExitMailbox s fromPid heap reason peerPid := by
+  simp [State.signalLink, hfnd, hpeer, hlive, htrap]
 
 end Autumn

@@ -4,6 +4,7 @@ defmodule Main do
   end
 
   def main do
+    Process.flag(:trap_exit, true)
     spawn_link(:worker, [])
 
     receive do

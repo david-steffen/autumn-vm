@@ -112,13 +112,15 @@ end Module
 def isMakeTupleName (name : FunName) : Bool :=
   name.startsWith "make_tuple/"
 
-/-- Builtin MFA names (including allocating `cons/2` / `make_tuple/N`). -/
+/-- Builtin MFA names (including allocating `cons/2` / `make_tuple/N`).
+`Process.flag/2` / `Process.exit/2` are State-mutating and handled in `stepInstr`. -/
 def isBuiltinName (name : FunName) : Bool :=
   name == "+/2" || name == "-/2" || name == "*/2" || name == "==/2" ||
   name == "</2" || name == ">/2" || name == "<=/2" || name == ">=/2" ||
   name == "tuple_size/1" || name == "elem/2" || name == "list_size/1" ||
   name == "map_size/1" || name == "map_get/2" || name == "map_put/3" ||
   name == "self/0" || name == "make_ref/0" || name == "<>/2" ||
-  name == "cons/2" || isMakeTupleName name
+  name == "cons/2" || name == "Process.flag/2" || name == "Process.exit/2" ||
+  isMakeTupleName name
 
 end Autumn

@@ -1,4 +1,4 @@
-import Autumn.StateTypes
+import Autumn.State.Types
 import Autumn.Heap
 
 namespace Autumn

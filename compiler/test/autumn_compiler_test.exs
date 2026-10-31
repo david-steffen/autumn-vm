@@ -221,10 +221,30 @@ defmodule AutumnCompilerTest do
     assert {:ok, module} = AutumnCompiler.compile_file(path)
     expected = expected_path |> File.read!() |> Jason.decode!()
     assert module == expected
-    assert module["version"] == 8
+    assert module["version"] == 14
     code = Enum.flat_map(module["functions"], & &1["code"])
     assert Enum.any?(code, &(&1["op"] == "link"))
     assert Enum.any?(code, &(&1["op"] == "spawn"))
+    assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "Process.flag/2"))
+  end
+
+  test "lowers IR v14 Process.exit / drain / link_kill / badarg_rescue" do
+    for {name, version, check} <- [
+          {"process_exit_down", 14,
+           fn code -> Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "Process.exit/2")) end},
+          {"link_kill", 8, fn code -> Enum.any?(code, &(&1["op"] == "link")) end},
+          {"drain_siblings", 2, fn code -> Enum.any?(code, &(&1["op"] == "spawn")) end},
+          {"badarg_rescue", 6, fn code -> Enum.any?(code, &(&1["op"] == "enter_try")) end}
+        ] do
+      path = Path.join(@fixtures, "#{name}.ex")
+      expected_path = Path.join(@fixtures, "#{name}.bc.json")
+      assert {:ok, module} = AutumnCompiler.compile_file(path)
+      expected = expected_path |> File.read!() |> Jason.decode!()
+      assert module == expected
+      assert module["version"] == version
+      code = Enum.flat_map(module["functions"], & &1["code"])
+      assert check.(code)
+    end
   end
 
   test "lowers monitor_exit (Phase 5)" do
@@ -344,13 +364,13 @@ defmodule AutumnCompilerTest do
     assert {:ok, module} = AutumnCompiler.compile_file(path)
     expected = expected_path |> File.read!() |> Jason.decode!()
     assert module == expected
+    assert module["version"] == 14
     names = Enum.map(module["functions"], & &1["name"])
     assert "Main.hog/0" in names
     assert "Main.helper/0" in names
-
-    assert Enum.any?(module["functions"], fn f ->
-             Enum.any?(f["code"], &(&1["op"] == "spawn"))
-           end)
+    code = Enum.flat_map(module["functions"], & &1["code"])
+    assert Enum.any?(code, &(&1["op"] == "spawn"))
+    assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "Process.exit/2"))
   end
 
   test "lowers hot_load (Code.load_file IR v13)" do
@@ -363,5 +383,24 @@ defmodule AutumnCompilerTest do
     code = Enum.flat_map(module["functions"], & &1["code"])
     assert Enum.any?(code, &(&1["op"] == "load_file"))
     assert Enum.any?(code, &(&1["op"] == "enter_try"))
+  end
+
+  test "eval_expr wraps expression as Repl.main/0" do
+    assert {:ok, module, _expr} = AutumnCompiler.eval_expr("1 + 2")
+    assert module["entry"] == "Repl.main/0"
+    assert module["version"] == 1
+    code = List.first(module["functions"])["code"]
+    assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "+/2"))
+  end
+
+  test "eval_expr replays session bindings" do
+    assert {:ok, _m1, e1} = AutumnCompiler.eval_expr("a = 1 + 4")
+    bindings = AutumnCompiler.binding_after([], e1)
+    assert [{:a, {:+, _, [1, 4]}}] = bindings
+
+    assert {:ok, module, _e2} = AutumnCompiler.eval_expr("[a, a + 1]", bindings)
+    code = List.first(module["functions"])["code"]
+    # Prior `a = 1 + 4` is inlined before the list expr.
+    assert Enum.count(code, &(&1["op"] == "call" && &1["fun"] == "+/2")) >= 2
   end
 end

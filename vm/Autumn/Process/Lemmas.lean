@@ -1,4 +1,4 @@
-import Autumn.HeapLemmas
+import Autumn.Heap.Lemmas
 import Autumn.WellFormed
 import Autumn.State
 import Autumn.Process

@@ -42,6 +42,9 @@ structure Process where
   monitors : Array (Nat × Nat) := #[]
   /-- Inbound monitors (IR v9): `(fromPid, refId)`. DOWN signals go here on exit. -/
   monitoredBy : Array (Nat × Nat) := #[]
+  /-- IR v14: when true, linked EXIT is delivered as `{:EXIT, …}` (OTP `trap_exit`).
+  Default false — linked EXIT kills the peer. -/
+  trapExit : Bool := false
   deriving Repr, Inhabited
 
 /-- Whole-machine state: reduction-preemptive multi-process VM. -/
@@ -54,7 +57,8 @@ structure State where
   reductions : Nat
   /-- Entry process pid (machine result comes from this process). -/
   entryPid : Nat
-  /-- Machine-level result (materialized `Term`) once the entry process has exited. -/
+  /-- Machine-level result once the machine is idle and the entry process has exited.
+  Entry exit alone does not halt the machine (IR v14 durable drain). -/
   result : Option Term
   nextPid : Nat
   /-- Next unique reference id (IR v9). -/

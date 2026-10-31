@@ -208,67 +208,83 @@
         },
         {
           "op": "jump",
-          "target": 12
+          "target": 14
+        },
+        {
+          "lit": {
+            "atom": "kill"
+          },
+          "op": "load_lit",
+          "reg": 7
+        },
+        {
+          "args": [
+            1,
+            7
+          ],
+          "dest": 8,
+          "fun": "Process.exit/2",
+          "op": "call"
         },
         {
           "lit": {
             "int": 1
           },
           "op": "load_lit",
-          "reg": 7
+          "reg": 9
         },
         {
           "dest": 6,
           "op": "move",
-          "src": 7
+          "src": 9
+        },
+        {
+          "op": "jump",
+          "target": 21
+        },
+        {
+          "op": "jump",
+          "target": 16
         },
         {
           "op": "jump",
           "target": 19
-        },
-        {
-          "op": "jump",
-          "target": 14
-        },
-        {
-          "op": "jump",
-          "target": 17
         },
         {
           "lit": {
             "int": 0
           },
           "op": "load_lit",
-          "reg": 8
+          "reg": 10
         },
         {
           "dest": 6,
           "op": "move",
-          "src": 8
+          "src": 10
         },
         {
           "op": "jump",
-          "target": 19
+          "target": 21
         },
         {
           "lit": {
             "atom": "match_error"
           },
           "op": "load_lit",
-          "reg": 9
+          "reg": 11
         },
         {
           "op": "raise",
-          "reg": 9
+          "reg": 11
         },
         {
           "op": "return",
           "reg": 6
         }
       ],
-      "locals": 10,
+      "locals": 12,
       "name": "Main.main/0"
     }
   ],
-  "version": 7
+  "version": 14
 }

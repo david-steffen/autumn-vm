@@ -12,8 +12,8 @@ description: >-
 ## Rules
 
 1. **One primary type (or tightly coupled cluster) per module.** Put constructors, accessors, pretty-printing, equality, and type-local well-formedness helpers with that type.
-2. **Cross-type transformations get their own module**, named for the relation or process (`Decode`, `Encode`, `Step`), not stuffed into one operand type.
-3. **No Utils / Helpers grab-bags.** If a function has a clear primary type, put it there. Proof-only material goes in `TypeLemmas` (e.g. `HeapLemmas`, `StepLemmas`).
+2. **Cross-type transformations get their own module**, named for the relation or process (`Json.Decode`, `Json.Encode`, `Step`), not stuffed into one operand type.
+3. **No Utils / Helpers grab-bags.** If a function has a clear primary type, put it there. Proof-only material goes in nested lemmas (e.g. `Heap/Lemmas`, `Step/Lemmas`).
 
 ## Good (type-owned)
 
@@ -37,9 +37,9 @@ Keep separate when the work crosses types:
 
 | Module | Why |
 | --- | --- |
-| `Decode` / `Encode` | JSON ↔ `Module` / `Term` |
+| `Json.Decode` / `Json.Encode` | JSON ↔ `Module` / `Term` |
 | `Step` | execute `Instr` against `State` / `Heap` / `Term` |
-| `*Lemmas` | proofs about a type or relation, not runtime API |
+| `*.Lemmas` (nested) | proofs about a type or relation, not runtime API |
 
 Do **not** move `step` into `Instr.lean` or JSON parsing into `Term.lean`.
 
@@ -52,33 +52,34 @@ def decodeInstr ...
 def heapAlloc ...
 ```
 
-Instead: `Term.toString`, `Decode.*`, `Heap.alloc` (or equivalent names in the owning module).
+Instead: `Term.toString`, `Json.Decode.*`, `Heap.alloc` (or equivalent names in the owning module).
 
 ## When to split
 
 Soft thresholds (Autumn Lean; same spirit for Elixir):
 
 - **~800–1000 lines** → consider a split.
-- **Sooner** if the file mixes ownership (e.g. `Process` proofs living in `HeapLemmas`).
-- Split on **type / pipeline seams**, not arbitrary line chunks. Prefer several focused modules over one mega-file with section comments only.
+- **Sooner** if the file mixes ownership (e.g. `Process` proofs living in `Heap/Lemmas`).
+- Split on **type / pipeline seams**, not arbitrary line chunks. Prefer several focused modules over one mega-file with section comments only. Nested dirs (`Heap/`, `State/`, `Step/`, `Json/`) follow Mathlib-style module paths.
 
 ### Runtime ↔ lemmas pairing
 
 | Runtime | Proofs |
 | --- | --- |
-| `Heap.lean` | `HeapLemmas.lean` |
-| `Process.lean` | `ProcessLemmas.lean` |
-| `State.lean` (scheduler / links) | `StateProcessLemmas` / `StateSchedLemmas` / `StateLinkLemmas` |
-| `Step.lean` | `StepProgress` / `StepPreserve` / thin `StepLemmas` barrel |
+| `Heap.lean` | `Heap/Lemmas.lean` (`Autumn.Heap.Lemmas`) |
+| `Process.lean` | `Process/Lemmas.lean` |
+| `State.lean` (scheduler / links) | `State/ProcessLemmas`, `State/SchedLemmas`, `State/LinkLemmas` |
+| `Step.lean` | `Step/Progress`, `Step/Preserve` + `*/ProgressInstr`, `*/PreserveInstr` / thin `Step/Lemmas` barrel |
+| `Json/Encode`, `Json/Decode` | `Json/Lemmas.lean` |
 
-Do not park Process GC lemmas in `HeapLemmas` or Step preservation in a grab-bag utils file.
+Do not park Process GC lemmas in `Heap/Lemmas` or Step preservation in a grab-bag utils file.
 
 ### Barrel re-exports
 
 When a concern splits into satellites, keep a **thin barrel** so existing imports stay stable:
 
-- `StateLemmas.lean` imports `StateProcessLemmas`, `StateSchedLemmas`, `StateLinkLemmas`
-- `StepLemmas.lean` imports `StepProgress`, `StepPreserve` (+ fixture theorems)
+- `State/Lemmas.lean` imports `State.ProcessLemmas`, `State.SchedLemmas`, `State.LinkLemmas`
+- `Step/Lemmas.lean` imports `Step.ProgressInstr`, `Step.PreserveInstr` (+ fixture theorems; Instr files pull in base helpers)
 
 Downstream (`Main`, other lemmas) should prefer the barrel unless they need only one satellite.
 
@@ -87,14 +88,14 @@ Downstream (`Main`, other lemmas) should prefer the barrel unless they need only
 Avoid `State` ↔ `Process` cycles:
 
 ```
-StateTypes  →  Process  →  State (ops)
+State.Types  →  Process  →  State (ops)
 ```
 
-- `StateTypes.lean` — `Frame` / `Handler` / `Process` / `State` / `StepError`
-- `Process.lean` — Process GC + alloc (imports `StateTypes`)
-- `State.lean` — scheduler / links / EXIT (imports `StateTypes` + `Process`)
+- `State/Types.lean` — `Frame` / `Handler` / `Process` / `State` / `StepError`
+- `Process.lean` — Process GC + alloc (imports `State.Types`)
+- `State.lean` — scheduler / links / EXIT (imports `State.Types` + `Process`)
 
-Lake auto-discovers new files under `vm/Autumn/`; no `lakefile.lean` edits for new modules.
+Lake auto-discovers new files under `vm/Autumn/` (including nested dirs); no `lakefile.lean` edits for new modules.
 
 ## Checklist when adding code
 

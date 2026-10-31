@@ -8,7 +8,7 @@ Ordered backlog for the Elixir subset → IR JSON → Lean 4 VM. Check items off
 - Prefer fixtures + Mix test + `lake exe autumn` before deep new lemmas.
 - Catchable language exceptions (`raise`) stay distinct from uncatchable stepper `typeError`.
 
-## Done (through IR v13)
+## Done (through IR v14)
 
 - [x] Register IR v1–13: literals/calls through monitors, floats/strings, closures, multi-module, `load_file`
 - [x] Generational heap + GC lemmas; reduction-preemptive scheduler (logical clock for timeouts)
@@ -79,7 +79,36 @@ No big new term kinds:
 3. [x] Document in `vm/IR.md`
 4. [x] Gate successful install on `Module.checkWF` + live `processesModuleOkB`; `finishLoadFile_preserves` / `raiseLoadAtCurrent_preserves`
 
+## Phase 14 — Usable alpha runtime (IR v14)
+
+No stdlib / ETS / binaries:
+
+1. [x] Durable drain: entry exit does not halt; machine result when idle
+2. [x] OTP-shaped `trap_exit` (default false); `Process.flag/2` / `Process.exit/2`
+3. [x] Language-shaped builtin mismatches → catchable `:badarg`
+4. [x] Fixtures: `drain_siblings`, `link_exit` (trap), `link_kill`, `process_exit_down`, `badarg_rescue`
+5. [x] Document in `vm/IR.md`; WF/preserve for drain + kill path + flag/exit
+
+## Phase 15 — Durable REPL
+
+1. [x] Lean `autumn --repl`: `EVAL` / `LOAD` / `QUIT`; modules persist, processes reset per eval
+2. [x] Mix `autumn.repl` + `AutumnCompiler.eval_expr/1` (wrap expression as `Repl.main/0`)
+3. [x] Document in `AGENTS.md`
+
+## Phase 16 — VM proof depth
+
+One-step `step_progress` / `step_preserves` are closed. Push past single-step WF into multi-step, semantics, and maintainability (no new IR unless a proof forces a tiny helper).
+
+1. [x] `State.initial_WF` + multi-step `run_progress` / `runModule_progress` (`runModule` path)
+2. [x] Durable-drain semantics: `scheduleNext_result_is_toTerm` (idle publish ⇒ `Heap.toTerm`)
+3. [x] Factor `stepInstr_preserves` / `stepInstr_error_not_structural` case towers (per-opcode helpers)
+4. [x] Encode ↔ Decode tag roundtrip (`decodeTag_encodeTag`); Instr/Module full roundtrip still open
+5. [x] `afterInstr_preserves` (clock / reductions / `scheduleNext`); full `runIOState` still open
+6. [x] `versionOkB_complete` + `FunName.resolvableB_complete`; `regsOk` / `moduleOkB` completeness still open
+7. [x] Observational OTP: `signalLink_trapExit_eq_mailbox` (`trap_exit` ⇒ mailbox EXIT, not kill)
+
 ## Later (deprioritized)
 
 - ETS
+- Stdlib (`GenServer` / `Supervisor` / …)
 - Verified compiler

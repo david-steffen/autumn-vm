@@ -1,0 +1,133 @@
+{
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 0,
+      "code": [
+        {
+          "lit": {
+            "atom": "boom"
+          },
+          "op": "load_lit",
+          "reg": 0
+        },
+        {
+          "op": "raise",
+          "reg": 0
+        },
+        {
+          "op": "return",
+          "reg": 0
+        }
+      ],
+      "locals": 1,
+      "name": "Main.worker/0"
+    },
+    {
+      "arity": 0,
+      "code": [
+        {
+          "args": [],
+          "dest": 0,
+          "fun": "Main.worker/0",
+          "op": "spawn"
+        },
+        {
+          "op": "link",
+          "pid": 0
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 1
+        },
+        {
+          "dest": 2,
+          "empty": 14,
+          "index": 1,
+          "op": "recv_peek"
+        },
+        {
+          "op": "jump",
+          "target": 6
+        },
+        {
+          "op": "jump",
+          "target": 10
+        },
+        {
+          "index": 1,
+          "op": "recv_drop"
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 4
+        },
+        {
+          "dest": 3,
+          "op": "move",
+          "src": 4
+        },
+        {
+          "op": "jump",
+          "target": 17
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 5
+        },
+        {
+          "args": [
+            1,
+            5
+          ],
+          "dest": 6,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "dest": 1,
+          "op": "move",
+          "src": 6
+        },
+        {
+          "op": "jump",
+          "target": 3
+        },
+        {
+          "after": 15,
+          "op": "wait",
+          "retry": 3,
+          "timeout": 50
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 7
+        },
+        {
+          "dest": 3,
+          "op": "move",
+          "src": 7
+        },
+        {
+          "op": "return",
+          "reg": 3
+        }
+      ],
+      "locals": 8,
+      "name": "Main.main/0"
+    }
+  ],
+  "version": 8
+}

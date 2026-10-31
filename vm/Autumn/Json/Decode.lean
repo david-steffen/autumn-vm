@@ -3,9 +3,7 @@ import Autumn.State
 
 open Lean
 
-namespace Autumn
-
-namespace Decode
+namespace Autumn.Json.Decode
 
 def err (msg : String) : Except StepError α :=
   throw (StepError.decodeError msg)
@@ -217,7 +215,7 @@ def decodeModule (j : Json) : Except StepError Module := do
   let version ← asNat (← field j "version")
   if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 &&
       version != 6 && version != 7 && version != 8 && version != 9 && version != 10 &&
-      version != 11 && version != 12 && version != 13 then
+      version != 11 && version != 12 && version != 13 && version != 14 then
     err s!"unsupported IR version: {version}"
   let entry ← asString (← field j "entry")
   match j.getObjVal? "modules" with
@@ -237,6 +235,4 @@ def fromString (s : String) : Except StepError Module :=
   | .error e => err e
   | .ok j => decodeModule j
 
-end Decode
-
-end Autumn
+end Autumn.Json.Decode

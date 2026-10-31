@@ -1,4 +1,4 @@
-import Autumn.StateProcessLemmas
+import Autumn.State.ProcessLemmas
 
 namespace Autumn
 
@@ -101,6 +101,47 @@ theorem scheduleNext_preserves (s : State) (fromIdx : Nat) {s'}
       · split at h
         · cases h
           exact ⟨hs1.1, hs1.2.1, hs1.2.2.1, hs1.2.2.2⟩
+        · exact nomatch h
+      · exact nomatch h
+
+/-! ## Durable drain (IR v14): machine result is entry exit `toTerm` -/
+
+/--
+When `scheduleNext` publishes a machine `result` from a state with no machine
+result yet, it is `Heap.toTerm` of the entry process's exit value.
+-/
+theorem scheduleNext_result_is_toTerm
+    (s : State) (fromIdx : Nat) {s' : State} {t : Term}
+    (hsr : s.result = none)
+    (h : State.scheduleNext s fromIdx = .ok s')
+    (ht : s'.result = some t) :
+    ∃ (heap : Heap) (v : Value), t = Heap.toTerm heap v := by
+  have hszne : ¬(s.processes.size = 0) := by
+    intro hz; simp [State.scheduleNext, hz] at h
+  simp [State.scheduleNext, hszne] at h
+  split at h
+  · cases h; simp [hsr] at ht
+  · split at h
+    · split at h
+      · cases h; simp [hsr] at ht
+      · split at h
+        · rename_i ep hep
+          split at h
+          · rename_i v hv
+            cases h
+            have ht' : Heap.toTerm ep.heap v = t := by
+              simpa using ht
+            exact ⟨ep.heap, v, ht'.symm⟩
+          · exact nomatch h
+        · exact nomatch h
+    · split at h
+      · rename_i ep hep
+        split at h
+        · rename_i v hv
+          cases h
+          have ht' : Heap.toTerm ep.heap v = t := by
+            simpa using ht
+          exact ⟨ep.heap, v, ht'.symm⟩
         · exact nomatch h
       · exact nomatch h
 

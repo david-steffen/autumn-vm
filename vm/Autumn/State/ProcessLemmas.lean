@@ -1,6 +1,6 @@
 import Autumn.WellFormed
-import Autumn.HeapLemmas
-import Autumn.ProcessLemmas
+import Autumn.Heap.Lemmas
+import Autumn.Process.Lemmas
 import Autumn.State
 
 namespace Autumn
@@ -576,5 +576,55 @@ theorem push_process_WF (s : State) (child : Process)
           s.processes[i]'hi0 :=
         Array.getElem_push_lt hi0
       rw [hget]; exact hs.2.2.2 i hi0
+
+/-! ## `State.initial` well-formedness -/
+
+/-- Successful `initial` yields a well-formed state (needs positive heap capacity). -/
+theorem initial_WF (m : Module) (cap : Nat)
+    (hm : Module.WF m) (hcap : 0 < cap)
+    {s : State} (h : State.initial m cap = .ok s) :
+    State.WF s := by
+  unfold State.initial at h
+  cases hf : m.findFunction m.entry with
+  | none => simp only [hf] at h; exact nomatch h
+  | some f =>
+    simp only [hf] at h
+    split at h
+    · -- arity ≠ 0 → throw
+      exact nomatch h
+    · cases h
+      have hfwf : Function.WF m f := Module.findFunction_WF hm hf
+      have hip : (0 : Nat) < f.code.size := hfwf.2.1
+      have hfname : f.name = m.entry := Module.findFunction_name hf
+      have hframe : Frame.WF m
+          { function := f, regs := State.mkRegs f.locals #[], ip := 0, retDest := 0 } := by
+        refine ⟨hfwf, mkRegs_size f.locals #[], hip, ?_⟩
+        simpa [hfname] using hm.2.2.1
+      have hstack : Process.stackWF m
+          #[{ function := f, regs := State.mkRegs f.locals #[], ip := 0, retDest := 0 }] := by
+        refine ⟨?_, ?_⟩
+        · intro i hi
+          have : i = 0 := Nat.lt_one_iff.1 (by simpa using hi)
+          subst this; simpa using hframe
+        · intro i hi hi0
+          have : i = 0 := Nat.lt_one_iff.1 (by simpa using hi)
+          subst this; exact (Nat.lt_irrefl 0 hi0).elim
+      have hhand : Process.handlersWF
+          #[{ function := f, regs := State.mkRegs f.locals #[], ip := 0, retDest := 0 }] #[] := by
+        intro i hi; exact (Nat.not_lt_zero _ hi).elim
+      have hheap : Heap.WF (Heap.empty cap) := Heap.empty_WF cap hcap
+      have hproc : Process.WF m
+          { pid := 0
+            stack := #[{ function := f, regs := State.mkRegs f.locals #[], ip := 0, retDest := 0 }]
+            mailbox := #[]
+            status := .runnable
+            result := none
+            heap := Heap.empty cap
+            handlers := #[] } :=
+        ⟨hheap, Nat.succ_pos _, hstack, hhand⟩
+      refine ⟨hm, Nat.succ_pos _, Nat.zero_lt_one, ?_⟩
+      intro i hi
+      have : i = 0 := Nat.lt_one_iff.1 (by simpa using hi)
+      subst this; simpa using hproc
 
 end Autumn

@@ -2,7 +2,7 @@
 
 Versioned bytecode exchanged as JSON between the Mix lowerer and the Lean VM.
 
-Supported `version` values: `1` (literals/calls), `2` (lists, case ops, processes), `3` (`get_list_elem`, `list_size/1`), `4` (`get_list_rest` / cons patterns), `5` (maps), `6` (exceptions: `enter_try` / `leave_try` / `raise`), `7` (selective receive: `recv_peek` / `recv_drop` / `wait`), `8` (process links: `link`; exit signals), `9` (unique refs + process monitors: `monitor` / `demonitor`; DOWN signals), `10` (floats + strings as immediates), `11` (closures: `make_fun` / `apply`), `12` (first-class `modules[]`), and `13` (`load_file` / dynamic install).
+Supported `version` values: `1` (literals/calls), `2` (lists, case ops, processes), `3` (`get_list_elem`, `list_size/1`), `4` (`get_list_rest` / cons patterns), `5` (maps), `6` (exceptions: `enter_try` / `leave_try` / `raise`), `7` (selective receive: `recv_peek` / `recv_drop` / `wait`), `8` (process links: `link`; exit signals), `9` (unique refs + process monitors: `monitor` / `demonitor`; DOWN signals), `10` (floats + strings as immediates), `11` (closures: `make_fun` / `apply`), `12` (first-class `modules[]`), `13` (`load_file` / dynamic install), and `14` (`Process.flag/2` / `Process.exit/2`; durable drain + OTP-shaped `trap_exit`).
 
 ## Module
 
@@ -131,18 +131,20 @@ Match assignment `pat = expr` is lowerer-only (same pattern emitters as `case`):
 | --- | --- | --- |
 | Language `raise` | `raise` opcode; value in a register | Yes — `enter_try` / rescue patterns |
 | Match miss | Lowered to `raise` of atom `match_error` | Yes — same as `raise` |
-| Linked peer exit | `{:EXIT, from_pid, reason}` mailbox message (v8) | Yes — via `receive` / patterns |
+| Builtin type mismatch | `raise` of atom `badarg` (v14) | Yes — same as `raise` |
+| Linked peer exit (trapping) | `{:EXIT, from_pid, reason}` mailbox message (v8/v14) | Yes — via `receive` / patterns |
+| Linked peer exit (non-trapping) | peer is killed with that reason (v14) | N/A — process exits |
 | Monitored peer exit | `{:DOWN, ref, :process, pid, reason}` mailbox message (v9) | Yes — via `receive` / patterns |
-| Stepper `typeError` | `StepError` (bad arity, wrong tag, return through try, …) | **No** — aborts the step; not a process value |
+| Stepper `typeError` | `StepError` (bad IP/register, empty stack, return through try, …) | **No** — aborts the step; not a process value |
 
-Teaching rule: anything that should be handled in Elixir-shaped code goes through `raise`, EXIT, or DOWN messages. `typeError` means the IR/VM was asked to do something ill-typed.
+Teaching rule: anything that should be handled in Elixir-shaped code goes through `raise` (including `:badarg`), EXIT, or DOWN messages. `typeError` means the IR/VM was asked to do something ill-typed at the stepper level.
 
 ### v8 process links
 
 - `{"op":"link","pid":0}` — bidirectional link between the current process and the pid in the register. Linking an exited pid is a `typeError`. Self-link is a no-op.
 - `spawn_link` lowers as `spawn` then `link` on the new pid.
 
-When a process **exits** (uncaught `raise`, root `return`, or `halt`), each linked peer receives mailbox message `{:EXIT, from_pid, reason}` (`reason` = the exit value), is woken if waiting, and the link is cleared both ways. Peers always “trap” EXIT (teaching subset — no separate `process_flag`); they do not auto-exit.
+When a process **exits** (uncaught `raise`, root `return`, or `halt`), linked peers are signaled (IR v14): if the peer has `trap_exit`, it receives mailbox `{:EXIT, from_pid, reason}` and is woken; otherwise it is **killed** with that reason (cascading). Links are cleared both ways. Default is non-trapping (OTP-shaped); use `Process.flag(:trap_exit, true)` for mailbox EXIT.
 
 ### v9 unique refs + monitors
 
@@ -156,9 +158,9 @@ When a process **exits**, each monitorer in its inbound monitor list receives `{
 ### v10 floats + strings
 
 - Floats and strings are **immediates** (not heap nodes). Teaching subset: no binaries/bitstrings beyond UTF-8 strings; no float↔int coercion.
-- `+/2` `-/2` `*/2` accept either two ints or two floats (mixed → `typeError`).
+- `+/2` `-/2` `*/2` accept either two ints or two floats (mixed → catchable `:badarg`, IR v14).
 - `</2` `>/2` `<=/2` `>=/2` likewise on two ints or two floats.
-- `<>/2` concatenates two strings → string (`typeError` otherwise).
+- `<>/2` concatenates two strings → string (mismatch → `:badarg`).
 
 ### v11 closures
 
@@ -176,30 +178,39 @@ When a process **exits**, each monitorer in its inbound monitor list receives `{
 - Catchable failures (same path as `raise`, so `try`/`rescue` works): non-string path → `:badarg`; missing/unreadable file → `:enoent`; bad JSON/decode **or** install that fails `Module.checkWF` / live-process stack WF under the new image → `:bad_bytecode`.
 - The pure stepper stubs `load_file` as `:enoent`; `Step.runIO` / `autumn` exe services real `IO.FS.readFile`. See fixture `hot_load.ex`.
 
+### v14 durable drain + `trap_exit` / `Process.exit`
+
+- **Durable drain**: when the entry process exits, its value is *not* immediately the machine result. The scheduler keeps running until nothing can progress (no runnable process and no finite `wait` deadline), then materializes the entry process’s exit value as `State.result` for the CLI.
+- `Process.flag/2` — currently only `Process.flag(:trap_exit, bool)`; returns the previous flag. Unknown flags → catchable `:badarg`. Mix lowers `Process.flag/2` (image version ≥ 14).
+- `Process.exit/2` — `Process.exit(self(), reason)` is `raiseValue`; `Process.exit(other, reason)` force-exits the target (ignores `trap_exit`, like OTP `exit(Pid, kill)`), returns `true`, then yields. Mix lowers `Process.exit/2`.
+- Default `trapExit := false` on new processes.
+
 ## Builtins
 
 | MFA | Meaning |
 | --- | --- |
-| `+/2` `-/2` `*/2` | integer or float arithmetic (homogeneous) |
+| `+/2` `-/2` `*/2` | integer or float arithmetic (homogeneous; mismatch → `:badarg`) |
 | `==/2` | structural equality → bool |
-| `</2` `>/2` `<=/2` `>=/2` | int or float compare → bool (homogeneous; for guards) |
-| `<>/2` | string concatenation (v10) |
-| `tuple_size/1` | tuple length → int |
-| `list_size/1` | list length → int (v3) |
-| `elem/2` | `(tuple, index)` → element (0-based) |
-| `map_size/1` | map entry count → int (v5) |
-| `map_get/2` | `(map, key)` → value or nil (v5) |
-| `map_put/3` | `(map, key, value)` → new map (v5; may GC) |
+| `</2` `>/2` `<=/2` `>=/2` | int or float compare → bool (homogeneous; mismatch → `:badarg`) |
+| `<>/2` | string concatenation (v10; mismatch → `:badarg`) |
+| `tuple_size/1` | tuple length → int (bad tag → `:badarg`) |
+| `list_size/1` | list length → int (v3; bad tag → `:badarg`) |
+| `elem/2` | `(tuple, index)` → element (0-based; bad args / OOB → `:badarg`) |
+| `map_size/1` | map entry count → int (v5; bad tag → `:badarg`) |
+| `map_get/2` | `(map, key)` → value or nil (v5; bad tag → `:badarg`) |
+| `map_put/3` | `(map, key, value)` → new map (v5; may GC; bad tag → `:badarg`) |
 | `self/0` | current process pid (v2+) |
 | `make_ref/0` | fresh unique ref (v9) |
-| `cons/2` | `(head, list)` → new list `[head \| list]` (may GC) |
+| `cons/2` | `(head, list)` → new list `[head \| list]` (may GC; bad tail → `:badarg`) |
 | `make_tuple/N` | `N` args → new tuple (may GC; lowered for non-literal `{…}`) |
+| `Process.flag/2` | `(:trap_exit, bool)` → previous flag (v14; else `:badarg`) |
+| `Process.exit/2` | force-exit other / raise self (v14) |
 
 Guard helpers `is_integer/1`, `is_float/1`, `is_atom/1`, `is_list/1`, `is_tuple/1`, `is_map/1`, `is_boolean/1`, `is_pid/1`, `is_nil/1`, `is_reference/1`, `is_binary/1` (string tag), `is_function/1` (fun tag) lower to `is_tag` (not separate MFAs). Map patterns `%{lit_key => pat}` lower via `map_get/2` + value tests. Handler-stack bounds (`handlersWF`) are part of runnable/waiting `Process.WF`.
 
 ## Scheduling
 
-Reduction-preemptive (Erlang-style): each process runs a fixed **reduction budget** (quantum) of instructions, then the scheduler forces a yield and round-robins to the next runnable process. Busy loops cannot starve siblings — see fixture `preempt_fair.ex`. Still single-threaded and cooperative at the instruction boundary (no mid-instruction OS preempt). `recv` / `wait` parks the process (`waiting`); `send` wakes a waiting target (IP unchanged so `wait`/`recv` re-runs). Finite `wait` deadlines use a machine `clock`; if nothing is runnable, the scheduler advances to the next deadline and makes those processes runnable so `wait` can take the `after` path. Machine result is the **entry process** return/halt value.
+Reduction-preemptive (Erlang-style): each process runs a fixed **reduction budget** (quantum) of instructions, then the scheduler forces a yield and round-robins to the next runnable process. Busy loops cannot starve siblings — see fixture `preempt_fair.ex`. Still single-threaded and cooperative at the instruction boundary (no mid-instruction OS preempt). `recv` / `wait` parks the process (`waiting`); `send` wakes a waiting target (IP unchanged so `wait`/`recv` re-runs). Finite `wait` deadlines use a machine `clock`; if nothing is runnable, the scheduler advances to the next deadline and makes those processes runnable so `wait` can take the `after` path. **Machine result** (IR v14): snapshot the entry process’s exit value only once the machine is idle (no runnable process and no finite wait deadline) — entry exit alone does not stop siblings (`drain_siblings.ex`).
 
 ## Runtime heap (Lean VM)
 

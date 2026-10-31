@@ -1,12 +1,15 @@
-import Autumn.Decode
-import Autumn.Encode
+import Autumn.Json.Decode
+import Autumn.Json.Encode
 import Autumn.GCDemo
+import Autumn.Repl
 import Autumn.Step
-import Autumn.StepLemmas
+import Autumn.Step.Lemmas
 import Autumn.Syntax
 
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["--repl"] =>
+    Autumn.Repl.main
   | ["--lean-demo"] =>
     match ← Autumn.Step.runModuleIO Autumn.Syntax.leanDemoModule with
     | .error e =>
@@ -17,13 +20,13 @@ def main (args : List String) : IO UInt32 := do
       return 0
   | ["--roundtrip", path] =>
     let contents ← IO.FS.readFile path
-    match Autumn.Decode.fromString contents with
+    match Autumn.Json.Decode.fromString contents with
     | .error e =>
       IO.eprintln s!"decode error: {e}"
       return 1
     | .ok mod =>
-      let encoded := Autumn.Encode.toString mod
-      match Autumn.Decode.fromString encoded with
+      let encoded := Autumn.Json.Encode.toString mod
+      match Autumn.Json.Decode.fromString encoded with
       | .error e =>
         IO.eprintln s!"re-decode error: {e}"
         return 1
@@ -37,7 +40,7 @@ def main (args : List String) : IO UInt32 := do
           return 0
   | [path] =>
     let contents ← IO.FS.readFile path
-    match Autumn.Decode.fromString contents with
+    match Autumn.Json.Decode.fromString contents with
     | .error e =>
       IO.eprintln s!"decode error: {e}"
       return 1
@@ -50,5 +53,5 @@ def main (args : List String) : IO UInt32 := do
         IO.println (toString v)
         return 0
   | _ =>
-    IO.eprintln "usage: autumn <file.bc.json> | autumn --lean-demo | autumn --roundtrip <file.bc.json>"
+    IO.eprintln "usage: autumn <file.bc.json> | autumn --repl | autumn --lean-demo | autumn --roundtrip <file.bc.json>"
     return 2

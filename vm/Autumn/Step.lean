@@ -1,35 +1,43 @@
 import Autumn.State
 import Autumn.Process
-import Autumn.Decode
+import Autumn.Json.Decode
 import Autumn.WellFormed
 
 namespace Autumn
 
 namespace Step
 
+/-- Outcome of a pure builtin: value, catchable `:badarg`, or stepper error. -/
+inductive BuiltinResult where
+  | ok (v : Value)
+  | badarg
+  | error (e : StepError)
+  deriving Repr
+
 /-- Builtins operate on materialized views where needed; arithmetic uses immediates.
-`selfPid` is the calling process id (used by `self/0`). -/
+`selfPid` is the calling process id (used by `self/0`).
+Language-shaped type mismatches yield `.badarg` (IR v14); IR corruption stays `.error`. -/
 def builtin (h : Heap) (selfPid : Nat) (name : FunName) (args : Array Value) :
-    Except StepError Value :=
+    BuiltinResult :=
   match name with
   | "+/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
       | .int a, .int b => .ok (.int (a + b))
       | .float a, .float b => .ok (.float (a + b))
-      | _, _ => .error (.typeError "+/2 expects two ints or two floats")
+      | _, _ => .badarg
   | "-/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
       | .int a, .int b => .ok (.int (a - b))
       | .float a, .float b => .ok (.float (a - b))
-      | _, _ => .error (.typeError "-/2 expects two ints or two floats")
+      | _, _ => .badarg
   | "*/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
       | .int a, .int b => .ok (.int (a * b))
       | .float a, .float b => .ok (.float (a * b))
-      | _, _ => .error (.typeError "*/2 expects two ints or two floats")
+      | _, _ => .badarg
   | "==/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else .ok (.bool (Heap.beq h args[0]! args[1]!))
@@ -38,54 +46,54 @@ def builtin (h : Heap) (selfPid : Nat) (name : FunName) (args : Array Value) :
     else match args[0]!, args[1]! with
       | .int a, .int b => .ok (.bool (decide (a < b)))
       | .float a, .float b => .ok (.bool (Float.lt a b))
-      | _, _ => .error (.typeError "</2 expects two ints or two floats")
+      | _, _ => .badarg
   | ">/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
       | .int a, .int b => .ok (.bool (decide (a > b)))
       | .float a, .float b => .ok (.bool (Float.lt b a))
-      | _, _ => .error (.typeError ">/2 expects two ints or two floats")
+      | _, _ => .badarg
   | "<=/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
       | .int a, .int b => .ok (.bool (decide (a ≤ b)))
       | .float a, .float b => .ok (.bool (!(Float.lt b a)))
-      | _, _ => .error (.typeError "<=/2 expects two ints or two floats")
+      | _, _ => .badarg
   | ">=/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
       | .int a, .int b => .ok (.bool (decide (a ≥ b)))
       | .float a, .float b => .ok (.bool (!(Float.lt a b)))
-      | _, _ => .error (.typeError ">=/2 expects two ints or two floats")
+      | _, _ => .badarg
   | "<>/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
       | .string a, .string b => .ok (.string (a ++ b))
-      | _, _ => .error (.typeError "<>/2 expects two strings")
+      | _, _ => .badarg
   | "tuple_size/1" =>
     if args.size != 1 then .error (.badArity name 1 args.size)
     else match args[0]! with
       | .ref r =>
         match h.get? r with
         | some (.tuple elems) => .ok (.int elems.size)
-        | _ => .error (.typeError "tuple_size/1 expects a tuple")
-      | _ => .error (.typeError "tuple_size/1 expects a tuple")
+        | _ => .badarg
+      | _ => .badarg
   | "list_size/1" =>
     if args.size != 1 then .error (.badArity name 1 args.size)
     else match args[0]! with
       | .ref r =>
         match h.get? r with
         | some (.list elems) => .ok (.int elems.size)
-        | _ => .error (.typeError "list_size/1 expects a list")
-      | _ => .error (.typeError "list_size/1 expects a list")
+        | _ => .badarg
+      | _ => .badarg
   | "map_size/1" =>
     if args.size != 1 then .error (.badArity name 1 args.size)
     else match args[0]! with
       | .ref r =>
         match h.get? r with
         | some (.map entries) => .ok (.int entries.size)
-        | _ => .error (.typeError "map_size/1 expects a map")
-      | _ => .error (.typeError "map_size/1 expects a map")
+        | _ => .badarg
+      | _ => .badarg
   | "map_get/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]! with
@@ -101,8 +109,8 @@ def builtin (h : Heap) (selfPid : Nat) (name : FunName) (args : Array Value) :
                 if Heap.beq h k key then return v
                 i := i + 1
               return .nil
-        | _ => .error (.typeError "map_get/2 expects a map")
-      | _ => .error (.typeError "map_get/2 expects a map")
+        | _ => .badarg
+      | _ => .badarg
   | "elem/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
@@ -110,11 +118,11 @@ def builtin (h : Heap) (selfPid : Nat) (name : FunName) (args : Array Value) :
         match h.get? r with
         | some (.tuple elems) =>
           if i < 0 || i >= elems.size then
-            .error (.typeError "elem/2 index out of range")
+            .badarg
           else
             .ok elems[i.toNat]!
-        | _ => .error (.typeError "elem/2 expects (tuple, int)")
-      | _, _ => .error (.typeError "elem/2 expects (tuple, int)")
+        | _ => .badarg
+      | _, _ => .badarg
   | "self/0" =>
     if args.size != 0 then .error (.badArity name 0 args.size)
     else .ok (.pid selfPid)
@@ -125,33 +133,31 @@ def getReg! (f : Frame) (r : Reg) : Value := f.regs[r]!
 def setReg! (f : Frame) (r : Reg) (v : Value) : Frame :=
   { f with regs := f.regs.setIfInBounds r v }
 
-/-- Catchable language exception (same control as the `raise` opcode). -/
-def raiseValue (s : State) (p : Process) (frame : Frame) (v : Value) :
-    Except StepError State := do
+/-- Catchable language exception (same control as the `raise` opcode).
+Uncaught: exit the process and schedule next (IR v14: entry exit does not halt the machine). -/
+def raiseValue (s : State) (p : Process) (_frame : Frame) (v : Value) :
+    Except StepError State :=
   if p.handlers.isEmpty then
     let p := { p with stack := #[], result := some v, status := .exited, handlers := #[] }
     let s := s.setCurrentProcess p
     let s := State.propagateExit s s.current v
-    if p.pid == s.entryPid then
-      pure { s with result := some (Heap.toTerm p.heap v) }
-    else
-      State.scheduleNext s s.current
+    State.scheduleNext s s.current
   else
     let h := p.handlers[p.handlers.size - 1]!
     if h.stackDepth == 0 || p.stack.size < h.stackDepth then
-      throw (.typeError "raise: bad handler stackDepth")
+      .error (.typeError "raise: bad handler stackDepth")
     else
       let stack := p.stack.extract 0 h.stackDepth
       let top0 := stack[stack.size - 1]!
       if h.rescueIp >= top0.function.code.size || h.excReg >= top0.function.locals then
-        throw (.typeError "raise: bad handler rescue/exc")
+        .error (.typeError "raise: bad handler rescue/exc")
       else
         let handlers := p.handlers.pop
         let handlers := handlers.filter (fun hh => hh.stackDepth ≤ stack.size)
         let top := setReg! top0 h.excReg v
         let top := { top with ip := h.rescueIp }
         let stack := stack.setIfInBounds (stack.size - 1) top
-        pure (s.setCurrentProcess { p with stack, handlers })
+        .ok (s.setCurrentProcess { p with stack, handlers })
 
 def readArgs! (f : Frame) (regs : Array Reg) : Array Value :=
   regs.map (getReg! f)
@@ -166,9 +172,9 @@ def mapPutEntries (h : Heap) (entries : Array (Value × Value)) (key val : Value
   entries.qsort fun (k1, _) (k2, _) =>
     Term.lt (Heap.toTerm h k1) (Heap.toTerm h k2)
 
-/-- `map_put/3` allocates a new map (GC-safe). -/
+/-- `map_put/3` allocates a new map (GC-safe). `none` → catchable `:badarg`. -/
 def mapPut (s : State) (p : Process) (frame : Frame) (dest : Reg)
-    (mapV key val : Value) : Except StepError State := do
+    (mapV key val : Value) : Option State :=
   match mapV with
   | .ref r =>
     match p.heap.get? r with
@@ -179,13 +185,13 @@ def mapPut (s : State) (p : Process) (frame : Frame) (dest : Reg)
       let frame := p.stack[p.stack.size - 1]!
       let frame := setReg! frame dest v
       let frame := { frame with ip := frame.ip + 1 }
-      pure (s.setCurrentProcess (State.setCurrentFrame p frame))
-    | _ => throw (.typeError "map_put/3 expects a map")
-  | _ => throw (.typeError "map_put/3 expects a map")
+      some (s.setCurrentProcess (State.setCurrentFrame p frame))
+    | _ => none
+  | _ => none
 
-/-- `cons/2` allocates `[head | tail]` (GC-safe). -/
+/-- `cons/2` allocates `[head | tail]` (GC-safe). `none` → catchable `:badarg`. -/
 def cons (s : State) (p : Process) (frame : Frame) (dest : Reg)
-    (head tail : Value) : Except StepError State := do
+    (head tail : Value) : Option State :=
   match tail with
   | .ref r =>
     match p.heap.get? r with
@@ -195,9 +201,36 @@ def cons (s : State) (p : Process) (frame : Frame) (dest : Reg)
       let frame := p.stack[p.stack.size - 1]!
       let frame := setReg! frame dest v
       let frame := { frame with ip := frame.ip + 1 }
-      pure (s.setCurrentProcess (State.setCurrentFrame p frame))
-    | _ => throw (.typeError "cons/2 expects a list tail")
-  | _ => throw (.typeError "cons/2 expects a list tail")
+      some (s.setCurrentProcess (State.setCurrentFrame p frame))
+    | _ => none
+  | _ => none
+
+/-- `Process.flag/2` — currently only `:trap_exit`. Returns previous flag value. -/
+def processFlag (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (flagV valV : Value) : Except StepError State :=
+  match flagV, valV with
+  | .atom "trap_exit", .bool b =>
+    let prev := p.trapExit
+    let p := { p with trapExit := b }
+    let frame := setReg! frame dest (.bool prev)
+    let frame := { frame with ip := frame.ip + 1 }
+    .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
+  | _, _ => raiseValue s p frame (.atom "badarg")
+
+/-- `Process.exit/2` — self: `raiseValue`; other: force-exit (ignores trap) then yield. -/
+def processExit (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (pidV reason : Value) : Except StepError State :=
+  match pidV with
+  | .pid pid =>
+    if pid == p.pid then
+      raiseValue s p frame reason
+    else
+      let frame := setReg! frame dest (.atom "true")
+      let frame := { frame with ip := frame.ip + 1 }
+      let s := s.setCurrentProcess (State.setCurrentFrame p frame)
+      let s := State.forceExitPid s pid reason
+      State.scheduleNext s s.current
+  | _ => raiseValue s p frame (.atom "badarg")
 
 /-- `make_tuple/N` allocates a tuple from argument registers (GC-safe). -/
 def makeTuple (s : State) (p : Process) (frame : Frame) (dest : Reg)
@@ -259,12 +292,26 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
       if args.size != 3 then
         throw (.badArity funName 3 args.size)
       else
-        mapPut s p frame dest args[0]! args[1]! args[2]!
+        match mapPut s p frame dest args[0]! args[1]! args[2]! with
+        | some s => pure s
+        | none => raiseValue s p frame (.atom "badarg")
     else if funName == "cons/2" then
       if args.size != 2 then
         throw (.badArity funName 2 args.size)
       else
-        cons s p frame dest args[0]! args[1]!
+        match cons s p frame dest args[0]! args[1]! with
+        | some s => pure s
+        | none => raiseValue s p frame (.atom "badarg")
+    else if funName == "Process.flag/2" then
+      if args.size != 2 then
+        throw (.badArity funName 2 args.size)
+      else
+        processFlag s p frame dest args[0]! args[1]!
+    else if funName == "Process.exit/2" then
+      if args.size != 2 then
+        throw (.badArity funName 2 args.size)
+      else
+        processExit s p frame dest args[0]! args[1]!
     else if funName == "make_ref/0" then
       if args.size != 0 then
         throw (.badArity funName 0 args.size)
@@ -278,10 +325,13 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
     else if isMakeTupleName funName then
       pure (makeTuple s p frame dest args)
     else if isBuiltinName funName then
-      let v ← builtin p.heap p.pid funName args
-      let frame := setReg! frame dest v
-      let frame := { frame with ip := frame.ip + 1 }
-      pure (s.setCurrentProcess (State.setCurrentFrame p frame))
+      match builtin p.heap p.pid funName args with
+      | .ok v =>
+        let frame := setReg! frame dest v
+        let frame := { frame with ip := frame.ip + 1 }
+        pure (s.setCurrentProcess (State.setCurrentFrame p frame))
+      | .badarg => raiseValue s p frame (.atom "badarg")
+      | .error e => throw e
     else
       let some callee := s.module.findFunction funName
         | throw (.unknownFunction funName)
@@ -302,10 +352,7 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
       let p := { p with stack := #[], result := some v, status := .exited, handlers := #[] }
       let s := s.setCurrentProcess p
       let s := State.propagateExit s s.current v
-      if p.pid == s.entryPid then
-        pure { s with result := some (Heap.toTerm p.heap v) }
-      else
-        State.scheduleNext s s.current
+      State.scheduleNext s s.current
     else
       let stack := p.stack.pop
       -- Must `leave_try` before returning out of a try frame.
@@ -321,10 +368,7 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
     let p := { p with stack := #[], result := some v, status := .exited, handlers := #[] }
     let s := s.setCurrentProcess p
     let s := State.propagateExit s s.current v
-    if p.pid == s.entryPid then
-      pure { s with result := some (Heap.toTerm p.heap v) }
-    else
-      State.scheduleNext s s.current
+    State.scheduleNext s s.current
   | .enterTry rescueIp excReg =>
     let h : Handler := {
       stackDepth := p.stack.size
@@ -612,7 +656,7 @@ def finishLoadFile (s : State) (dest : Reg) (contents : String) :
     let p := s.processes[s.current]
     if hsz : 0 < p.stack.size then
       let frame := p.stack[p.stack.size - 1]!
-      match Decode.fromString contents with
+      match Json.Decode.fromString contents with
       | .error _ => raiseValue s p frame (.atom "bad_bytecode")
       | .ok incoming =>
         let m' := Module.installModules s.module incoming
@@ -676,13 +720,14 @@ def runModule (m : Module) (fuel : Nat := 100000)
   let s ← State.initial m heapCapacity
   run fuel s
 
-/-- IO runner: services `load_file` via `IO.FS.readFile`, then pure `step`. -/
-partial def runIO (fuel : Nat) (s : State) : IO (Except StepError Term) := do
+/-- IO runner: services `load_file` via `IO.FS.readFile`, then pure `step`.
+Returns the final state so callers (REPL) can keep hot-loaded modules. -/
+partial def runIOState (fuel : Nat) (s : State) : IO (Except StepError (State × Term)) := do
   match fuel with
   | 0 => pure (.error (.typeError "out of fuel"))
   | fuel + 1 =>
     match s.result with
-    | some v => pure (.ok v)
+    | some v => pure (.ok (s, v))
     | none =>
       match peekLoadFile s with
       | some (dest, path) =>
@@ -697,12 +742,18 @@ partial def runIO (fuel : Nat) (s : State) : IO (Except StepError Term) := do
         | .ok s =>
           match afterInstr s with
           | .error e => pure (.error e)
-          | .ok s => runIO fuel s
+          | .ok s => runIOState fuel s
       | none =>
         -- Non-string path on load_file: pure step raises `:badarg`.
         match step s with
         | .error e => pure (.error e)
-        | .ok s => runIO fuel s
+        | .ok s => runIOState fuel s
+
+/-- IO runner: services `load_file` via `IO.FS.readFile`, then pure `step`. -/
+def runIO (fuel : Nat) (s : State) : IO (Except StepError Term) := do
+  match ← runIOState fuel s with
+  | .error e => pure (.error e)
+  | .ok (_, v) => pure (.ok v)
 
 def runModuleIO (m : Module) (fuel : Nat := 100000)
     (heapCapacity : Nat := State.defaultHeapCapacity) : IO (Except StepError Term) := do

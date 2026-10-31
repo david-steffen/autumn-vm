@@ -3,8 +3,7 @@ import Autumn.Instr
 
 open Lean
 
-namespace Autumn
-namespace Encode
+namespace Autumn.Json.Encode
 
 def encodeTag : Tag → Json
   | .nil => "nil"
@@ -117,5 +116,4 @@ def encodeModule (m : Module) : Json :=
 
 def toString (m : Module) : String := (encodeModule m).pretty
 
-end Encode
-end Autumn
+end Autumn.Json.Encode

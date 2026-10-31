@@ -199,6 +199,7 @@ defmodule AutumnCompiler.Lower do
 
   defp module_version(funs) do
     cond do
+      needs_v14?(funs) -> 14
       needs_v13?(funs) -> 13
       needs_v11?(funs) -> 11
       needs_v10?(funs) -> 10
@@ -212,6 +213,19 @@ defmodule AutumnCompiler.Lower do
       needs_v2?(funs) -> 2
       true -> 1
     end
+  end
+
+  defp needs_v14?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn
+        %{"op" => "call", "fun" => fun}
+        when fun in ~w(Process.flag/2 Process.exit/2) ->
+          true
+
+        _ ->
+          false
+      end)
+    end)
   end
 
   defp needs_v13?(funs) do
@@ -718,6 +732,15 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
+  # `for` / `with` are not in the teaching subset (avoid "unbound var" via call fallback).
+  defp expr({:for, _, _}, _env, _next, _code) do
+    {:error, "list comprehensions (for) are not supported yet"}
+  end
+
+  defp expr({:with, _, _}, _env, _next, _code) do
+    {:error, "with is not supported yet"}
+  end
+
   defp expr({name, _meta, args}, env, next, code)
        when is_atom(name) and is_list(args) and
               name not in [
@@ -739,7 +762,9 @@ defmodule AutumnCompiler.Lower do
                 :demonitor,
                 :send,
                 :recv,
-                :fn
+                :fn,
+                :for,
+                :with
               ] do
     arity = length(args)
 

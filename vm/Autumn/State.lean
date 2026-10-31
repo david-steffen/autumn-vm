@@ -1,4 +1,4 @@
-import Autumn.StateTypes
+import Autumn.State.Types
 import Autumn.Process
 
 namespace Autumn
@@ -132,8 +132,8 @@ def dropByRef (arr : Array (Nat × Nat)) (refId : Nat) : Array (Nat × Nat) :=
 def dropMonitoredBy (arr : Array (Nat × Nat)) (fromPid refId : Nat) : Array (Nat × Nat) :=
   arr.filter (fun (p, r) => !(p == fromPid && r == refId))
 
-/-- Deliver one `{:EXIT, fromPid, reason}` notification to `peerPid`, if present and alive. -/
-def notifyExitPeer (s : State) (fromPid : Nat) (heap : Heap) (reason : Value)
+/-- Deliver one `{:EXIT, fromPid, reason}` to a **trapping** peer (mailbox only). -/
+def notifyExitMailbox (s : State) (fromPid : Nat) (heap : Heap) (reason : Value)
     (peerPid : Nat) : State :=
   match s.findProcessIdx peerPid with
   | none => s
@@ -154,6 +154,11 @@ def notifyExitPeer (s : State) (fromPid : Nat) (heap : Heap) (reason : Value)
         { s with processes := s.processes.set idx peer hpeer }
     else
       s
+
+/-- Alias kept for lemmas / call sites that mean mailbox EXIT delivery. -/
+def notifyExitPeer (s : State) (fromPid : Nat) (heap : Heap) (reason : Value)
+    (peerPid : Nat) : State :=
+  notifyExitMailbox s fromPid heap reason peerPid
 
 /-- Deliver one `{:DOWN, ref, :process, fromPid, reason}` to `fromPid` (monitorer). -/
 def notifyDownPeer (s : State) (fromPid : Nat) (heap : Heap) (reason : Value)
@@ -190,13 +195,6 @@ def clearTargetMonitor (s : State) (fromPid targetPid refId : Nat) : State :=
     else
       s
 
-/-- Fold `notifyExitPeer` over a peer-pid list (proof-friendly form of the old `for` loop). -/
-def propagateExit.go (s : State) (fromPid : Nat) (heap : Heap) (reason : Value) :
-    List Nat → State
-  | [] => s
-  | peerPid :: rest =>
-    propagateExit.go (notifyExitPeer s fromPid heap reason peerPid) fromPid heap reason rest
-
 /-- Fold DOWN notifications over inbound monitors `(monitorerPid, refId)`. -/
 def propagateExit.goDown (s : State) (fromPid : Nat) (heap : Heap) (reason : Value) :
     List (Nat × Nat) → State
@@ -211,10 +209,73 @@ def propagateExit.goClear (s : State) (fromPid : Nat) : List (Nat × Nat) → St
   | (targetPid, refId) :: rest =>
     propagateExit.goClear (clearTargetMonitor s fromPid targetPid refId) fromPid rest
 
+mutual
+  /--
+  Signal one linked peer: mailbox EXIT if `trapExit`, else kill and cascade
+  (`fuel` bounds kill depth). With `fuel = 0`, always mailbox (no further kills).
+  -/
+  def signalLink (fuel : Nat) (s : State) (fromPid : Nat) (heap : Heap) (reason : Value)
+      (peerPid : Nat) : State :=
+    match s.findProcessIdx peerPid with
+    | none => s
+    | some idx =>
+      if hpeer : idx < s.processes.size then
+        let peer0 := s.processes[idx]'hpeer
+        if peer0.status == .exited then
+          s
+        else
+          match fuel with
+          | 0 => notifyExitMailbox s fromPid heap reason peerPid
+          | fuel + 1 =>
+            if peer0.trapExit then
+              notifyExitMailbox s fromPid heap reason peerPid
+            else
+              let peer0 := { peer0 with links := unlinkPid peer0.links fromPid }
+              let (peer0, reason') := peer0.copyFrom heap reason
+              let linkPids := peer0.links
+              let peerDowns := peer0.monitoredBy
+              let peerOuts := peer0.monitors
+              let peerHeap := peer0.heap
+              let peerPid' := peer0.pid
+              let peer := {
+                peer0 with
+                stack := #[]
+                result := some reason'
+                status := .exited
+                handlers := #[]
+                links := #[]
+                monitors := #[]
+                monitoredBy := #[]
+                waitDeadline := none
+              }
+              let s := { s with processes := s.processes.set idx peer hpeer }
+              propagateExit.from fuel s peerPid' peerHeap reason'
+                linkPids.toList peerDowns.toList peerOuts.toList
+      else
+        s
+
+  /-- Fold `signalLink` over linked peer pids. -/
+  def signalLinks (fuel : Nat) (s : State) (fromPid : Nat) (heap : Heap) (reason : Value) :
+      List Nat → State
+    | [] => s
+    | peerPid :: rest =>
+      signalLinks fuel (signalLink fuel s fromPid heap reason peerPid) fromPid heap reason rest
+
+  /--
+  Fan out EXIT/DOWN after a process exit. Linked peers with `trapExit` get a mailbox
+  `{:EXIT, …}`; others are killed (cascading, fuel-bounded by process count).
+  -/
+  def propagateExit.from (fuel : Nat) (s : State) (fromPid : Nat) (heap : Heap)
+      (reason : Value) (links : List Nat) (downs : List (Nat × Nat))
+      (outs : List (Nat × Nat)) : State :=
+    let s := signalLinks fuel s fromPid heap reason links
+    let s := propagateExit.goDown s fromPid heap reason downs
+    propagateExit.goClear s fromPid outs
+end
+
 /--
 Notify linked peers and monitorers that the process at `exitedIdx` has exited with `reason`.
-Peers receive `{:EXIT, ...}` / `{:DOWN, ...}` (copied into their heap) and are woken;
-links and monitors are cleared both ways. Teaching subset: mailbox only (no auto-exit).
+IR v14: trapping peers get `{:EXIT, …}`; non-trapping linked peers are killed and cascade.
 -/
 def propagateExit (s : State) (exitedIdx : Nat) (reason : Value) : State :=
   if hlt : exitedIdx < s.processes.size then
@@ -226,11 +287,41 @@ def propagateExit (s : State) (exitedIdx : Nat) (reason : Value) : State :=
     let heap := exited0.heap
     let exited := { exited0 with links := #[], monitors := #[], monitoredBy := #[] }
     let s := { s with processes := s.processes.set exitedIdx exited hlt }
-    let s := propagateExit.go s fromPid heap reason linkPids.toList
-    let s := propagateExit.goDown s fromPid heap reason downs.toList
-    propagateExit.goClear s fromPid outs.toList
+    propagateExit.from s.processes.size s fromPid heap reason
+      linkPids.toList downs.toList outs.toList
   else
     s
+
+/-- Force-exit process `pid` with `reason` (ignores `trapExit`; like OTP `exit(Pid, kill)`).
+No-op if missing or already exited. -/
+def forceExitPid (s : State) (pid : Nat) (reason : Value) : State :=
+  match s.findProcessIdx pid with
+  | none => s
+  | some idx =>
+    if h : idx < s.processes.size then
+      let p0 := s.processes[idx]'h
+      if p0.status == .exited then
+        s
+      else
+        -- Reason lives on the caller's heap; copy into the target before exit.
+        let srcHeap :=
+          if hcur : s.current < s.processes.size then
+            s.processes[s.current]'hcur |>.heap
+          else
+            p0.heap
+        let (p0, reason') := p0.copyFrom srcHeap reason
+        let p := {
+          p0 with
+          stack := #[]
+          result := some reason'
+          status := .exited
+          handlers := #[]
+          waitDeadline := none
+        }
+        let s := { s with processes := s.processes.set idx p h }
+        propagateExit s idx reason'
+    else
+      s
 
 /--
 Install monitor `refId` from the current process onto `targetPid`.

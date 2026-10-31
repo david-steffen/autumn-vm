@@ -6,6 +6,22 @@ defmodule AutumnCompiler do
   alias AutumnCompiler.Lower
 
   @doc """
+  Absolute path to the Lean `autumn` executable.
+
+  Override with `AUTUMN_VM`, otherwise `<repo>/vm/.lake/build/bin/autumn`.
+  """
+  def vm_bin do
+    case System.get_env("AUTUMN_VM") do
+      bin when is_binary(bin) and bin != "" ->
+        bin
+
+      _ ->
+        repo = Path.expand("../..", __DIR__)
+        Path.join(repo, "vm/.lake/build/bin/autumn")
+    end
+  end
+
+  @doc """
   Compile an Elixir source file to Autumn bytecode JSON.
 
   The file may contain one `defmodule` or a block of several.
@@ -18,6 +34,56 @@ defmodule AutumnCompiler do
          {:ok, module} <- Lower.lower(quoted) do
       {:ok, module}
     end
+  end
+
+  @doc """
+  Lower a single expression as `Repl.main/0` for the durable REPL.
+
+  Uses module name `Repl` (not `Main`) so `.load` of a `Main` module is not
+  clobbered on each eval.
+
+  `bindings` is an ordered list of `{var_atom, rhs_ast}` replayed before `source`
+  so prior `x = …` lines stay in scope (Lean still resets the process each EVAL).
+
+  Returns `{:ok, json_map, expr_ast}` or `{:error, message}`.
+  """
+  def eval_expr(source, bindings \\ []) when is_binary(source) and is_list(bindings) do
+    with {:ok, expr} <- parse(source, "eval"),
+         {:ok, module} <- Lower.lower(wrap_repl(expr, bindings)) do
+      {:ok, module, expr}
+    end
+  end
+
+  @doc """
+  Extend `bindings` when `expr` is a simple `var = rhs` assignment.
+  """
+  def binding_after(bindings, {:=, _, [{name, _, nil}, rhs]})
+      when is_list(bindings) and is_atom(name) and name != :_ do
+    bindings ++ [{name, rhs}]
+  end
+
+  def binding_after(bindings, _expr) when is_list(bindings), do: bindings
+
+  defp wrap_repl(expr, bindings) do
+    body =
+      case bindings do
+        [] ->
+          expr
+
+        _ ->
+          stmts =
+            Enum.map(bindings, fn {name, rhs} ->
+              {:=, [], [{name, [], nil}, rhs]}
+            end)
+
+          {:__block__, [], stmts ++ [expr]}
+      end
+
+    {:defmodule, [],
+     [
+       {:__aliases__, [alias: false], [:Repl]},
+       [do: {:def, [], [{:main, [], nil}, [do: body]]}]
+     ]}
   end
 
   @doc """
