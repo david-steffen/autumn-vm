@@ -17,6 +17,9 @@ Elixir subset → versioned IR JSON → Lean 4 VM. The Mix lowerer emits bytecod
 | `vm/Autumn/Repl.lean` | Durable `autumn --repl` line protocol |
 | `ROADMAP.md` | Ordered backlog (“what’s next”) |
 | `tests/fixtures/` | Sample Elixir programs for lowering |
+| `stdlib/` | Thin library modules (`genserver.ex`, `supervisor.ex`); compile with `AutumnCompiler.compile_files/1` alongside app code |
+
+**Module atoms + `apply_mfa` (IR v15):** a bare alias like `Counter` lowers to atom `"Counter"` (no `Elixir.` prefix). `apply(mod, :init, [arg])` with a literal arg list emits `apply_mfa`, which looks up `"#{mod}.#{fun}/#{arity}"` in the loaded image. Stdlib `GenServer.start(Counter, 0)` spawns `GenServer.server/2` and dispatches `init` / `handle_*` this way; missing MFA → catchable `:undef`.
 
 ## Build & run
 
@@ -26,6 +29,8 @@ Elixir subset → versioned IR JSON → Lean 4 VM. The Mix lowerer emits bytecod
 mix deps.get
 mix test
 mix autumn.compile ../tests/fixtures/add_main.ex /tmp/add.bc.json
+# multi-file (stdlib + app):
+#   iex> AutumnCompiler.compile_files!(["../stdlib/genserver.ex", "../tests/fixtures/genserver_stdlib.ex"], "/tmp/gs.bc.json")
 mix autumn.smoke   # allowlisted fixtures on the Lean VM (build VM first)
 ```
 

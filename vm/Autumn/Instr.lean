@@ -48,6 +48,8 @@ inductive Instr where
   | apply (dest : Reg) (funReg : Reg) (args : Array Reg)
   -- IR v13 dynamic load (`Code.load_file`); IO runner services the read
   | loadFile (dest pathReg : Reg)
+  -- IR v15 dynamic MFA: mod/fun atoms → `"#{mod}.#{fun}/#{arity}"`
+  | applyMfa (dest : Reg) (modReg funReg : Reg) (args : Array Reg)
   deriving Repr, BEq, Inhabited
 
 structure Function where

@@ -189,6 +189,10 @@ def decodeInstr (j : Json) : Except StepError Instr := do
       (← (← asArray (← field j "args")).mapM asNat))
   | "load_file" =>
     pure (.loadFile (← asNat (← field j "dest")) (← asNat (← field j "path")))
+  | "apply_mfa" =>
+    pure (.applyMfa (← asNat (← field j "dest")) (← asNat (← field j "mod"))
+      (← asNat (← field j "fun"))
+      (← (← asArray (← field j "args")).mapM asNat))
   | other => err s!"unknown op: {other}"
 
 /-- Resolve `label` ops to jump targets; strip labels from code. -/
@@ -224,7 +228,8 @@ def decodeModule (j : Json) : Except StepError Module := do
   let version ← asNat (← field j "version")
   if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 &&
       version != 6 && version != 7 && version != 8 && version != 9 && version != 10 &&
-      version != 11 && version != 12 && version != 13 && version != 14 then
+      version != 11 && version != 12 && version != 13 && version != 14 &&
+      version != 15 then
     err s!"unsupported IR version: {version}"
   let entry ← asString (← field j "entry")
   match j.getObjVal? "modules" with

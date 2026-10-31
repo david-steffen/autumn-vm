@@ -310,6 +310,59 @@ defmodule AutumnCompilerTest do
     assert module["version"] == 9
   end
 
+  @stdlib Path.expand("../../stdlib", __DIR__)
+
+  test "lowers genserver_stdlib / genserver_stdlib_down with stdlib GenServer" do
+    gs = Path.join(@stdlib, "genserver.ex")
+
+    path = Path.join(@fixtures, "genserver_stdlib.ex")
+    expected_path = Path.join(@fixtures, "genserver_stdlib.bc.json")
+    assert {:ok, module} = AutumnCompiler.compile_files([gs, path])
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+    names = Enum.map(module["modules"], & &1["name"])
+    assert "GenServer" in names
+    assert "Main" in names
+    funs = Enum.flat_map(module["modules"], & &1["functions"])
+    assert Enum.any?(funs, &(&1["name"] == "GenServer.call/2"))
+    assert Enum.any?(funs, &(&1["name"] == "GenServer.reply/3"))
+    assert Enum.any?(funs, &(&1["name"] == "GenServer.start/2"))
+
+    path = Path.join(@fixtures, "genserver_stdlib_down.ex")
+    expected_path = Path.join(@fixtures, "genserver_stdlib_down.bc.json")
+    assert {:ok, module} = AutumnCompiler.compile_files([gs, path])
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+  end
+
+  test "lowers genserver_behaviour (IR v15 apply_mfa)" do
+    gs = Path.join(@stdlib, "genserver.ex")
+    path = Path.join(@fixtures, "genserver_behaviour.ex")
+    expected_path = Path.join(@fixtures, "genserver_behaviour.bc.json")
+    assert {:ok, module} = AutumnCompiler.compile_files([gs, path])
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+    assert module["version"] == 15
+    code = Enum.flat_map(module["modules"], & &1["functions"]) |> Enum.flat_map(& &1["code"])
+    assert Enum.any?(code, &(&1["op"] == "apply_mfa"))
+    names = Enum.map(module["modules"], & &1["name"])
+    assert "Counter" in names
+  end
+
+  test "lowers supervisor_one_for_one" do
+    gs = Path.join(@stdlib, "genserver.ex")
+    sup = Path.join(@stdlib, "supervisor.ex")
+    path = Path.join(@fixtures, "supervisor_one_for_one.ex")
+    expected_path = Path.join(@fixtures, "supervisor_one_for_one.bc.json")
+    assert {:ok, module} = AutumnCompiler.compile_files([gs, sup, path])
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+    assert module["version"] == 15
+    names = Enum.map(module["modules"], & &1["name"])
+    assert "Supervisor" in names
+    assert "CrashOnce" in names
+  end
+
   test "lowers float_string (IR v10)" do
     path = Path.join(@fixtures, "float_string.ex")
     expected_path = Path.join(@fixtures, "float_string.bc.json")

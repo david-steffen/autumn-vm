@@ -999,6 +999,34 @@ theorem decodeInstr_encodeInstr (i : Instr) (hi : Instr.FloatFree i)
     have hmap := mapM_asNat_toJson args
     simp [Decode.field, hop, hdest, hfun, hargs, hmap, asString_coe, asNat_coe, asArray_arr,
       Bind.bind, Pure.pure, Except.bind, Except.pure]
+  | applyMfa d m f args =>
+    simp only [Encode.encodeInstr, Decode.decodeInstr]
+    have hdist : [("op", ("apply_mfa" : Json)), ("dest", (d : Json)), ("mod", (m : Json)),
+        ("fun", (f : Json)), ("args", Json.arr (args.map fun a => toJson a))].Pairwise
+        (fun a b : String × Json => a.1 ≠ b.1) := by simp [List.pairwise_cons]
+    have hop := getObjVal?_of_mem [("op", ("apply_mfa" : Json)), ("dest", (d : Json)),
+        ("mod", (m : Json)), ("fun", (f : Json)),
+        ("args", Json.arr (args.map fun a => toJson a))]
+      "op" ("apply_mfa" : Json) (by simp) hdist
+    have hdest := getObjVal?_of_mem [("op", ("apply_mfa" : Json)), ("dest", (d : Json)),
+        ("mod", (m : Json)), ("fun", (f : Json)),
+        ("args", Json.arr (args.map fun a => toJson a))]
+      "dest" (d : Json) (by simp) hdist
+    have hmod := getObjVal?_of_mem [("op", ("apply_mfa" : Json)), ("dest", (d : Json)),
+        ("mod", (m : Json)), ("fun", (f : Json)),
+        ("args", Json.arr (args.map fun a => toJson a))]
+      "mod" (m : Json) (by simp) hdist
+    have hfun := getObjVal?_of_mem [("op", ("apply_mfa" : Json)), ("dest", (d : Json)),
+        ("mod", (m : Json)), ("fun", (f : Json)),
+        ("args", Json.arr (args.map fun a => toJson a))]
+      "fun" (f : Json) (by simp) hdist
+    have hargs := getObjVal?_of_mem [("op", ("apply_mfa" : Json)), ("dest", (d : Json)),
+        ("mod", (m : Json)), ("fun", (f : Json)),
+        ("args", Json.arr (args.map fun a => toJson a))]
+      "args" (Json.arr (args.map fun a => toJson a)) (by simp) hdist
+    have hmap := mapM_asNat_toJson args
+    simp [Decode.field, hop, hdest, hmod, hfun, hargs, hmap, asString_coe, asNat_coe, asArray_arr,
+      Bind.bind, Pure.pure, Except.bind, Except.pure]
   | wait retry after timeout =>
     match timeout with
     | none =>
@@ -1044,10 +1072,10 @@ theorem decodeInstr_encodeInstr (i : Instr) (hi : Instr.FloatFree i)
 
 theorem versionOk_not_rejected (v : Nat) (h : Module.versionOk v) :
     (v != 1 && v != 2 && v != 3 && v != 4 && v != 5 && v != 6 && v != 7 && v != 8 &&
-      v != 9 && v != 10 && v != 11 && v != 12 && v != 13 && v != 14) = false := by
+      v != 9 && v != 10 && v != 11 && v != 12 && v != 13 && v != 14 && v != 15) = false := by
   simp only [Module.versionOk] at h
   rcases h with
-    h | h | h | h | h | h | h | h | h | h | h | h | h | h <;> simp [h]
+    h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;> simp [h]
 
 theorem decodeFunction_encodeFunction (f : Function)
     (hf : Function.FloatFree f) (hfuel : Function.LitFuelOk f)

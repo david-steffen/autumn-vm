@@ -8,7 +8,7 @@ Ordered backlog for the Elixir subset → IR JSON → Lean 4 VM. Check items off
 - Prefer fixtures + Mix test + `lake exe autumn` before deep new lemmas.
 - Catchable language exceptions (`raise`) stay distinct from uncatchable stepper `typeError`.
 
-## Done (through IR v14)
+## Done (through IR v15)
 
 - [x] Register IR v1–13: literals/calls through monitors, floats/strings, closures, multi-module, `load_file`
 - [x] Generational heap + GC lemmas; reduction-preemptive scheduler (logical clock for timeouts)
@@ -156,9 +156,27 @@ Dual of `run_progress`; lift `scheduleNext_result_is_toTerm` through the runner.
 2. [x] `afterInstr_result_is_toTerm` / `stepInstr_result_is_toTerm` / `step_result_is_toTerm`
 3. [x] `run_result_is_toTerm` / `runModule_result_is_toTerm` — idle-drain value is `Heap.toTerm`
 
+## Phase 21 — Thin `GenServer` stdlib
+
+Client helpers only (no behaviour / `init` / Supervisor). Servers still hand-write the receive loop.
+
+1. [x] `stdlib/genserver.ex`: `call/2`, `cast/2`, `reply/3` (monitor + selective receive; DOWN/after → `0`)
+2. [x] Fixtures `genserver_stdlib` / `genserver_stdlib_down` via `compile_files`; Mix golden + smoke → `7` / `0`
+3. [x] Document in `AGENTS.md`; smoke allowlist accepts stdlib companion sources
+
+## Phase 22 — Dynamic MFA, GenServer behaviour, Supervisor (IR v15)
+
+OTP-shaped runtime dispatch: module is a runtime atom; callbacks look up `"#{mod}.#{fun}/#{arity}"`.
+
+1. [x] IR v15 `apply_mfa` — Instr/Step/Json/WF + preserve/progress; catchable `:undef` / `:badarg`
+2. [x] Mix: bare alias → atom; `apply/3` with literal arg list → `apply_mfa`; `spawn(Mod, :fun, […])`
+3. [x] `stdlib/genserver.ex`: `start` / `start_link` / `server` + `init` / `handle_call` / `handle_cast` via `apply_mfa`
+4. [x] `stdlib/supervisor.ex`: thin `one_for_one` (`start_link` / monitor / restart)
+5. [x] Fixtures `genserver_behaviour` → `8`, `supervisor_one_for_one` → `3`; Mix goldens + smoke
+
 ## Later (deprioritized)
 
 - ETS
-- Stdlib (`GenServer` / `Supervisor` as real modules, not fixtures)
+- Full `use GenServer` / `@behaviour`, `handle_info`, intensity windows, `rest_for_one` / `one_for_all`
 - Verified compiler
 - Bit-identical float identity (`n.toFloat = f`) when `fromFloat?` succeeds

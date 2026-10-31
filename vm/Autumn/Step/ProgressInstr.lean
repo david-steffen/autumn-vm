@@ -437,6 +437,38 @@ theorem loadFile_error_not_structural
   · exact raiseValue_error_not_structural _ _ _ _ herr
   · exact raiseValue_error_not_structural _ _ _ _ herr
 
+/-- `applyMfa` case of `stepInstr_error_not_structural`. -/
+theorem applyMfa_error_not_structural
+    (s : State) (p : Process) (frame : Frame)
+    (dest modReg funReg : Reg) (argRegs : Array Reg) {e : StepError}
+    (herr : stepInstr s p frame (.applyMfa dest modReg funReg argRegs) = .error e) :
+    isStructuralError e = false := by
+  simp [stepInstr] at herr
+  cases hmod : getReg! frame modReg with
+  | atom modName =>
+    simp [hmod] at herr
+    cases hfun : getReg! frame funReg with
+    | atom funName =>
+      simp [hfun] at herr
+      generalize hff0 : s.module.findFunction
+          (modName ++ "." ++ funName ++ "/" ++
+            toString (readArgs! frame argRegs).size) = oFind at herr
+      cases oFind with
+      | none =>
+        simp [hff0] at herr
+        exact raiseValue_error_not_structural _ _ _ _ herr
+      | some callee =>
+        simp [hff0] at herr
+        split at herr
+        · exact nomatch herr
+        · exact raiseValue_error_not_structural _ _ _ _ herr
+    | nil | bool _ | int _ | float _ | string _ | pid _ | reference _ | ref _ =>
+      simp [hfun] at herr
+      exact raiseValue_error_not_structural _ _ _ _ herr
+  | nil | bool _ | int _ | float _ | string _ | pid _ | reference _ | ref _ =>
+    simp [hmod] at herr
+    exact raiseValue_error_not_structural _ _ _ _ herr
+
 theorem stepInstr_error_not_structural
     (s : State) (p : Process) (frame : Frame) (instr : Instr) {e : StepError}
     (herr : stepInstr s p frame instr = .error e) :
@@ -480,6 +512,8 @@ theorem stepInstr_error_not_structural
       exact apply_error_not_structural s p frame dest funReg argRegs herr
   | loadFile dest pathReg =>
       exact loadFile_error_not_structural s p frame dest pathReg herr
+  | applyMfa dest modReg funReg argRegs =>
+      exact applyMfa_error_not_structural s p frame dest modReg funReg argRegs herr
 
 /-- Progress: well-formed running states never fail structurally. -/
 theorem step_progress (s : State) (hs : State.WF s) (hr : s.result = none) :

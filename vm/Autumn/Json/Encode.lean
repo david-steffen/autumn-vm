@@ -104,6 +104,9 @@ def encodeInstr : Instr → Json
         ("args", Json.arr (args.map (fun a => toJson a)))]
   | .loadFile d p =>
       Json.mkObj [("op", "load_file"), ("dest", d), ("path", p)]
+  | .applyMfa d m f args =>
+      Json.mkObj [("op", "apply_mfa"), ("dest", d), ("mod", m), ("fun", f),
+        ("args", Json.arr (args.map (fun a => toJson a)))]
 
 def encodeFunction (f : Function) : Json :=
   Json.mkObj [

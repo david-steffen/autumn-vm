@@ -49,6 +49,7 @@ def regsOk (locals : Nat) : Instr → Bool
   | .makeFun d _ caps => d < locals && caps.all (· < locals)
   | .apply d f args => d < locals && f < locals && args.all (· < locals)
   | .loadFile d p => d < locals && p < locals
+  | .applyMfa d m f args => d < locals && m < locals && f < locals && args.all (· < locals)
 
 def jumpTargetOk (codeSize : Nat) : Instr → Bool
   | .jump t => t < codeSize
@@ -185,23 +186,23 @@ def uniqueModuleNames (m : Module) : Prop :=
 
 def versionOk (v : Nat) : Prop :=
   v = 1 ∨ v = 2 ∨ v = 3 ∨ v = 4 ∨ v = 5 ∨ v = 6 ∨ v = 7 ∨ v = 8 ∨ v = 9 ∨
-    v = 10 ∨ v = 11 ∨ v = 12 ∨ v = 13 ∨ v = 14
+    v = 10 ∨ v = 11 ∨ v = 12 ∨ v = 13 ∨ v = 14 ∨ v = 15
 
 def versionOkB (v : Nat) : Bool :=
-  (1 ≤ v) && (v ≤ 14)
+  (1 ≤ v) && (v ≤ 15)
 
 theorem versionOkB_sound (v : Nat) (h : versionOkB v = true) : versionOk v := by
   simp only [versionOkB, Bool.and_eq_true, decide_eq_true_eq] at h
   match v with
   | 0 => omega
-  | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 => simp [versionOk]
-  | n + 15 => omega
+  | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 => simp [versionOk]
+  | n + 16 => omega
 
 theorem versionOkB_complete (v : Nat) (h : versionOk v) : versionOkB v = true := by
   simp only [versionOk] at h
   simp only [versionOkB, Bool.and_eq_true, decide_eq_true_eq]
   rcases h with
-    h | h | h | h | h | h | h | h | h | h | h | h | h | h <;> subst h <;> decide
+    h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;> subst h <;> decide
 
 def uniqueFunNamesB (m : Module) : Bool :=
   (List.range m.allFunctions.size).all fun i =>

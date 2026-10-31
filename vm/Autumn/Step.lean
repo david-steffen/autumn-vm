@@ -619,6 +619,31 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
     match getReg! frame pathReg with
     | .string _ => raiseValue s p frame (.atom "enoent")
     | _ => raiseValue s p frame (.atom "badarg")
+  | .applyMfa dest modReg funReg argRegs =>
+    match getReg! frame modReg with
+    | .atom modName =>
+      match getReg! frame funReg with
+      | .atom funName =>
+        match s.module.findFunction
+            (modName ++ "." ++ funName ++ "/" ++
+              toString (readArgs! frame argRegs).size) with
+        | none => raiseValue s p frame (.atom "undef")
+        | some callee =>
+          if callee.arity == (readArgs! frame argRegs).size then
+            let args := readArgs! frame argRegs
+            let caller := { frame with ip := frame.ip + 1 }
+            let p := State.setCurrentFrame p caller
+            let newFrame : Frame := {
+              function := callee
+              regs := State.mkRegs callee.locals args
+              ip := 0
+              retDest := dest
+            }
+            pure (s.setCurrentProcess { p with stack := p.stack.push newFrame })
+          else
+            raiseValue s p frame (.atom "badarg")
+      | _ => raiseValue s p frame (.atom "badarg")
+    | _ => raiseValue s p frame (.atom "badarg")
 
 /-- After a successful instruction, bump clock and maybe yield. -/
 def afterInstr (s : State) : Except StepError State :=

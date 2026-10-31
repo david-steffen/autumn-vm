@@ -1043,6 +1043,88 @@ theorem loadFile_preserves {s p frame} (H : StepInstrHyp s p frame)
     simp [hpath] at h
     exact raiseValue_preserves s p frame (.atom "badarg") hs hp hres hstat htop h
 
+/-- `applyMfa` case of `stepInstr_preserves`. -/
+theorem applyMfa_preserves {s p frame} (H : StepInstrHyp s p frame)
+    (dest modReg funReg : Reg) (argRegs : Array Reg) {s'}
+    (hcode : frame.function.code[frame.ip]! = .applyMfa dest modReg funReg argRegs)
+    (h : stepInstr s p frame (.applyMfa dest modReg funReg argRegs) = .ok s') :
+    State.WF s' := by
+  have hio := H.instrOk (.applyMfa dest modReg funReg argRegs) hcode
+  obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
+  simp [stepInstr] at h
+  cases hmod : getReg! frame modReg with
+  | atom modName =>
+    simp [hmod] at h
+    cases hfun : getReg! frame funReg with
+    | atom funName =>
+      simp [hfun] at h
+      generalize hff0 : s.module.findFunction
+          (modName ++ "." ++ funName ++ "/" ++
+            toString (readArgs! frame argRegs).size) = oFind at h
+      cases oFind with
+      | none =>
+        simp [hff0] at h
+        exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+      | some callee =>
+        simp [hff0] at h
+        split at h
+        · cases h
+          have hip :=
+            ip_succ_lt_of_nonterminal hfwf.1 hfwf.2.2.1 hcode rfl
+          have hcallee : Function.WF s.module callee :=
+            Module.findFunction_WF hs.1 hff0
+          let caller : Frame := { frame with ip := frame.ip + 1 }
+          have hcaller : Frame.WF s.module caller := bumpIp_frame _ _ hfwf hip
+          let p1 := State.setCurrentFrame p caller
+          have hp1 : Process.WF s.module p1 :=
+            setCurrentFrame_sameMeta_WF _ _ _ hres hstat htop hp hcaller
+              (by simp [caller, hframe]) (by simp [caller, hframe])
+          have hres1 : p1.result = none := by
+            dsimp [p1, State.setCurrentFrame]; simp [htop, hres]
+          have hstat1 : p1.status = .runnable := by
+            dsimp [p1, State.setCurrentFrame]; simp [htop, hstat]
+          have hsz1 : 0 < p1.stack.size := by
+            simpa [p1, setCurrentFrame_stack_size p caller htop] using htop
+          let newFrame : Frame := {
+            function := callee
+            regs := State.mkRegs callee.locals (readArgs! frame argRegs)
+            ip := 0
+            retDest := dest
+          }
+          have hnew : Frame.WF s.module newFrame := by
+            refine ⟨hcallee, ?_, ?_, ?_⟩
+            · simp [newFrame, mkRegs_size]
+            · exact hcallee.2.1
+            · have hname := Module.findFunction_name hff0
+              simpa [newFrame, hname] using Option.isSome_of_eq_some hff0
+          have hdest : dest < frame.function.locals := by
+            have hr : Instr.regsOk frame.function.locals
+                (Instr.applyMfa dest modReg funReg argRegs) = true := by
+              simpa [Function.instrOk] using hio.1
+            simp [Instr.regsOk] at hr
+            exact hr.1.1.1
+          have hret : newFrame.retDest < (p1.stack[p1.stack.size - 1]!).function.locals := by
+            have htop1 : p1.stack[p1.stack.size - 1]! = caller := by
+              dsimp [p1, State.setCurrentFrame]
+              simp only [htop, ↓reduceDIte]
+              have hszs : (p.stack.set (p.stack.size - 1) caller).size = p.stack.size :=
+                Array.size_set _
+              have hlt : p.stack.size - 1 < (p.stack.set (p.stack.size - 1) caller).size := by
+                simpa [hszs] using Nat.sub_one_lt_of_lt htop
+              rw [hszs, getElem!_pos (p.stack.set (p.stack.size - 1) caller)
+                (p.stack.size - 1) hlt, Array.getElem_set_self]
+            simpa [newFrame, htop1, caller, hframe] using hdest
+          have hp2 : Process.WF s.module { p1 with stack := p1.stack.push newFrame } :=
+            push_frame_process_WF s.module p1 newFrame hres1 hstat1 hsz1 hp1 hnew hret
+          exact setCurrentProcess_WF s _ hs hp2
+        · exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+    | nil | bool _ | int _ | float _ | string _ | pid _ | reference _ | ref _ =>
+      simp [hfun] at h
+      exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+  | nil | bool _ | int _ | float _ | string _ | pid _ | reference _ | ref _ =>
+    simp [hmod] at h
+    exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+
 /-- Successful `stepInstr` preserves well-formedness under the usual stepper hypotheses. -/
 theorem stepInstr_preserves
     (s : State) (p : Process) (frame : Frame) (instr : Instr) {s'}
@@ -1085,6 +1167,8 @@ theorem stepInstr_preserves
       exact makeFun_step_preserves H dest funName capRegs hcode h
   | apply dest funReg argRegs => exact apply_preserves H dest funReg argRegs hcode h
   | loadFile dest pathReg => exact loadFile_preserves H dest pathReg hcode h
+  | applyMfa dest modReg funReg argRegs =>
+      exact applyMfa_preserves H dest modReg funReg argRegs hcode h
 
 end Step
 end Autumn

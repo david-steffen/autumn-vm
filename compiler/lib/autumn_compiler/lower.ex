@@ -200,6 +200,7 @@ defmodule AutumnCompiler.Lower do
 
   defp module_version(funs) do
     cond do
+      needs_v15?(funs) -> 15
       needs_v14?(funs) -> 14
       needs_v13?(funs) -> 13
       needs_v11?(funs) -> 11
@@ -214,6 +215,15 @@ defmodule AutumnCompiler.Lower do
       needs_v2?(funs) -> 2
       true -> 1
     end
+  end
+
+  defp needs_v15?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn
+        %{"op" => "apply_mfa"} -> true
+        _ -> false
+      end)
+    end)
   end
 
   defp needs_v14?(funs) do
@@ -557,6 +567,11 @@ defmodule AutumnCompiler.Lower do
   defp expr(a, env, next, code) when is_atom(a),
     do: emit_lit(%{"atom" => Atom.to_string(a)}, env, next, code)
 
+  # Bare module alias `Counter` → atom `"Counter"` (OTP-shaped MFA prefix).
+  defp expr({:__aliases__, _, parts}, env, next, code) when is_list(parts) do
+    emit_lit(%{"atom" => Enum.map_join(parts, ".", &to_string/1)}, env, next, code)
+  end
+
   defp expr({name, _, nil}, env, next, code) when is_atom(name) do
     case Map.fetch(env, name) do
       {:ok, reg} -> {:ok, code, env, next, reg}
@@ -647,10 +662,31 @@ defmodule AutumnCompiler.Lower do
     lower_receive(opts, env, next, code)
   end
 
+  # spawn(Mod, :fun, [args...]) — static MFA when Mod/fun are literals
+  defp expr({:spawn, _, [{:__aliases__, _, parts}, fun, args_list]}, env, next, code)
+       when is_atom(fun) and is_list(args_list) do
+    mod = Enum.map_join(parts, ".", &to_string/1)
+    arity = length(args_list)
+    lower_spawn_mfa("#{mod}.#{fun}/#{arity}", args_list, env, next, code)
+  end
+
   # spawn(Mod.fun/arity isn't Elixir) — spawn(Main, :worker, [arg]) style via Autumn.spawn
   # We accept spawn(fun_name_atom, arg) as local MFA spawn: spawn(:worker, x) -> Main.worker/1
   defp expr({:spawn, _, [fun_ast, args_ast]}, env, next, code) when is_list(args_ast) or true do
     lower_spawn(fun_ast, args_ast, env, next, code)
+  end
+
+  # spawn_link(Mod, :fun, [args...])
+  defp expr({:spawn_link, _, [{:__aliases__, _, parts}, fun, args_list]}, env, next, code)
+       when is_atom(fun) and is_list(args_list) do
+    mod = Enum.map_join(parts, ".", &to_string/1)
+    arity = length(args_list)
+
+    with {:ok, code, env, next, pid_reg} <-
+           lower_spawn_mfa("#{mod}.#{fun}/#{arity}", args_list, env, next, code) do
+      code = code ++ [%{"op" => "link", "pid" => pid_reg}]
+      {:ok, code, env, next, pid_reg}
+    end
   end
 
   # spawn_link(fun, args) → spawn then link
@@ -703,6 +739,26 @@ defmodule AutumnCompiler.Lower do
     mod = Enum.map_join(parts, ".", &to_string/1)
     arity = length(args)
     lower_call_named("#{mod}.#{fun}/#{arity}", args, env, next, code)
+  end
+
+  # apply(mod, fun, [a, b, ...]) with a literal arg list → apply_mfa (IR v15)
+  defp expr({:apply, _, [mod_ast, fun_ast, args_list]}, env, next, code)
+       when is_list(args_list) do
+    with {:ok, code, env, next, mod_reg} <- expr(mod_ast, env, next, code),
+         {:ok, code, env, next, fun_reg} <- expr(fun_ast, env, next, code),
+         {:ok, code, env, next, arg_regs} <- map_exprs(args_list, env, next, code) do
+      dest = next
+
+      instr = %{
+        "op" => "apply_mfa",
+        "dest" => dest,
+        "mod" => mod_reg,
+        "fun" => fun_reg,
+        "args" => arg_regs
+      }
+
+      {:ok, code ++ [instr], env, next + 1, dest}
+    end
   end
 
   # Closure apply: `f.(args)` — `.` with a single callee expression.
@@ -765,6 +821,7 @@ defmodule AutumnCompiler.Lower do
                 :receive,
                 :spawn,
                 :spawn_link,
+                :apply,
                 :link,
                 :monitor,
                 :demonitor,
@@ -1061,6 +1118,14 @@ defmodule AutumnCompiler.Lower do
         end
 
       instr = %{"op" => "spawn", "dest" => dest, "fun" => fun, "args" => arg_regs}
+      {:ok, code ++ [instr], env, next + 1, dest}
+    end
+  end
+
+  defp lower_spawn_mfa(mfa, args_list, env, next, code) when is_binary(mfa) do
+    with {:ok, code, env, next, arg_regs} <- map_exprs(args_list, env, next, code) do
+      dest = next
+      instr = %{"op" => "spawn", "dest" => dest, "fun" => mfa, "args" => arg_regs}
       {:ok, code ++ [instr], env, next + 1, dest}
     end
   end

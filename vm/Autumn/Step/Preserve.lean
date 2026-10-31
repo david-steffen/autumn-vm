@@ -727,7 +727,7 @@ theorem peekLoadFile_spec (s : State) (dest : Reg) (path : String)
     | getTupleElem _ _ _ | getListElem _ _ _ | getListRest _ _ _ | isTag _ _ _
     | spawn _ _ _ | send _ _ | recv _ | recvPeek _ _ _ | recvDrop _ | wait _ _ _
     | enterTry _ _ | leaveTry | raise _ | link _ | monitor _ _ | demonitor _
-    | makeFun _ _ _ | apply _ _ _ =>
+    | makeFun _ _ _ | apply _ _ _ | applyMfa _ _ _ _ =>
     simp [hcode] at hmatch
 
 /-- `raiseLoadAtCurrent` preserves WF (`:enoent` / `:badarg` from the IO runner). -/

@@ -11,14 +11,19 @@ defmodule Mix.Tasks.Autumn.Smoke do
   (`../tests/fixtures/hot_load/…`).
 
   Override the VM binary with `AUTUMN_VM=/path/to/autumn`.
+
+  Fixtures that need the stdlib pass extra source paths (e.g. `stdlib/genserver.ex`)
+  and are compiled with `AutumnCompiler.compile_files/1`.
   """
 
   use Mix.Task
 
   # lib/mix/tasks → repo root
-  @fixtures Path.expand("../../../../tests/fixtures", __DIR__)
+  @repo Path.expand("../../../../", __DIR__)
+  @fixtures Path.join(@repo, "tests/fixtures")
+  @stdlib Path.join(@repo, "stdlib")
 
-  # {fixture_stem, expected stdout (trimmed)}
+  # {fixture_stem, expected stdout (trimmed)} | {stem, expected, extra_source_paths}
   @allowlist [
     {"add_main", "3"},
     {"try_rescue", "3"},
@@ -32,7 +37,12 @@ defmodule Mix.Tasks.Autumn.Smoke do
     {"list_helpers", "8"},
     {"genserver_counter", "7"},
     {"genserver_call_down", "1"},
-    {"list_lit", "[1, 2, 3]"}
+    {"list_lit", "[1, 2, 3]"},
+    {"genserver_stdlib", "7", [Path.join(@stdlib, "genserver.ex")]},
+    {"genserver_stdlib_down", "0", [Path.join(@stdlib, "genserver.ex")]},
+    {"genserver_behaviour", "8", [Path.join(@stdlib, "genserver.ex")]},
+    {"supervisor_one_for_one", "3",
+     [Path.join(@stdlib, "genserver.ex"), Path.join(@stdlib, "supervisor.ex")]}
   ]
 
   @impl Mix.Task
@@ -50,8 +60,10 @@ defmodule Mix.Tasks.Autumn.Smoke do
     end
 
     failures =
-      Enum.reduce(@allowlist, [], fn {stem, expected}, acc ->
-        case smoke_one(bin, stem, expected) do
+      Enum.reduce(@allowlist, [], fn entry, acc ->
+        {stem, expected, extras} = normalize(entry)
+
+        case smoke_one(bin, stem, expected, extras) do
           :ok ->
             Mix.shell().info("ok  #{stem} → #{expected}")
             acc
@@ -71,11 +83,15 @@ defmodule Mix.Tasks.Autumn.Smoke do
     end
   end
 
-  defp smoke_one(bin, stem, expected) do
+  defp normalize({stem, expected}), do: {stem, expected, []}
+  defp normalize({stem, expected, extras}), do: {stem, expected, extras}
+
+  defp smoke_one(bin, stem, expected, extras) do
     ex = Path.join(@fixtures, stem <> ".ex")
     bc = Path.join(@fixtures, stem <> ".bc.json")
+    sources = extras ++ [ex]
 
-    with :ok <- ensure_compiled(ex, bc),
+    with :ok <- ensure_compiled(sources, bc),
          {out, 0} <- System.cmd(bin, [bc], stderr_to_stdout: true),
          actual = String.trim(out),
          true <- actual == expected do
@@ -88,7 +104,6 @@ defmodule Mix.Tasks.Autumn.Smoke do
         {:error, "exit #{status}, got #{inspect(String.trim(out))}"}
 
       false ->
-        # re-run to get actual for message
         {out, _} = System.cmd(bin, [bc], stderr_to_stdout: true)
         {:error, "expected #{inspect(expected)}, got #{inspect(String.trim(out))}"}
 
@@ -97,8 +112,14 @@ defmodule Mix.Tasks.Autumn.Smoke do
     end
   end
 
-  defp ensure_compiled(ex, bc) do
-    case AutumnCompiler.compile_file(ex) do
+  defp ensure_compiled(sources, bc) do
+    result =
+      case sources do
+        [one] -> AutumnCompiler.compile_file(one)
+        many -> AutumnCompiler.compile_files(many)
+      end
+
+    case result do
       {:ok, module} ->
         expected = bc |> File.read!() |> Jason.decode!()
 

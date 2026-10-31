@@ -2,7 +2,7 @@
 
 Versioned bytecode exchanged as JSON between the Mix lowerer and the Lean VM.
 
-Supported `version` values: `1` (literals/calls), `2` (lists, case ops, processes), `3` (`get_list_elem`, `list_size/1`), `4` (`get_list_rest` / cons patterns), `5` (maps), `6` (exceptions: `enter_try` / `leave_try` / `raise`), `7` (selective receive: `recv_peek` / `recv_drop` / `wait`), `8` (process links: `link`; exit signals), `9` (unique refs + process monitors: `monitor` / `demonitor`; DOWN signals), `10` (floats + strings as immediates), `11` (closures: `make_fun` / `apply`), `12` (first-class `modules[]`), `13` (`load_file` / dynamic install), and `14` (`Process.flag/2` / `Process.exit/2`; durable drain + OTP-shaped `trap_exit`).
+Supported `version` values: `1` (literals/calls), `2` (lists, case ops, processes), `3` (`get_list_elem`, `list_size/1`), `4` (`get_list_rest` / cons patterns), `5` (maps), `6` (exceptions: `enter_try` / `leave_try` / `raise`), `7` (selective receive: `recv_peek` / `recv_drop` / `wait`), `8` (process links: `link`; exit signals), `9` (unique refs + process monitors: `monitor` / `demonitor`; DOWN signals), `10` (floats + strings as immediates), `11` (closures: `make_fun` / `apply`), `12` (first-class `modules[]`), `13` (`load_file` / dynamic install), `14` (`Process.flag/2` / `Process.exit/2`; durable drain + OTP-shaped `trap_exit`), and `15` (dynamic MFA `apply_mfa` for OTP-shaped behaviours).
 
 ## Module
 
@@ -186,6 +186,12 @@ When a process **exits**, each monitorer in its inbound monitor list receives `{
 - `Process.flag/2` — currently only `Process.flag(:trap_exit, bool)`; returns the previous flag. Unknown flags → catchable `:badarg`. Mix lowers `Process.flag/2` (image version ≥ 14).
 - `Process.exit/2` — `Process.exit(self(), reason)` is `raiseValue`; `Process.exit(other, reason)` force-exits the target (ignores `trap_exit`, like OTP `exit(Pid, kill)`), returns `true`, then yields. Mix lowers `Process.exit/2`.
 - Default `trapExit := false` on new processes.
+
+### v15 dynamic MFA (`apply_mfa`)
+
+- `{"op":"apply_mfa","dest":D,"mod":M,"fun":F,"args":[…]}` — `M` and `F` must be **atoms**; arity = `len(args)`. Looks up MFA `"#{mod}.#{fun}/#{arity}"` across `modules[]` and pushes a frame like `call`.
+- Catchable failures (`raiseValue`): non-atom mod/fun or arity mismatch → `:badarg`; missing MFA → `:undef`.
+- Mix: bare module alias `Counter` → atom `"Counter"`; `apply(mod, :init, [arg])` with a literal arg list → `apply_mfa`. Used by stdlib `GenServer` / `Supervisor` for OTP-shaped callback dispatch.
 
 ## Builtins
 

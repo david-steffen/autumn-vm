@@ -516,6 +516,32 @@ theorem stepInstr_result_is_toTerm
     split at h
     · exact raiseValue_result_is_toTerm s p frame (.atom "enoent") hsr h ht
     · exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+  | applyMfa dest modReg funReg argRegs =>
+    simp [stepInstr] at h
+    cases hmod : getReg! frame modReg with
+    | atom modName =>
+      simp [hmod] at h
+      cases hfun : getReg! frame funReg with
+      | atom funName =>
+        simp [hfun] at h
+        generalize hff0 : s.module.findFunction
+            (modName ++ "." ++ funName ++ "/" ++
+              toString (readArgs! frame argRegs).size) = oFind at h
+        cases oFind with
+        | none =>
+          simp [hff0] at h
+          exact raiseValue_result_is_toTerm s p frame (.atom "undef") hsr h ht
+        | some callee =>
+          simp [hff0] at h
+          split at h
+          · cases h; simp [setCurrentProcess_result, hsr] at ht
+          · exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+      | nil | bool _ | int _ | float _ | string _ | pid _ | reference _ | ref _ =>
+        simp [hfun] at h
+        exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+    | nil | bool _ | int _ | float _ | string _ | pid _ | reference _ | ref _ =>
+      simp [hmod] at h
+      exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
 
 /-- Successful `step` that publishes a machine result does so as `Heap.toTerm`. -/
 theorem step_result_is_toTerm
