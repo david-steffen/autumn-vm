@@ -232,6 +232,9 @@ mutual
       | .int n => (p, .int n)
       | .atom s => (p, .atom s)
       | .pid id => (p, .pid id)
+      | .reference id => (p, .reference id)
+      | .float f => (p, .float f)
+      | .string s => (p, .string s)
       | .tuple elems =>
         let (p, vs) := allocTermArrayFuel fuel p elems 0 #[]
         allocCompound p Node.tuple vs
@@ -242,6 +245,9 @@ mutual
         let entries := Term.sortMapEntries entries
         let (p, vs) := allocTermEntriesFuel fuel p entries 0 #[]
         allocMap p vs
+      | .closure funName env =>
+        let (p, vs) := allocTermArrayFuel fuel p env 0 #[]
+        allocCompound p (fun e => Node.closure funName e) vs
   termination_by fuel
 
   def allocTermArrayFuel (fuel : Nat) (p : Process) (elems : Array Term) (i : Nat)

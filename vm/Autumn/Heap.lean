@@ -10,8 +10,12 @@ inductive Value where
   | nil
   | bool (b : Bool)
   | int (n : Int)
+  | float (f : Float)
   | atom (s : String)
+  | string (s : String)
   | pid (id : Nat)
+  /-- Unique reference (IR v9); not a heap pointer. -/
+  | reference (id : Nat)
   | ref (r : Ref)
   deriving Repr, BEq, Inhabited
 
@@ -20,6 +24,7 @@ inductive Node where
   | tuple (elems : Array Value)
   | list (elems : Array Value)
   | map (entries : Array (Value × Value))
+  | closure (funName : FunName) (env : Array Value)
   deriving Repr, Inhabited
 
 /--
@@ -105,12 +110,16 @@ mutual
     | .int n => .int n
     | .atom s => .atom s
     | .pid id => .pid id
+    | .reference id => .reference id
+    | .float f => .float f
+    | .string s => .string s
     | .ref r =>
       match get? h r with
       | none => .atom "<dangling>"
       | some (.tuple elems) => .tuple (toTermArray h elems 0 #[])
       | some (.list elems) => .list (toTermArray h elems 0 #[])
       | some (.map entries) => .map (toTermEntries h entries 0 #[])
+      | some (.closure funName env) => .closure funName (toTermArray h env 0 #[])
 
   partial def toTermArray (h : Heap) (elems : Array Value) (i : Nat)
       (acc : Array Term) : Array Term :=
@@ -144,12 +153,17 @@ mutual
       | .int n => .int n
       | .atom s => .atom s
       | .pid id => .pid id
+      | .reference id => .reference id
+      | .float f => .float f
+      | .string s => .string s
       | .ref r =>
         match get? h r with
         | none => toTermSentinel
         | some (.tuple elems) => .tuple (toTermArrayFuel fuel h elems 0 #[])
         | some (.list elems) => .list (toTermArrayFuel fuel h elems 0 #[])
         | some (.map entries) => .map (toTermEntriesFuel fuel h entries 0 #[])
+        | some (.closure funName env) =>
+          .closure funName (toTermArrayFuel fuel h env 0 #[])
   termination_by fuel
 
   def toTermArrayFuel (fuel : Nat) (h : Heap) (elems : Array Value) (i : Nat)
@@ -193,6 +207,9 @@ mutual
     | .int x, .int y => x == y
     | .atom x, .atom y => x == y
     | .pid x, .pid y => x == y
+    | .reference x, .reference y => x == y
+    | .float x, .float y => x == y
+    | .string x, .string y => x == y
     | .ref ra, .ref rb =>
       match get? h ra, get? h rb with
       | some (.tuple xa), some (.tuple xb) =>
@@ -201,6 +218,8 @@ mutual
         xa.size == xb.size && beqArray h xa xb 0
       | some (.map xa), some (.map xb) =>
         xa.size == xb.size && beqEntries h xa xb 0
+      | some (.closure fa ea), some (.closure fb eb) =>
+        fa == fb && ea.size == eb.size && beqArray h ea eb 0
       | _, _ => false
     | _, _ => false
 
@@ -228,6 +247,9 @@ mutual
     | .int a, .int b => a == b
     | .atom a, .atom b => a == b
     | .pid a, .pid b => a == b
+    | .reference a, .reference b => a == b
+    | .float a, .float b => a == b
+    | .string a, .string b => a == b
     | .ref r, .tuple te =>
       match get? h r with
       | some (.tuple ve) =>
@@ -242,6 +264,11 @@ mutual
       match get? h r with
       | some (.map ve) =>
         ve.size == te.size && beqTermEntries h ve te 0
+      | _ => false
+    | .ref r, .closure funName te =>
+      match get? h r with
+      | some (.closure fname ve) =>
+        fname == funName && ve.size == te.size && beqTermArray h ve te 0
       | _ => false
     | _, _ => false
 
@@ -281,6 +308,9 @@ mutual
       | .int n => (dst, .int n)
       | .atom s => (dst, .atom s)
       | .pid id => (dst, .pid id)
+      | .reference id => (dst, .reference id)
+      | .float f => (dst, .float f)
+      | .string s => (dst, .string s)
       | .ref r =>
         match get? src r with
         | none => (dst, .nil)
@@ -295,6 +325,10 @@ mutual
         | some (.map entries) =>
           let (dst, entries') := copyEntriesFuel fuel src dst entries 0 #[]
           let (dst, r') := allocGrow dst (.map entries')
+          (dst, .ref r')
+        | some (.closure funName env) =>
+          let (dst, env') := copyArrayFuel fuel src dst env 0 #[]
+          let (dst, r') := allocGrow dst (.closure funName env')
           (dst, .ref r')
   termination_by fuel
 
@@ -345,6 +379,9 @@ mutual
       | .int n => (h, .int n)
       | .atom s => (h, .atom s)
       | .pid id => (h, .pid id)
+      | .reference id => (h, .reference id)
+      | .float f => (h, .float f)
+      | .string s => (h, .string s)
       | .tuple elems =>
         let (h, vs) := allocTermArrayFuel fuel h elems 0 #[]
         match alloc? h (.tuple vs) with
@@ -366,6 +403,13 @@ mutual
         | some (h, r) => (h, .ref r)
         | none =>
           let (h, r) := allocGrow h (.map vs)
+          (h, .ref r)
+      | .closure funName env =>
+        let (h, vs) := allocTermArrayFuel fuel h env 0 #[]
+        match alloc? h (.closure funName vs) with
+        | some (h, r) => (h, .ref r)
+        | none =>
+          let (h, r) := allocGrow h (.closure funName vs)
           (h, .ref r)
   termination_by fuel
 
@@ -398,11 +442,12 @@ end
 
 /-- Structural size for fuel (avoids `sizeOf` in compiled code). -/
 partial def termFuel : Term → Nat
-  | .nil | .bool _ | .int _ | .atom _ | .pid _ => 1
+  | .nil | .bool _ | .int _ | .float _ | .atom _ | .string _ | .pid _ | .reference _ => 1
   | .tuple elems => elems.foldl (fun n e => n + termFuel e) 1
   | .list elems => elems.foldl (fun n e => n + termFuel e) 1
   | .map entries =>
     entries.foldl (fun n (k, v) => n + termFuel k + termFuel v) 1
+  | .closure _ env => env.foldl (fun n e => n + termFuel e) 1
 
 def allocTerm (h : Heap) (t : Term) : Heap × Value :=
   allocTermFuel (termFuel t + 1) h t
@@ -432,6 +477,9 @@ mutual
       | .int n => (fwd, neu, .int n)
       | .atom s => (fwd, neu, .atom s)
       | .pid id => (fwd, neu, .pid id)
+      | .reference id => (fwd, neu, .reference id)
+      | .float f => (fwd, neu, .float f)
+      | .string s => (fwd, neu, .string s)
       | .ref r =>
         if hbound : r < fwd.size then
           match fwd[r] with
@@ -464,6 +512,9 @@ mutual
       | .map entries =>
         let (fwd, neu, entries') := evacuateEntries fuel old fwd neu entries 0 #[]
         (fwd, neu, .map entries')
+      | .closure funName env =>
+        let (fwd, neu, env') := evacuateArray fuel old fwd neu env 0 #[]
+        (fwd, neu, .closure funName env')
   termination_by fuel
 
   def evacuateArray (fuel : Nat) (old : Heap) (fwd : Fwd) (neu : Array Node)
@@ -505,6 +556,7 @@ def sanitizeNode (bound : Nat) : Node → Node
   | .list elems => .list (elems.map (sanitizeValue bound))
   | .map entries =>
     .map (entries.map fun (k, v) => (sanitizeValue bound k, sanitizeValue bound v))
+  | .closure funName env => .closure funName (env.map (sanitizeValue bound))
 
 def sanitizeNodes (neu : Array Node) : Array Node :=
   neu.map (sanitizeNode neu.size)
@@ -557,6 +609,9 @@ mutual
       | .int n => (fwd, neu, .int n)
       | .atom s => (fwd, neu, .atom s)
       | .pid id => (fwd, neu, .pid id)
+      | .reference id => (fwd, neu, .reference id)
+      | .float f => (fwd, neu, .float f)
+      | .string s => (fwd, neu, .string s)
       | .ref r =>
         if r < old.oldSize then
           (fwd, neu, .ref r)
@@ -591,6 +646,9 @@ mutual
       | .map entries =>
         let (fwd, neu, entries') := evacuateYoungEntries fuel old fwd neu entries 0 #[]
         (fwd, neu, .map entries')
+      | .closure funName env =>
+        let (fwd, neu, env') := evacuateYoungArray fuel old fwd neu env 0 #[]
+        (fwd, neu, .closure funName env')
   termination_by fuel
 
   def evacuateYoungArray (fuel : Nat) (old : Heap) (fwd : Fwd) (neu : Array Node)
@@ -633,11 +691,15 @@ def tagOf (h : Heap) (v : Value) : Tag :=
   | .int _ => .int
   | .atom _ => .atom
   | .pid _ => .pid
+  | .reference _ => .ref
+  | .float _ => .float
+  | .string _ => .string
   | .ref r =>
     match Heap.get? h r with
     | some (.tuple _) => .tuple
     | some (.list _) => .list
     | some (.map _) => .map
+    | some (.closure _ _) => .fun
     | none => .nil
 
 end Value

@@ -10,7 +10,7 @@ namespace GCDemo
 def tinyProcessWith (capacity youngCapacity : Nat) : Process where
   pid := 0
   stack := #[{
-    function := addMainModule.functions[1]!
+    function := addMainModule.allFunctions[1]!
     regs := State.mkRegs 3 #[]
     ip := 0
     retDest := 0

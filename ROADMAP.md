@@ -10,42 +10,75 @@ Ordered backlog for the Elixir subset → IR JSON → Lean 4 VM. Check items off
 
 ## Done (through IR v8)
 
-- [x] Register IR v1–8: … + selective receive + process links (`link` / EXIT signals)
-- [x] Generational heap + GC lemmas; cooperative scheduler (logical clock for timeouts)
-- [x] Mix lowerer for the teaching subset + golden fixtures (`try_rescue`, `counter_server`, `link_exit`, …)
-- [x] `stepInstr_preserves` covers ops through v6; v7–8 scheduler/link/exit WF proofs still deferred (`sorry`)
+- [x] Register IR v1–8: literals/calls through selective receive + process links (`link` / EXIT signals)
+- [x] Generational heap + GC lemmas; reduction-preemptive scheduler (logical clock for timeouts)
+- [x] Mix lowerer for the teaching subset + golden fixtures (`try_rescue`, `counter_server`, `link_exit`, guards/maps/dyn cons-tuple, …)
+- [x] Exceptions path: nested try, `try/after`, match miss → `raise` `:match_error`, named `rescue e in […]`
+- [x] Selective `receive` / `after`; OTP-style sequenced counter server
+- [x] Fold `handlersWF` into `Process.WF`; document catchable exceptions vs `typeError` in `vm/IR.md`
+- [x] Step/state WF lemmas closed (no `sorry` in `vm/Autumn/*.lean`); `stepInstr_preserves` covers ops through v8
 
-## Phase 1 — Close open loops (no new IR if possible)
+## Phase 5 — Monitors + refs (IR v9)
 
-1. [x] **Process Elixir path** — `tests/fixtures/ping_pong.ex` + Mix golden; `self/0` builtin for current pid
-2. [x] **Exception fixtures** — nested try, unmatched rescue re-raise, no-handler exit; Lean `#guard` for `try_rescue`
-3. [x] **`try/after` without rescue** — run `after` on uncaught raise (handler + re-raise after `after`)
-4. [x] **Match miss → `raise`** — `case` / multi-clause fallthrough raises `:match_error` instead of returning `nil`
+Teaching subset, not full BEAM:
 
-## Phase 2 — Receive like BEAM (IR v7)
+1. [x] Unique refs as a first-class term (JSON/lit + VM tag); builtin `make_ref/0`
+2. [x] `monitor` / `demonitor` opcodes (or equivalent); on monitored exit, deliver `{:DOWN, ref, :process, pid, reason}` to the mailbox (unidirectional; no auto-exit)
+3. [x] Document in `vm/IR.md` before Lean/Mix; golden fixture e.g. `monitor_exit.ex`
+4. [x] WF/preserve lemmas for the new ops (same PR as runtime if small; else follow-up)
 
-1. [x] Selective `receive` with patterns (`recv_peek` / `recv_drop` / scan loop; park via `wait`)
-2. [x] `receive … after` timeout (logical-clock `wait` + scheduler deadline wake)
-3. [x] OTP-style counter server fixture (`counter_server.ex`; sequenced messages, no dynamic tuples yet)
+## Phase 6 — Monitored call / reply
 
-## Phase 3 — Language surface (mostly lowerer + small builtins)
+Build on v9 + existing selective receive (mostly fixtures + lowerer; avoid new IR if possible):
 
-1. [x] Guards on `def`/`case` (reuse `jump_if_eq` / `is_tag` / comparison builtins) — `guards.ex`
-2. [x] Dynamic `cons` / list build (`cons/2`) + `make_tuple/N` — `dyn_list.ex` / `dyn_tuple.ex`
-3. [x] Map patterns in `case` / heads via `map_get` — `map_pat.ex`
-4. [x] Fold `handlersWF` into `Process.WF` + notes in `vm/IR.md` (some preserve lemmas still `sorry`)
+1. [x] Rewrite or add a counter/server fixture using tagged messages (`{from, :add, n}`, …) instead of sequenced bare values (`counter_server.ex`)
+2. [x] Client “call” pattern: `monitor` + selective `receive` for reply or `DOWN`; timeout via existing `wait` / `after`
+3. [x] `#guard` / Mix golden for the happy path and a crash / `DOWN` path
 
-## Phase 4 — Process failure model (IR bump)
+## Phase 7 — Small language surface (lowerer-first)
 
-1. [x] Links + exit signal propagation (teaching unit, not full BEAM) — `link` / `spawn_link`; `link_exit.ex`
-2. [x] Named exception tags / `rescue e in […]` while still value-based — `rescue_in.ex`
-3. [x] Document catchable language exceptions vs uncatchable `typeError` in `vm/IR.md`
+No big new term kinds:
+
+1. [x] `if` / `unless` / `cond` → existing jumps / `jump_if_eq` (`if_else.ex`, `cond_main.ex`)
+2. [x] List helpers (`hd` / `tl` / `++`) deferred — fixtures use patterns / comparisons instead
+
+## Phase 8 — Floats + strings (IR v10)
+
+1. [x] Float and string immediates (JSON lit + `is_tag`; not heap nodes)
+2. [x] Homogeneous float arith / compare; string `<>/2`; `is_float` / `is_binary` as expr or guard
+3. [x] Fixture `float_string.ex` + Mix golden; document in `vm/IR.md`
+
+## Phase 9 — Closures (IR v11)
+
+1. [x] Heap `Node.closure` + `make_fun` / `apply`; tag `fun` / `is_function`
+2. [x] Mix: lift single-clause `fn` to synthetic MFA (captures first); lower `f.(…)`
+3. [x] Fixture `closure_capture.ex` + Mix golden; document in `vm/IR.md`
+4. [x] WF/preserve lemmas for the new ops
+
+## Phase 10 — Match `=` + pin `^` (lowerer-only)
+
+1. [x] `pat = expr` via existing pattern emitters; miss → `raise :match_error`
+2. [x] Pin `^var` in patterns (`==/2` + `jump_if_eq`); nested compounds/lists/maps
+3. [x] Fixture `match_pin.ex` + Mix golden; document in `vm/IR.md`
+
+## Phase 11 — Multi-module (IR v12)
+
+1. [x] Lean `CodeModule` + `Module.modules`; decode/encode/WF; `findFunction` flattens
+2. [x] Mix: lower per `defmodule`, `assemble` / multi-file compile; single-module still flat
+3. [x] Fixture `multi_mod.ex` + Mix golden; document in `vm/IR.md`
+
+## Phase 12 — Preemptive scheduling
+
+1. [x] Document reduction-budget preemption in `vm/IR.md` / State comments (no algorithm change)
+2. [x] Fixture `preempt_fair.ex`: infinite hog cannot starve helper reply; Mix golden + VM smoke → `1`
+
+## Phase 13 — Dynamic `Code.load_file` (IR v13)
+
+1. [x] `load_file` opcode + `Module.installModules`; IO runner; catchable `:enoent` / `:badarg` / `:bad_bytecode`
+2. [x] Mix `Code.load_file/1`; fixtures `hot_load/` + `hot_load.ex`; VM smoke → `11`
+3. [x] Document in `vm/IR.md`
 
 ## Later (deprioritized)
 
-- Floats, binaries/strings as first-class terms
-- `fn` / closures
 - ETS
-- Multi-module loading
-- Preemptive scheduling
 - Verified compiler

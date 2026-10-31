@@ -131,24 +131,30 @@ theorem stepInstr_error_not_structural
           exact cons_error_not_structural _ _ _ _ _ _ herr
         · simp [har] at herr; cases herr; rfl
       · simp [hc] at herr
-        by_cases htu : isMakeTupleName funName = true
-        · simp [htu] at herr; exact nomatch herr
-        · simp [htu] at herr
-          by_cases hbi : isBuiltinName funName = true
-          · simp [hbi] at herr
-            cases hb : builtin p.heap p.pid funName (readArgs! frame argRegs) with
-            | ok v => simp [hb] at herr; exact nomatch herr
-            | error e' =>
-              simp [hb] at herr
-              cases herr
-              exact builtin_error_not_structural hb
-          · simp [hbi] at herr
-            split at herr
-            · -- `some callee` then arity check
+        by_cases hmref : funName = "make_ref/0"
+        · simp [hmref] at herr
+          split at herr
+          · exact nomatch herr
+          · cases herr; rfl
+        · simp [hmref] at herr
+          by_cases htu : isMakeTupleName funName = true
+          · simp [htu] at herr; exact nomatch herr
+          · simp [htu] at herr
+            by_cases hbi : isBuiltinName funName = true
+            · simp [hbi] at herr
+              cases hb : builtin p.heap p.pid funName (readArgs! frame argRegs) with
+              | ok v => simp [hb] at herr; exact nomatch herr
+              | error e' =>
+                simp [hb] at herr
+                cases herr
+                exact builtin_error_not_structural hb
+            · simp [hbi] at herr
               split at herr
-              · exact nomatch herr
+              · -- `some callee` then arity check
+                split at herr
+                · exact nomatch herr
+                · cases herr; rfl
               · cases herr; rfl
-            · cases herr; rfl
   | return_ reg =>
     simp [stepInstr] at herr
     by_cases hsz : p.stack.size = 1
@@ -177,7 +183,7 @@ theorem stepInstr_error_not_structural
     · injection herr with heq; subst heq; rfl
     · exact nomatch herr
   | raise reg =>
-    simp [stepInstr] at herr
+    simp [stepInstr, raiseValue] at herr
     split at herr
     · split at herr
       · exact nomatch herr
@@ -187,6 +193,29 @@ theorem stepInstr_error_not_structural
       · split at herr
         · injection herr with heq; subst heq; rfl
         · exact nomatch herr
+  | loadFile dest pathReg =>
+    simp [stepInstr] at herr
+    split at herr
+    · simp [raiseValue] at herr
+      split at herr
+      · split at herr
+        · exact nomatch herr
+        · simp [scheduleNext_error_is_noRunnable _ _ herr, isStructuralError]
+      · split at herr
+        · injection herr with heq; subst heq; rfl
+        · split at herr
+          · injection herr with heq; subst heq; rfl
+          · exact nomatch herr
+    · simp [raiseValue] at herr
+      split at herr
+      · split at herr
+        · exact nomatch herr
+        · simp [scheduleNext_error_is_noRunnable _ _ herr, isStructuralError]
+      · split at herr
+        · injection herr with heq; subst heq; rfl
+        · split at herr
+          · injection herr with heq; subst heq; rfl
+          · exact nomatch herr
   | getTupleElem dest tupleReg index =>
     simp [stepInstr] at herr
     split at herr
@@ -316,6 +345,42 @@ theorem stepInstr_error_not_structural
     split at herr
     · exact linkWith_error_not_structural _ _ herr
     · cases herr; rfl
+  | monitor dest pidReg =>
+    simp [stepInstr] at herr
+    split at herr
+    · exact monitorWith_error_not_structural _ _ _ herr
+    · cases herr; rfl
+  | demonitor refReg =>
+    simp [stepInstr] at herr
+    split at herr
+    · exact demonitorWith_error_not_structural _ _ herr
+    · cases herr; rfl
+  | makeFun dest funName capRegs =>
+    simp [stepInstr] at herr; exact nomatch herr
+  | apply dest funReg argRegs =>
+    simp [stepInstr] at herr
+    cases hreg : getReg! frame funReg with
+    | ref r =>
+      simp [hreg] at herr
+      cases hnode : p.heap.get? r with
+      | none =>
+        simp [hnode] at herr; cases herr; rfl
+      | some node =>
+        cases node with
+        | closure funName env =>
+          simp [hnode] at herr
+          cases hff : s.module.findFunction funName with
+          | none =>
+            simp [hff] at herr; cases herr; rfl
+          | some callee =>
+            simp [hff] at herr
+            split at herr
+            · exact nomatch herr
+            · cases herr; rfl
+        | tuple _ | list _ | map _ =>
+          simp [hnode] at herr; cases herr; rfl
+    | nil | bool _ | int _ | float _ | atom _ | string _ | pid _ | reference _ =>
+      simp [hreg] at herr; cases herr; rfl
 
 /-- Progress: well-formed running states never fail structurally. -/
 theorem step_progress (s : State) (hs : State.WF s) (hr : s.result = none) :
@@ -357,6 +422,7 @@ theorem step_progress (s : State) (hs : State.WF s) (hr : s.result = none) :
         exact stepInstr_error_not_structural _ _ _ _ hsi
       · rename_i s1 hsi
         -- clock is bumped before the reductions / scheduleNext branch
+        simp [afterInstr] at hstep
         split at hstep
         · cases hstep
         · split at hstep

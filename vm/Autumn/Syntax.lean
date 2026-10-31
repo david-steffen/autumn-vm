@@ -13,7 +13,13 @@ def fn (name : FunName) (arity locals : Nat) (code : Array Instr) : Function :=
   { name, arity, locals, code }
 
 def mod (version : Nat) (entry : FunName) (functions : Array Function) : Module :=
-  { version, entry, functions }
+  Module.ofFunctions version entry functions
+
+def codeMod (name : String) (functions : Array Function) : CodeModule :=
+  { name, functions }
+
+def program (version : Nat) (entry : FunName) (modules : Array CodeModule) : Module :=
+  { version, entry, modules }
 
 /-- Demo module authored purely in Lean (same as addMain). -/
 def leanDemoModule : Module := addMainModule

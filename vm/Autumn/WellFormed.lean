@@ -30,6 +30,11 @@ def regsOk (locals : Nat) : Instr → Bool
   | .leaveTry => true
   | .raise r => r < locals
   | .link p => p < locals
+  | .monitor d p => d < locals && p < locals
+  | .demonitor r => r < locals
+  | .makeFun d _ caps => d < locals && caps.all (· < locals)
+  | .apply d f args => d < locals && f < locals && args.all (· < locals)
+  | .loadFile d p => d < locals && p < locals
 
 def jumpTargetOk (codeSize : Nat) : Instr → Bool
   | .jump t => t < codeSize
@@ -53,6 +58,7 @@ def instrOk (m : Module) (f : Function) (i : Instr) : Prop :=
   match i with
   | .call _ name _ => FunName.resolvable m name
   | .spawn _ name _ => (m.findFunction name).isSome
+  | .makeFun _ name _ => FunName.resolvable m name
   | _ => True
 
 def WF (m : Module) (f : Function) : Prop :=
@@ -84,19 +90,28 @@ end Function
 
 namespace Module
 
-def uniqueNames (m : Module) : Prop :=
-  ∀ i j : Fin m.functions.size,
-    i ≠ j → m.functions[i].name ≠ m.functions[j].name
+def uniqueFunNames (m : Module) : Prop :=
+  ∀ i j : Fin m.allFunctions.size,
+    i ≠ j → m.allFunctions[i].name ≠ m.allFunctions[j].name
+
+def uniqueModuleNames (m : Module) : Prop :=
+  ∀ i j : Fin m.modules.size,
+    i ≠ j → m.modules[i].name ≠ m.modules[j].name
+
+def versionOk (v : Nat) : Prop :=
+  v = 1 ∨ v = 2 ∨ v = 3 ∨ v = 4 ∨ v = 5 ∨ v = 6 ∨ v = 7 ∨ v = 8 ∨ v = 9 ∨
+    v = 10 ∨ v = 11 ∨ v = 12 ∨ v = 13
 
 def WF (m : Module) : Prop :=
-  (m.version = 1 ∨ m.version = 2 ∨ m.version = 3 ∨ m.version = 4 ∨ m.version = 5 ∨
-    m.version = 6 ∨ m.version = 7) ∧
+  versionOk m.version ∧
+  0 < m.modules.size ∧
   (m.findFunction m.entry).isSome ∧
-  uniqueNames m ∧
-  ∀ i : Fin m.functions.size, Function.WF m m.functions[i]
+  uniqueModuleNames m ∧
+  uniqueFunNames m ∧
+  ∀ i : Fin m.allFunctions.size, Function.WF m m.allFunctions[i]
 
 theorem findFunction_mem {m : Module} {name : FunName} {f : Function}
-    (h : m.findFunction name = some f) : f ∈ m.functions.toList := by
+    (h : m.findFunction name = some f) : f ∈ m.allFunctions.toList := by
   simp only [Module.findFunction] at h
   rcases (List.find?_eq_some_iff_append).1 h with ⟨_, as, bs, heq, _⟩
   have : f ∈ as ++ f :: bs := List.mem_append.2 (Or.inr (List.mem_cons_self))
@@ -105,9 +120,9 @@ theorem findFunction_mem {m : Module} {name : FunName} {f : Function}
 theorem findFunction_WF {m : Module} {name : FunName} {f : Function}
     (hwf : Module.WF m) (h : m.findFunction name = some f) : Function.WF m f := by
   have hmem := findFunction_mem h
-  have hmemA : f ∈ m.functions := (Array.mem_def).2 hmem
+  have hmemA : f ∈ m.allFunctions := (Array.mem_def).2 hmem
   obtain ⟨i, hi, heq⟩ := Array.getElem_of_mem hmemA
-  simpa [heq] using hwf.2.2.2 ⟨i, hi⟩
+  simpa [heq] using hwf.2.2.2.2.2 ⟨i, hi⟩
 
 end Module
 
@@ -124,6 +139,7 @@ def nodeBound (bound : Nat) : Node → Prop
   | .map entries =>
     ∀ i, (hi : i < entries.size) →
       valueBound bound (entries[i]'hi).1 ∧ valueBound bound (entries[i]'hi).2
+  | .closure _ env => ∀ i, (hi : i < env.size) → valueBound bound (env[i]'hi)
 
 /-- Heap well-formedness: frontier in range, capacities positive, child refs in-range. -/
 def WF (h : Heap) : Prop :=
@@ -145,12 +161,18 @@ theorem valueBound_bool (bound : Nat) (b : Bool) : valueBound bound (.bool b) :=
 theorem valueBound_int (bound : Nat) (n : Int) : valueBound bound (.int n) := trivial
 theorem valueBound_atom (bound : Nat) (s : String) : valueBound bound (.atom s) := trivial
 theorem valueBound_pid (bound : Nat) (id : Nat) : valueBound bound (.pid id) := trivial
+theorem valueBound_reference (bound : Nat) (id : Nat) : valueBound bound (.reference id) := trivial
+theorem valueBound_float (bound : Nat) (f : Float) : valueBound bound (.float f) := trivial
+theorem valueBound_string (bound : Nat) (s : String) : valueBound bound (.string s) := trivial
 
 theorem valueWF_nil (h : Heap) : valueWF h .nil := ⟨trivial, trivial⟩
 theorem valueWF_bool (h : Heap) (b : Bool) : valueWF h (.bool b) := ⟨trivial, trivial⟩
 theorem valueWF_int (h : Heap) (n : Int) : valueWF h (.int n) := ⟨trivial, trivial⟩
 theorem valueWF_atom (h : Heap) (s : String) : valueWF h (.atom s) := ⟨trivial, trivial⟩
 theorem valueWF_pid (h : Heap) (id : Nat) : valueWF h (.pid id) := ⟨trivial, trivial⟩
+theorem valueWF_reference (h : Heap) (id : Nat) : valueWF h (.reference id) := ⟨trivial, trivial⟩
+theorem valueWF_float (h : Heap) (f : Float) : valueWF h (.float f) := ⟨trivial, trivial⟩
+theorem valueWF_string (h : Heap) (s : String) : valueWF h (.string s) := ⟨trivial, trivial⟩
 
 theorem valueBound_mono {b₁ b₂ : Nat} (h : b₁ ≤ b₂) :
     ∀ v, valueBound b₁ v → valueBound b₂ v
@@ -158,8 +180,11 @@ theorem valueBound_mono {b₁ b₂ : Nat} (h : b₁ ≤ b₂) :
   | .nil, _ => trivial
   | .bool _b, _ => trivial
   | .int _n, _ => trivial
+  | .float _f, _ => trivial
   | .atom _s, _ => trivial
+  | .string _s, _ => trivial
   | .pid _id, _ => trivial
+  | .reference _id, _ => trivial
 
 theorem nodeBound_mono {b₁ b₂ : Nat} (hle : b₁ ≤ b₂) (n : Node)
     (hb : nodeBound b₁ n) : nodeBound b₂ n := by
@@ -173,6 +198,9 @@ theorem nodeBound_mono {b₁ b₂ : Nat} (hle : b₁ ≤ b₂) (n : Node)
   | map entries =>
     intro i hi
     exact ⟨valueBound_mono hle _ (hb i hi).1, valueBound_mono hle _ (hb i hi).2⟩
+  | closure _ env =>
+    intro i hi
+    exact valueBound_mono hle _ (hb i hi)
 
 theorem empty_WF (cap : Nat) (hcap : 0 < cap) : WF (empty cap) := by
   refine ⟨?_, ?_, ?_, ?_, ?_⟩

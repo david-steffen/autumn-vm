@@ -5,6 +5,7 @@ namespace Autumn
 
 namespace State
 
+/-- Preemption quantum: instructions per process before `scheduleNext`. -/
 def reductionBudget : Nat := 8
 
 /-- Default heap capacity for new processes (overridable in tests). -/
@@ -109,6 +110,7 @@ def initial (m : Module) (heapCapacity : Nat := defaultHeapCapacity) :
     entryPid := 0
     result := none
     nextPid := 1
+    nextRef := 0
     clock := 0
   }
 
@@ -121,6 +123,14 @@ def wakeOnMessage (p : Process) : Process :=
   match p.status with
   | .waiting => { clearWait p with status := .runnable }
   | _ => clearWait p
+
+/-- Drop entries whose second component equals `refId`. -/
+def dropByRef (arr : Array (Nat × Nat)) (refId : Nat) : Array (Nat × Nat) :=
+  arr.filter (fun (_, r) => r != refId)
+
+/-- Drop inbound monitor `(fromPid, refId)`. -/
+def dropMonitoredBy (arr : Array (Nat × Nat)) (fromPid refId : Nat) : Array (Nat × Nat) :=
+  arr.filter (fun (p, r) => !(p == fromPid && r == refId))
 
 /-- Deliver one `{:EXIT, fromPid, reason}` notification to `peerPid`, if present and alive. -/
 def notifyExitPeer (s : State) (fromPid : Nat) (heap : Heap) (reason : Value)
@@ -145,6 +155,41 @@ def notifyExitPeer (s : State) (fromPid : Nat) (heap : Heap) (reason : Value)
     else
       s
 
+/-- Deliver one `{:DOWN, ref, :process, fromPid, reason}` to `fromPid` (monitorer). -/
+def notifyDownPeer (s : State) (fromPid : Nat) (heap : Heap) (reason : Value)
+    (monitorerPid refId : Nat) : State :=
+  match s.findProcessIdx monitorerPid with
+  | none => s
+  | some idx =>
+    if hpeer : idx < s.processes.size then
+      let peer0 := s.processes[idx]'hpeer
+      if peer0.status == .exited then
+        s
+      else
+        let peer0 := { peer0 with monitors := dropByRef peer0.monitors refId }
+        let (peer0, reason') := peer0.copyFrom heap reason
+        let (peer0, msg) :=
+          Process.allocCompound peer0 Node.tuple
+            #[.atom "DOWN", .reference refId, .atom "process", .pid fromPid, reason']
+        let peer1 := { peer0 with mailbox := peer0.mailbox.push msg }
+        let peer :=
+          if peer0.status == .waiting then wakeOnMessage peer1 else peer1
+        { s with processes := s.processes.set idx peer hpeer }
+    else
+      s
+
+/-- Remove an outbound monitor from a still-living target (exiting monitorer's cleanup). -/
+def clearTargetMonitor (s : State) (fromPid targetPid refId : Nat) : State :=
+  match s.findProcessIdx targetPid with
+  | none => s
+  | some idx =>
+    if h : idx < s.processes.size then
+      let t0 := s.processes[idx]'h
+      let t := { t0 with monitoredBy := dropMonitoredBy t0.monitoredBy fromPid refId }
+      { s with processes := s.processes.set idx t h }
+    else
+      s
+
 /-- Fold `notifyExitPeer` over a peer-pid list (proof-friendly form of the old `for` loop). -/
 def propagateExit.go (s : State) (fromPid : Nat) (heap : Heap) (reason : Value) :
     List Nat → State
@@ -152,23 +197,85 @@ def propagateExit.go (s : State) (fromPid : Nat) (heap : Heap) (reason : Value) 
   | peerPid :: rest =>
     propagateExit.go (notifyExitPeer s fromPid heap reason peerPid) fromPid heap reason rest
 
+/-- Fold DOWN notifications over inbound monitors `(monitorerPid, refId)`. -/
+def propagateExit.goDown (s : State) (fromPid : Nat) (heap : Heap) (reason : Value) :
+    List (Nat × Nat) → State
+  | [] => s
+  | (monitorerPid, refId) :: rest =>
+    propagateExit.goDown
+      (notifyDownPeer s fromPid heap reason monitorerPid refId) fromPid heap reason rest
+
+/-- Fold outbound-monitor cleanup over `(targetPid, refId)`. -/
+def propagateExit.goClear (s : State) (fromPid : Nat) : List (Nat × Nat) → State
+  | [] => s
+  | (targetPid, refId) :: rest =>
+    propagateExit.goClear (clearTargetMonitor s fromPid targetPid refId) fromPid rest
+
 /--
-Notify linked peers that the process at `exitedIdx` has exited with `reason`.
-The exited process must already be stored at `exitedIdx` with its exit `result`.
-Peers receive `{:EXIT, from_pid, reason}` (copied into their heap) and are woken;
-links are cleared both ways. Teaching subset: peers always trap EXIT (mailbox only).
+Notify linked peers and monitorers that the process at `exitedIdx` has exited with `reason`.
+Peers receive `{:EXIT, ...}` / `{:DOWN, ...}` (copied into their heap) and are woken;
+links and monitors are cleared both ways. Teaching subset: mailbox only (no auto-exit).
 -/
 def propagateExit (s : State) (exitedIdx : Nat) (reason : Value) : State :=
   if hlt : exitedIdx < s.processes.size then
     let exited0 := s.processes[exitedIdx]'hlt
     let fromPid := exited0.pid
     let linkPids := exited0.links
+    let downs := exited0.monitoredBy
+    let outs := exited0.monitors
     let heap := exited0.heap
-    let exited := { exited0 with links := #[] }
+    let exited := { exited0 with links := #[], monitors := #[], monitoredBy := #[] }
     let s := { s with processes := s.processes.set exitedIdx exited hlt }
-    propagateExit.go s fromPid heap reason linkPids.toList
+    let s := propagateExit.go s fromPid heap reason linkPids.toList
+    let s := propagateExit.goDown s fromPid heap reason downs.toList
+    propagateExit.goClear s fromPid outs.toList
   else
     s
+
+/--
+Install monitor `refId` from the current process onto `targetPid`.
+Caller allocates `refId` (and typically bumps `nextRef`) beforehand.
+-/
+def monitorWith (s : State) (targetPid : Nat) (refId : Nat) : Except StepError State :=
+  match s.findProcessIdx targetPid with
+  | none => .error (.badPid targetPid)
+  | some idx =>
+    if ¬(s.current < s.processes.size) then
+      .error .noRunnable
+    else
+      let cur0 := s.processes[s.current]!
+      let target0 := s.processes[idx]!
+      if target0.status == .exited then
+        let reason :=
+          match target0.result with
+          | some v => v
+          | none => Value.nil
+        .ok (notifyDownPeer s target0.pid target0.heap reason cur0.pid refId)
+      else if idx == s.current then
+        let cur := {
+          cur0 with
+          monitors := cur0.monitors.push (targetPid, refId)
+          monitoredBy := cur0.monitoredBy.push (cur0.pid, refId)
+        }
+        .ok (s.setCurrentProcess cur)
+      else
+        let cur := { cur0 with monitors := cur0.monitors.push (targetPid, refId) }
+        let target := { target0 with monitoredBy := target0.monitoredBy.push (cur0.pid, refId) }
+        let s := s.setCurrentProcess cur
+        .ok { s with processes := s.processes.setIfInBounds idx target }
+
+/-- Drop the current process's monitor for `refId` (no-op if absent). -/
+def demonitorWith (s : State) (refId : Nat) : Except StepError State :=
+  if ¬(s.current < s.processes.size) then
+    .error .noRunnable
+  else
+    let cur0 := s.processes[s.current]!
+    match cur0.monitors.find? (fun (_, r) => r == refId) with
+    | none => .ok s
+    | some (targetPid, _) =>
+      let cur := { cur0 with monitors := dropByRef cur0.monitors refId }
+      let s := s.setCurrentProcess cur
+      .ok (clearTargetMonitor s cur.pid targetPid refId)
 
 /-- Wake a waiting process after a timeout deadline. Leaves IP on `wait` and
 keeps `waitDeadline` so `wait` jumps to its `after` label. -/

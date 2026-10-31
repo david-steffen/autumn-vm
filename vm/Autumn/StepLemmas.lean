@@ -1,11 +1,23 @@
 import Autumn.StepProgress
 import Autumn.StepPreserve
 import Autumn.Examples
+import Autumn.Decode
+import Autumn.FixtureJson
 
 namespace Autumn
 namespace Step
 
 /-! # Step safety: progress + preservation barrel -/
+
+/-- Decode a golden fixture JSON and run it. -/
+def runFixtureJson (json : String) (fuel : Nat := 100000) : Option Term :=
+  match Decode.fromString json with
+  | .error _ => none
+  | .ok m =>
+    match runModule m (fuel := fuel) with
+    | .ok v => some v
+    | .error _ => none
+
 
 /-- Preservation: successful steps stay well-formed. -/
 theorem step_preserves (s s' : State)
@@ -51,6 +63,7 @@ theorem step_preserves (s s' : State)
             hs hp hfwf hnone hrun hsz rfl rfl hsi
         -- clock tick after a successful instruction
         have hs1c : State.WF { s1 with clock := s1.clock + 1 } := clock_preserves s1 _ hs1
+        simp [afterInstr] at h
         split at h
         · cases h; exact hs1c
         · split at h
@@ -71,6 +84,15 @@ theorem tryRescue_has_entry :
 #guard (match Step.runModule tryRescueModule (fuel := 100) with
   | .ok (.int 3) => true
   | _ => false)
+
+-- Phase 6: tagged counter server → 1+3+3 = 7.
+#guard (runFixtureJson counterServerJson == some (.int 7))
+
+-- Phase 6: monitored call happy path → 7.
+#guard (runFixtureJson monitoredCallJson == some (.int 7))
+
+-- Phase 6: monitored call crash / DOWN path → 1.
+#guard (runFixtureJson monitoredDownJson == some (.int 1))
 
 
 end Step

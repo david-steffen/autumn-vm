@@ -15,6 +15,9 @@ theorem sanitizeValue_valueBound (bound : Nat) (v : Value) :
   | int _ => trivial
   | atom _ => trivial
   | pid _ => trivial
+  | reference _ => trivial
+  | float _ => trivial
+  | string _ => trivial
 
 theorem sanitizeNode_nodeBound (bound : Nat) (n : Node) :
     nodeBound bound (sanitizeNode bound n) := by
@@ -46,6 +49,12 @@ theorem sanitizeNode_nodeBound (bound : Nat) (n : Node) :
     simpa [sanitizeNode, hget] using
       And.intro (sanitizeValue_valueBound bound (entries[i]'hi0).1)
         (sanitizeValue_valueBound bound (entries[i]'hi0).2)
+  | closure funName env =>
+    intro i hi
+    have hsz : (env.map (sanitizeValue bound)).size = env.size := Array.size_map
+    have hi0 : i < env.size := by simpa [sanitizeNode, hsz] using hi
+    simpa [sanitizeNode, Array.getElem_map] using
+      sanitizeValue_valueBound bound (env[i]'hi0)
 
 theorem sanitizeNodes_WF_nodes (neu : Array Node) :
     ∀ r, (hr : r < (sanitizeNodes neu).size) →
@@ -110,6 +119,9 @@ theorem valueWF_of_valueBound (h : Heap) (hwf : Heap.WF h) (v : Value)
   | int _ => exact ⟨hb, trivial⟩
   | atom _ => exact ⟨hb, trivial⟩
   | pid _ => exact ⟨hb, trivial⟩
+  | reference _ => exact ⟨hb, trivial⟩
+  | float _ => exact ⟨hb, trivial⟩
+  | string _ => exact ⟨hb, trivial⟩
 
 theorem sanitizeValue_eq_of_not_ref (bound : Nat) (v : Value)
     (hne : ¬ ∃ r, v = .ref r) : sanitizeValue bound v = v := by
@@ -120,6 +132,9 @@ theorem sanitizeValue_eq_of_not_ref (bound : Nat) (v : Value)
   | int _ => rfl
   | atom _ => rfl
   | pid _ => rfl
+  | reference _ => rfl
+  | float _ => rfl
+  | string _ => rfl
 
 /-- Evacuating an immediate leaves it unchanged (any fuel, any to-space). -/
 theorem evacuateValue_of_not_ref (fuel : Nat) (old : Heap) (fwd : Fwd)
@@ -134,6 +149,9 @@ theorem evacuateValue_of_not_ref (fuel : Nat) (old : Heap) (fwd : Fwd)
     | int _ => simp [evacuateValue]
     | atom _ => simp [evacuateValue]
     | pid _ => simp [evacuateValue]
+    | reference _ => simp [evacuateValue]
+    | float _ => simp [evacuateValue]
+    | string _ => simp [evacuateValue]
   | succ fuel =>
     cases v with
     | ref r => exact False.elim (hne ⟨r, rfl⟩)
@@ -142,6 +160,9 @@ theorem evacuateValue_of_not_ref (fuel : Nat) (old : Heap) (fwd : Fwd)
     | int _ => simp [evacuateValue]
     | atom _ => simp [evacuateValue]
     | pid _ => simp [evacuateValue]
+    | reference _ => simp [evacuateValue]
+    | float _ => simp [evacuateValue]
+    | string _ => simp [evacuateValue]
 
 /-- Evacuating an immediate (minor GC) leaves it unchanged. -/
 theorem evacuateYoungValue_of_not_ref (fuel : Nat) (old : Heap) (fwd : Fwd)
@@ -156,6 +177,9 @@ theorem evacuateYoungValue_of_not_ref (fuel : Nat) (old : Heap) (fwd : Fwd)
     | int _ => simp [evacuateYoungValue]
     | atom _ => simp [evacuateYoungValue]
     | pid _ => simp [evacuateYoungValue]
+    | reference _ => simp [evacuateYoungValue]
+    | float _ => simp [evacuateYoungValue]
+    | string _ => simp [evacuateYoungValue]
   | succ fuel =>
     cases v with
     | ref r => exact False.elim (hne ⟨r, rfl⟩)
@@ -164,6 +188,9 @@ theorem evacuateYoungValue_of_not_ref (fuel : Nat) (old : Heap) (fwd : Fwd)
     | int _ => simp [evacuateYoungValue]
     | atom _ => simp [evacuateYoungValue]
     | pid _ => simp [evacuateYoungValue]
+    | reference _ => simp [evacuateYoungValue]
+    | float _ => simp [evacuateYoungValue]
+    | string _ => simp [evacuateYoungValue]
 
 theorem evacuateRoots_heap_WF (h : Heap) (roots : Array Value)
     (hy : 0 < h.youngCapacity) : WF (evacuateRoots h roots).1 := by
@@ -312,6 +339,9 @@ mutual
       | int _ => simp [copyValueFuel]
       | atom _ => simp [copyValueFuel]
       | pid _ => simp [copyValueFuel]
+      | reference _ => simp [copyValueFuel]
+      | float _ => simp [copyValueFuel]
+      | string _ => simp [copyValueFuel]
       | ref r =>
         simp only [copyValueFuel]
         split
@@ -328,6 +358,10 @@ mutual
           have h1 := copyEntriesFuel_youngCapacity_ge fuel src dst entries 0 #[]
           exact Nat.le_trans h1
             (allocGrow_youngCapacity_ge (copyEntriesFuel fuel src dst entries 0 #[]).1 _)
+        · rename_i _funName env _
+          have h1 := copyArrayFuel_youngCapacity_ge fuel src dst env 0 #[]
+          exact Nat.le_trans h1
+            (allocGrow_youngCapacity_ge (copyArrayFuel fuel src dst env 0 #[]).1 _)
   termination_by (fuel, 0, 0)
 
   theorem copyEntriesFuel_youngCapacity_ge (fuel : Nat) (src dst : Heap)
@@ -408,7 +442,7 @@ mutual
     | zero => simp [toTermFuel]
     | succ fuel =>
       cases v with
-      | nil | bool _ | int _ | atom _ | pid _ => simp [toTermFuel]
+      | nil | bool _ | int _ | float _ | atom _ | string _ | pid _ | reference _ => simp [toTermFuel]
       | ref r =>
         have hg : get? h₁ r = get? h₂ r := by simp [get?, hn]
         simp only [toTermFuel]
@@ -423,6 +457,8 @@ mutual
             simpa using toTermArrayFuel_congr_nodes fuel h₁ h₂ elems 0 #[] hn
           | map entries =>
             simpa using toTermEntriesFuel_congr_nodes fuel h₁ h₂ entries 0 #[] hn
+          | closure funName env =>
+            simpa using toTermArrayFuel_congr_nodes fuel h₁ h₂ env 0 #[] hn
   termination_by fuel
 
   theorem toTermArrayFuel_congr_nodes (fuel : Nat) (h₁ h₂ : Heap)
@@ -470,6 +506,9 @@ theorem toTermFuel_immediate_eq (fuel₁ fuel₂ : Nat) (h₁ h₂ : Heap) (v : 
   | int n => simp [toTermFuel]
   | atom s => simp [toTermFuel]
   | pid id => simp [toTermFuel]
+  | reference id => simp [toTermFuel]
+  | float f => simp [toTermFuel]
+  | string s => simp [toTermFuel]
 
 /-- Flat compound: a ref whose node children are all immediates. -/
 def flatCompound (h : Heap) (v : Value) : Prop :=
@@ -594,6 +633,8 @@ theorem toTermFuel_flatCompound_congr (fuel : Nat) (h₁ h₂ : Heap) (r : Ref)
         simp [toTermFuel, h1, h2]
         exact toTermEntriesFuel_immediates fuel h₁ h₂ entries 0 #[] (by
           simpa [h1] using hflat)
+      | closure _ _ =>
+        simp [h1] at hflat
 
 end Heap
 

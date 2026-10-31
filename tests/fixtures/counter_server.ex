@@ -1,23 +1,14 @@
 defmodule Main do
-  # Messages are sequenced atoms/ints/pids (no dynamic tuples yet).
+  # Tagged request/reply messages (Phase 6).
   def server(n) do
     receive do
-      :add ->
-        receive do
-          x ->
-            receive do
-              from ->
-                _ = send(from, n + x)
-                server(n + x)
-            end
-        end
+      {from, :add, x} ->
+        _ = send(from, {:ok, n + x})
+        server(n + x)
 
-      :get ->
-        receive do
-          from ->
-            _ = send(from, n)
-            server(n)
-        end
+      {from, :get} ->
+        _ = send(from, {:ok, n})
+        server(n)
 
       :stop ->
         :ok
@@ -27,18 +18,29 @@ defmodule Main do
   def main do
     pid = spawn(:server, 0)
     me = self()
-    _ = send(pid, :add)
-    _ = send(pid, 1)
-    _ = send(pid, me)
+    _ = send(pid, {me, :add, 1})
     a = recv()
-    _ = send(pid, :add)
-    _ = send(pid, 2)
-    _ = send(pid, me)
+    _ = send(pid, {me, :add, 2})
     b = recv()
-    _ = send(pid, :get)
-    _ = send(pid, me)
+    _ = send(pid, {me, :get})
     c = recv()
     _ = send(pid, :stop)
-    a + b + c
+
+    case a do
+      {:ok, x} ->
+        case b do
+          {:ok, y} ->
+            case c do
+              {:ok, z} -> x + y + z
+              _ -> 0
+            end
+
+          _ ->
+            0
+        end
+
+      _ ->
+        0
+    end
   end
 end

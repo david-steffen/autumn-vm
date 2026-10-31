@@ -1,15 +1,19 @@
 namespace Autumn
 
-/-- Runtime terms (IR v1–v5). -/
+/-- Runtime terms (IR v1–v11). Unique `reference` is distinct from heap pointers. -/
 inductive Term where
   | nil
   | bool (b : Bool)
   | int (n : Int)
+  | float (f : Float)
   | atom (s : String)
+  | string (s : String)
   | tuple (elems : Array Term)
   | list (elems : Array Term)
   | map (entries : Array (Term × Term))
   | pid (id : Nat)
+  | reference (id : Nat)
+  | closure (funName : String) (env : Array Term)
   deriving Repr, BEq, Inhabited
 
 namespace Term
@@ -18,7 +22,9 @@ partial def toString : Term → String
   | .nil => "nil"
   | .bool b => if b then "true" else "false"
   | .int n => s!"{n}"
+  | .float f => s!"{f}"
   | .atom s => s!":{s}"
+  | .string s => s!"\"{s}\""
   | .tuple elems =>
     let inner := (elems.map Term.toString).toList |> String.intercalate ", "
     s!"\{{inner}}"
@@ -31,71 +37,52 @@ partial def toString : Term → String
         |> String.intercalate ", "
     "%{" ++ inner ++ "}"
   | .pid id => s!"#PID<{id}>"
+  | .reference id => s!"#Ref<{id}>"
+  | .closure funName env =>
+    let inner := (env.map Term.toString).toList |> String.intercalate ", "
+    s!"#Fun<{funName}/[{inner}]>"
 
 instance : ToString Term where
   toString := Term.toString
 
+/-- Tag ordinal: nil < bool < int < float < atom < string < pid < reference < tuple < list < map < closure. -/
+def tagOrd : Term → Nat
+  | .nil => 0
+  | .bool _ => 1
+  | .int _ => 2
+  | .float _ => 3
+  | .atom _ => 4
+  | .string _ => 5
+  | .pid _ => 6
+  | .reference _ => 7
+  | .tuple _ => 8
+  | .list _ => 9
+  | .map _ => 10
+  | .closure _ _ => 11
+
 mutual
   /-- Total order for stable map key sorting (tag order, then structure). -/
   partial def lt : Term → Term → Bool
-    | .nil, .nil => false
-    | .nil, _ => true
-    | .bool _, .nil => false
-    | .bool a, .bool b => decide (!a && b)
-    | .bool _, .int _ => true
-    | .bool _, .atom _ => true
-    | .bool _, .pid _ => true
-    | .bool _, .tuple _ => true
-    | .bool _, .list _ => true
-    | .bool _, .map _ => true
-    | .int _, .nil => false
-    | .int _, .bool _ => false
-    | .int a, .int b => decide (a < b)
-    | .int _, .atom _ => true
-    | .int _, .pid _ => true
-    | .int _, .tuple _ => true
-    | .int _, .list _ => true
-    | .int _, .map _ => true
-    | .atom _, .nil => false
-    | .atom _, .bool _ => false
-    | .atom _, .int _ => false
-    | .atom a, .atom b => decide (a < b)
-    | .atom _, .pid _ => true
-    | .atom _, .tuple _ => true
-    | .atom _, .list _ => true
-    | .atom _, .map _ => true
-    | .pid _, .nil => false
-    | .pid _, .bool _ => false
-    | .pid _, .int _ => false
-    | .pid _, .atom _ => false
-    | .pid a, .pid b => decide (a < b)
-    | .pid _, .tuple _ => true
-    | .pid _, .list _ => true
-    | .pid _, .map _ => true
-    | .tuple _, .nil => false
-    | .tuple _, .bool _ => false
-    | .tuple _, .int _ => false
-    | .tuple _, .atom _ => false
-    | .tuple _, .pid _ => false
-    | .tuple a, .tuple b => ltArray a b 0
-    | .tuple _, .list _ => true
-    | .tuple _, .map _ => true
-    | .list _, .nil => false
-    | .list _, .bool _ => false
-    | .list _, .int _ => false
-    | .list _, .atom _ => false
-    | .list _, .pid _ => false
-    | .list _, .tuple _ => false
-    | .list a, .list b => ltArray a b 0
-    | .list _, .map _ => true
-    | .map _, .nil => false
-    | .map _, .bool _ => false
-    | .map _, .int _ => false
-    | .map _, .atom _ => false
-    | .map _, .pid _ => false
-    | .map _, .tuple _ => false
-    | .map _, .list _ => false
-    | .map a, .map b => ltEntries a b 0
+    | a, b =>
+      let oa := tagOrd a
+      let ob := tagOrd b
+      if oa != ob then decide (oa < ob)
+      else
+        match a, b with
+        | .nil, .nil => false
+        | .bool x, .bool y => decide (!x && y)
+        | .int x, .int y => decide (x < y)
+        | .float x, .float y => Float.lt x y
+        | .atom x, .atom y => decide (x < y)
+        | .string x, .string y => decide (x < y)
+        | .pid x, .pid y => decide (x < y)
+        | .reference x, .reference y => decide (x < y)
+        | .tuple x, .tuple y => ltArray x y 0
+        | .list x, .list y => ltArray x y 0
+        | .map x, .map y => ltEntries x y 0
+        | .closure fa ea, .closure fb eb =>
+          if fa != fb then decide (fa < fb) else ltArray ea eb 0
+        | _, _ => false
 
   partial def ltArray (a b : Array Term) (i : Nat) : Bool :=
     if i < a.size && i < b.size then
@@ -118,11 +105,15 @@ mutual
     | .nil, .nil => true
     | .bool a, .bool b => a == b
     | .int a, .int b => a == b
+    | .float a, .float b => a == b
     | .atom a, .atom b => a == b
+    | .string a, .string b => a == b
     | .tuple a, .tuple b => a.size == b.size && beqArray a b 0
     | .list a, .list b => a.size == b.size && beqArray a b 0
     | .map a, .map b => a.size == b.size && beqEntries a b 0
     | .pid a, .pid b => a == b
+    | .reference a, .reference b => a == b
+    | .closure fa ea, .closure fb eb => fa == fb && ea.size == eb.size && beqArray ea eb 0
     | _, _ => false
 
   partial def beqArray (a b : Array Term) (i : Nat) : Bool :=

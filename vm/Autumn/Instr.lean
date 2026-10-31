@@ -7,7 +7,7 @@ abbrev Reg := Nat
 abbrev Label := Nat
 
 inductive Tag where
-  | nil | bool | int | atom | tuple | list | map | pid
+  | nil | bool | int | float | atom | string | tuple | list | map | pid | ref | fun
   deriving Repr, BEq, Inhabited
 
 inductive Instr where
@@ -40,6 +40,14 @@ inductive Instr where
   | wait (retry after : Label) (timeout : Option Nat)
   -- IR v8 process links
   | link (pidReg : Reg)
+  -- IR v9 monitors
+  | monitor (dest : Reg) (pidReg : Reg)
+  | demonitor (refReg : Reg)
+  -- IR v11 closures
+  | makeFun (dest : Reg) (funName : FunName) (captures : Array Reg)
+  | apply (dest : Reg) (funReg : Reg) (args : Array Reg)
+  -- IR v13 dynamic load (`Code.load_file`); IO runner services the read
+  | loadFile (dest pathReg : Reg)
   deriving Repr, BEq, Inhabited
 
 structure Function where
@@ -49,17 +57,54 @@ structure Function where
   code : Array Instr
   deriving Repr, BEq, Inhabited
 
+/-- Named code unit inside a loadable image (IR v12). -/
+structure CodeModule where
+  name : String
+  functions : Array Function
+  deriving Repr, BEq, Inhabited
+
+/-- Loadable program image: one or more named modules + entry MFA. -/
 structure Module where
   version : Nat
   entry : FunName
-  functions : Array Function
+  modules : Array CodeModule
   deriving Repr, BEq, Inhabited
 
 namespace Module
 
+/-- Flatten all functions across modules (MFA names are globally unique in WF images). -/
+def allFunctions (m : Module) : Array Function :=
+  m.modules.foldl (fun acc cm => acc ++ cm.functions) #[]
+
 /-- Lookup by MFA name (list-based for proof-friendly `find?` lemmas). -/
 def findFunction (m : Module) (name : FunName) : Option Function :=
-  m.functions.toList.find? (fun f => f.name == name)
+  m.allFunctions.toList.find? (fun f => f.name == name)
+
+/-- Build a single-module image (legacy / Examples helper). -/
+def ofFunctions (version : Nat) (entry : FunName) (functions : Array Function)
+    (modName : String := "") : Module :=
+  let name :=
+    if modName != "" then modName
+    else
+      let head := (entry.splitOn "/").headD entry
+      let parts := head.splitOn "."
+      if parts.length ≤ 1 then head
+      else String.intercalate "." parts.dropLast
+  { version, entry, modules := #[{ name, functions }] }
+
+/-- Install `incoming` code modules into `host`: replace same `name`, else append.
+Keeps `host.entry`. Bumps version to at least 13. -/
+def installModules (host incoming : Module) : Module :=
+  let mods :=
+    incoming.modules.foldl
+      (fun acc cm =>
+        match acc.findIdx? (fun c => c.name == cm.name) with
+        | some i => acc.set! i cm
+        | none => acc.push cm)
+      host.modules
+  { host with
+    modules := mods
+    version := max host.version (max incoming.version 13) }
 
 end Module
 
@@ -73,6 +118,7 @@ def isBuiltinName (name : FunName) : Bool :=
   name == "</2" || name == ">/2" || name == "<=/2" || name == ">=/2" ||
   name == "tuple_size/1" || name == "elem/2" || name == "list_size/1" ||
   name == "map_size/1" || name == "map_get/2" || name == "map_put/3" ||
-  name == "self/0" || name == "cons/2" || isMakeTupleName name
+  name == "self/0" || name == "make_ref/0" || name == "<>/2" ||
+  name == "cons/2" || isMakeTupleName name
 
 end Autumn

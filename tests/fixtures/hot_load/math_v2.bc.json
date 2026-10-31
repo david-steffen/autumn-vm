@@ -1,0 +1,26 @@
+{
+  "entry": "Math.add/2",
+  "functions": [
+    {
+      "arity": 2,
+      "code": [
+        {
+          "args": [
+            0,
+            1
+          ],
+          "dest": 2,
+          "fun": "*/2",
+          "op": "call"
+        },
+        {
+          "op": "return",
+          "reg": 2
+        }
+      ],
+      "locals": 3,
+      "name": "Math.add/2"
+    }
+  ],
+  "version": 1
+}

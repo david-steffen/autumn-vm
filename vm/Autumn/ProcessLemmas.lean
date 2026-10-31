@@ -1167,6 +1167,9 @@ mutual
       | int _ => simpa [allocTermFuel] using hp
       | atom _ => simpa [allocTermFuel] using hp
       | pid _ => simpa [allocTermFuel] using hp
+      | reference _ => simpa [allocTermFuel] using hp
+      | float _ => simpa [allocTermFuel] using hp
+      | string _ => simpa [allocTermFuel] using hp
       | tuple elems =>
         have hp' := allocTermArrayFuel_preserves_WF m fuel p elems 0 #[] hp
         simpa [allocTermFuel] using allocCompound_preserves_WF m _ Node.tuple _ hp'
@@ -1177,6 +1180,10 @@ mutual
         have hp' :=
           allocTermEntriesFuel_preserves_WF m fuel p (Term.sortMapEntries entries) 0 #[] hp
         simpa [allocTermFuel] using allocMap_preserves_WF m _ _ hp'
+      | closure funName env =>
+        have hp' := allocTermArrayFuel_preserves_WF m fuel p env 0 #[] hp
+        simpa [allocTermFuel] using
+          allocCompound_preserves_WF m _ (fun e => Node.closure funName e) _ hp'
   termination_by (fuel, 0, 0)
 
   theorem allocTermArrayFuel_preserves_WF (m : Module) (fuel : Nat) (p : Process)
@@ -1242,7 +1249,7 @@ mutual
     | 0 => simp [allocTermFuel, hres]
     | fuel + 1 =>
       cases t with
-      | nil | bool _ | int _ | atom _ | pid _ => simp [allocTermFuel, hres]
+      | nil | bool _ | int _ | float _ | atom _ | string _ | pid _ | reference _ => simp [allocTermFuel, hres]
       | tuple elems =>
         have ha := allocTermArrayFuel_meta fuel p elems 0 #[] hres
         have hc := allocCompound_meta (allocTermArrayFuel fuel p elems 0 #[]).1
@@ -1269,6 +1276,16 @@ mutual
         have hc :=
           allocMap_meta (allocTermEntriesFuel fuel p (Term.sortMapEntries entries) 0 #[]).1
             (allocTermEntriesFuel fuel p (Term.sortMapEntries entries) 0 #[]).2
+        simp only [allocTermFuel]
+        refine And.intro ?_ (And.intro ?_ (And.intro ?_ ?_))
+        · exact hc.1.trans ha.1
+        · exact hc.2.1 ha.2.1
+        · exact hc.2.2.1.trans ha.2.2.1
+        · exact hc.2.2.2.trans ha.2.2.2
+      | closure funName env =>
+        have ha := allocTermArrayFuel_meta fuel p env 0 #[] hres
+        have hc := allocCompound_meta (allocTermArrayFuel fuel p env 0 #[]).1
+          (fun e => Node.closure funName e) (allocTermArrayFuel fuel p env 0 #[]).2
         simp only [allocTermFuel]
         refine And.intro ?_ (And.intro ?_ (And.intro ?_ ?_))
         · exact hc.1.trans ha.1
@@ -1461,7 +1478,7 @@ mutual
     | 0 => simp only [allocTermFuel]; exact TopMeta.refl _
     | fuel + 1 =>
       cases t with
-      | nil | bool _ | int _ | atom _ | pid _ =>
+      | nil | bool _ | int _ | float _ | atom _ | string _ | pid _ | reference _ =>
         simp only [allocTermFuel]; exact TopMeta.refl _
       | tuple elems =>
         have ha := allocTermArrayFuel_top_frame_meta fuel p elems 0 #[] hres hsz
@@ -1495,6 +1512,15 @@ mutual
           allocMap_top_frame_meta
             (allocTermEntriesFuel fuel p (Term.sortMapEntries entries) 0 #[]).1
             (allocTermEntriesFuel fuel p (Term.sortMapEntries entries) 0 #[]).2 hszA
+        simp only [allocTermFuel]
+        exact ha.trans hc
+      | closure funName env =>
+        have ha := allocTermArrayFuel_top_frame_meta fuel p env 0 #[] hres hsz
+        have hszA : 0 < (allocTermArrayFuel fuel p env 0 #[]).1.stack.size := by
+          have := (allocTermArrayFuel_meta fuel p env 0 #[] hres).2.2.2; omega
+        have hc := allocCompound_top_frame_meta
+          (allocTermArrayFuel fuel p env 0 #[]).1 (fun e => Node.closure funName e)
+          (allocTermArrayFuel fuel p env 0 #[]).2 hszA
         simp only [allocTermFuel]
         exact ha.trans hc
   termination_by (fuel, 0, 0)

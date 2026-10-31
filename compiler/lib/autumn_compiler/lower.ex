@@ -17,44 +17,192 @@ defmodule AutumnCompiler.Lower do
     {:map_get, 2} => "map_get/2",
     {:map_put, 3} => "map_put/3",
     {:self, 0} => "self/0",
+    {:make_ref, 0} => "make_ref/0",
+    {:<>, 2} => "<>/2",
     {:cons, 2} => "cons/2"
   }
 
   @type_guards %{
     is_integer: "int",
+    is_float: "float",
     is_atom: "atom",
     is_boolean: "bool",
     is_list: "list",
     is_tuple: "tuple",
     is_map: "map",
     is_pid: "pid",
-    is_nil: "nil"
+    is_reference: "ref",
+    is_binary: "string",
+    is_nil: "nil",
+    is_function: "fun"
   }
 
-  def lower({:defmodule, _meta, [alias_ast, [do: body]]}) do
-    mod_name = module_name(alias_ast)
-    defs = flatten_block(body)
+  @doc """
+  Lower a single `defmodule` or a `__block__` of them into a loadable IR image.
+  """
+  def lower(ast) do
+    with {:ok, code_modules} <- lower_modules(ast) do
+      assemble(code_modules)
+    end
+  end
 
-    with {:ok, groups} <- group_defs(defs),
-         {:ok, funs} <- lower_groups(groups, mod_name) do
-      funs = Enum.map(funs, &resolve_locals(&1, mod_name))
-      entry = "#{mod_name}.main/0"
-      version = module_version(funs)
+  @doc """
+  Lower one or more `defmodule` forms into code-module maps
+  (`%{"name" => …, "functions" => …}`), without requiring `main/0`.
+  """
+  def lower_modules({:__block__, _, forms}) when is_list(forms) do
+    Enum.reduce_while(forms, {:ok, []}, fn
+      {:defmodule, _, _} = mod, {:ok, acc} ->
+        case lower_code_module(mod) do
+          {:ok, cm} -> {:cont, {:ok, acc ++ [cm]}}
+          {:error, _} = err -> {:halt, err}
+        end
 
-      if Enum.any?(funs, &(&1["name"] == entry)) do
-        {:ok, %{"version" => version, "entry" => entry, "functions" => funs}}
-      else
-        {:error, "module #{mod_name} must define main/0 as entry"}
+      other, _ ->
+        {:halt, {:error, "expected defmodule, got: #{Macro.to_string(other)}"}}
+    end)
+  end
+
+  def lower_modules({:defmodule, _, _} = mod) do
+    with {:ok, cm} <- lower_code_module(mod), do: {:ok, [cm]}
+  end
+
+  def lower_modules(_) do
+    {:error, "expected defmodule (or a block of defmodules) at the top level"}
+  end
+
+  @doc """
+  Assemble code modules into an IR image.
+
+  * One module → legacy flat `"functions"` (keeps existing goldens).
+  * Two or more → IR v12 `"modules"` with `version = max(opcode_needs, 12)`.
+  """
+  def assemble(code_modules, entry \\ nil) do
+    code_modules = List.wrap(code_modules)
+
+    with :ok <- validate_code_modules(code_modules),
+         {:ok, entry} <- resolve_entry(code_modules, entry) do
+      all_funs = Enum.flat_map(code_modules, & &1["functions"])
+      opcode_v = module_version(all_funs)
+
+      case code_modules do
+        [cm] ->
+          {:ok,
+           %{
+             "version" => opcode_v,
+             "entry" => entry,
+             "functions" => cm["functions"]
+           }}
+
+        many ->
+          {:ok,
+           %{
+             "version" => max(opcode_v, 12),
+             "entry" => entry,
+             "modules" => many
+           }}
       end
     end
   end
 
-  def lower(_) do
-    {:error, "expected a single defmodule at the top level"}
+  defp lower_code_module({:defmodule, _meta, [alias_ast, [do: body]]}) do
+    mod_name = module_name(alias_ast)
+    defs = flatten_block(body)
+    reset_lifted!(mod_name)
+
+    with {:ok, groups} <- group_defs(defs),
+         {:ok, funs} <- lower_groups(groups, mod_name) do
+      lifted = take_lifted!()
+
+      funs =
+        (funs ++ lifted)
+        |> Enum.map(&resolve_locals(&1, mod_name))
+
+      {:ok, %{"name" => mod_name, "functions" => funs}}
+    end
+  end
+
+  defp lower_code_module(_), do: {:error, "expected a defmodule"}
+
+  defp validate_code_modules([]) do
+    {:error, "no modules to assemble"}
+  end
+
+  defp validate_code_modules(cms) do
+    names = Enum.map(cms, & &1["name"])
+
+    cond do
+      length(Enum.uniq(names)) != length(names) ->
+        {:error, "duplicate module names: #{inspect(names)}"}
+
+      true ->
+        fun_names = Enum.flat_map(cms, fn cm -> Enum.map(cm["functions"], & &1["name"]) end)
+
+        if length(Enum.uniq(fun_names)) != length(fun_names) do
+          {:error, "duplicate function MFAs across modules"}
+        else
+          :ok
+        end
+    end
+  end
+
+  defp resolve_entry(_cms, entry) when is_binary(entry), do: {:ok, entry}
+
+  defp resolve_entry(cms, nil) do
+    mains =
+      for cm <- cms,
+          f <- cm["functions"],
+          String.ends_with?(f["name"], ".main/0"),
+          do: f["name"]
+
+    case mains do
+      [one] ->
+        {:ok, one}
+
+      [] ->
+        # Library image (e.g. for Code.load_file): use the first MFA as a dummy entry.
+        case Enum.flat_map(cms, & &1["functions"]) do
+          [f | _] -> {:ok, f["name"]}
+          [] -> {:error, "no main/0 entry found in assembled modules"}
+        end
+
+      many ->
+        if "Main.main/0" in many do
+          {:ok, "Main.main/0"}
+        else
+          {:error, "ambiguous entry (multiple main/0): #{inspect(many)}"}
+        end
+    end
+  end
+
+  defp reset_lifted!(mod_name) do
+    Process.put({:autumn, :mod}, mod_name)
+    Process.put({:autumn, :fn_id}, 0)
+    Process.put({:autumn, :lifted}, [])
+  end
+
+  defp take_lifted! do
+    lifted = Process.get({:autumn, :lifted}, [])
+    Process.put({:autumn, :lifted}, [])
+    lifted
+  end
+
+  defp push_lifted!(fun) do
+    Process.put({:autumn, :lifted}, Process.get({:autumn, :lifted}, []) ++ [fun])
+  end
+
+  defp next_fn_id! do
+    id = Process.get({:autumn, :fn_id}, 0)
+    Process.put({:autumn, :fn_id}, id + 1)
+    id
   end
 
   defp module_version(funs) do
     cond do
+      needs_v13?(funs) -> 13
+      needs_v11?(funs) -> 11
+      needs_v10?(funs) -> 10
+      needs_v9?(funs) -> 9
       needs_v8?(funs) -> 8
       needs_v7?(funs) -> 7
       needs_v6?(funs) -> 6
@@ -64,6 +212,49 @@ defmodule AutumnCompiler.Lower do
       needs_v2?(funs) -> 2
       true -> 1
     end
+  end
+
+  defp needs_v13?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn
+        %{"op" => "load_file"} -> true
+        _ -> false
+      end)
+    end)
+  end
+
+  defp needs_v11?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn
+        %{"op" => op} when op in ~w(make_fun apply) -> true
+        %{"op" => "is_tag", "tag" => "fun"} -> true
+        _ -> false
+      end)
+    end)
+  end
+
+  defp needs_v10?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn
+        %{"op" => "load_lit", "lit" => %{"float" => _}} -> true
+        %{"op" => "load_lit", "lit" => %{"string" => _}} -> true
+        %{"op" => "call", "fun" => "<>/2"} -> true
+        %{"op" => "is_tag", "tag" => tag} when tag in ~w(float string) -> true
+        _ -> false
+      end)
+    end)
+  end
+
+  defp needs_v9?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn
+        %{"op" => op} when op in ~w(monitor demonitor) -> true
+        %{"op" => "call", "fun" => "make_ref/0"} -> true
+        %{"op" => "load_lit", "lit" => %{"ref" => _}} -> true
+        %{"op" => "is_tag", "tag" => "ref"} -> true
+        _ -> false
+      end)
+    end)
   end
 
   defp needs_v8?(funs) do
@@ -273,10 +464,49 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
-  # Binding: a = expr
+  # Discard: _ = expr — evaluate for effects, keep RHS value (Elixir-like).
+  defp expr({:=, _, [{:_, _, nil}, rhs]}, env, next, code) do
+    expr(rhs, env, next, code)
+  end
+
+  # Binding: a = expr (always rebinds; use ^a to match an existing value)
   defp expr({:=, _, [{name, _, nil}, rhs]}, env, next, code) when is_atom(name) do
     with {:ok, code, env, next, reg} <- expr(rhs, env, next, code) do
       {:ok, code, Map.put(env, name, reg), next, reg}
+    end
+  end
+
+  # Match: pat = expr (miss → raise :match_error). Value of the match is the RHS.
+  defp expr({:=, _, [pat, rhs]}, env, next, code) do
+    with {:ok, code, env, next, scr} <- expr(rhs, env, next, code),
+         {:ok, code, env, next, fail_idx} <- emit_pattern_test(pat, scr, env, next, code),
+         {:ok, code, env, next} <- emit_pattern_binds(pat, scr, env, next, code) do
+      err_reg = next
+      next = next + 1
+      jump_over = length(code)
+      code = code ++ [%{"op" => "jump", "target" => 0}]
+      raise_ip = length(code)
+
+      code =
+        List.update_at(code, fail_idx, fn %{"op" => "jump"} = j ->
+          %{j | "target" => raise_ip}
+        end)
+
+      code =
+        code ++
+          [
+            %{"op" => "load_lit", "reg" => err_reg, "lit" => %{"atom" => "match_error"}},
+            %{"op" => "raise", "reg" => err_reg}
+          ]
+
+      end_ip = length(code)
+
+      code =
+        List.update_at(code, jump_over, fn %{"op" => "jump"} = j ->
+          %{j | "target" => end_ip}
+        end)
+
+      {:ok, code, env, next, scr}
     end
   end
 
@@ -302,6 +532,12 @@ defmodule AutumnCompiler.Lower do
 
   defp expr(n, env, next, code) when is_integer(n),
     do: emit_lit(%{"int" => n}, env, next, code)
+
+  defp expr(f, env, next, code) when is_float(f),
+    do: emit_lit(%{"float" => f}, env, next, code)
+
+  defp expr(s, env, next, code) when is_binary(s),
+    do: emit_lit(%{"string" => s}, env, next, code)
 
   defp expr(a, env, next, code) when is_atom(a),
     do: emit_lit(%{"atom" => Atom.to_string(a)}, env, next, code)
@@ -345,10 +581,44 @@ defmodule AutumnCompiler.Lower do
     lower_case(scrutinee, List.wrap(clauses), env, next, code)
   end
 
+  # if cond do then [else else_body] end — falsy is false | nil (Elixir-like)
+  defp expr({:if, _, [cond_ast, opts]}, env, next, code) when is_list(opts) do
+    then_ast = Keyword.get(opts, :do)
+    else_ast = Keyword.get(opts, :else, nil)
+    lower_if(cond_ast, then_ast, else_ast, env, next, code)
+  end
+
+  # unless cond do then [else else_body] end — desugar to if not truthy
+  defp expr({:unless, _, [cond_ast, opts]}, env, next, code) when is_list(opts) do
+    then_ast = Keyword.get(opts, :do)
+    else_ast = Keyword.get(opts, :else, nil)
+    # unless c, do: t, else: e  ≡  if c, do: e, else: t
+    lower_if(cond_ast, else_ast, then_ast, env, next, code)
+  end
+
+  # cond do c1 -> b1; … end
+  defp expr({:cond, _, [[do: clauses]]}, env, next, code) do
+    lower_cond(List.wrap(clauses), env, next, code)
+  end
+
   # raise expr (language exception; not StepError)
   defp expr({:raise, _, [arg]}, env, next, code) do
     with {:ok, code, env, next, reg} <- expr(arg, env, next, code) do
       {:ok, code ++ [%{"op" => "raise", "reg" => reg}], env, next, reg}
+    end
+  end
+
+  # Code.load_file(path) — IR v13; loads a .bc.json image at runtime
+  defp expr(
+         {{:., _, [{:__aliases__, _, [:Code]}, :load_file]}, _, [path_ast]},
+         env,
+         next,
+         code
+       ) do
+    with {:ok, code, env, next, path_reg} <- expr(path_ast, env, next, code) do
+      dest = next
+      instr = %{"op" => "load_file", "dest" => dest, "path" => path_reg}
+      {:ok, code ++ [instr], env, next + 1, dest}
     end
   end
 
@@ -383,6 +653,22 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
+  # monitor(pid) → dest ← ref
+  defp expr({:monitor, _, [pid_ast]}, env, next, code) do
+    with {:ok, code, env, next, pid_reg} <- expr(pid_ast, env, next, code) do
+      dest = next
+      instr = %{"op" => "monitor", "dest" => dest, "pid" => pid_reg}
+      {:ok, code ++ [instr], env, next + 1, dest}
+    end
+  end
+
+  # demonitor(ref)
+  defp expr({:demonitor, _, [ref_ast]}, env, next, code) do
+    with {:ok, code, env, next, ref_reg} <- expr(ref_ast, env, next, code) do
+      {:ok, code ++ [%{"op" => "demonitor", "ref" => ref_reg}], env, next, ref_reg}
+    end
+  end
+
   defp expr({:send, _, [pid_ast, msg_ast]}, env, next, code) do
     with {:ok, code, env, next, pid_reg} <- expr(pid_ast, env, next, code),
          {:ok, code, env, next, msg_reg} <- expr(msg_ast, env, next, code) do
@@ -404,6 +690,27 @@ defmodule AutumnCompiler.Lower do
     lower_call_named("#{mod}.#{fun}/#{arity}", args, env, next, code)
   end
 
+  # Closure apply: `f.(args)` — `.` with a single callee expression.
+  defp expr({{:., _, [fun_ast]}, _, args}, env, next, code) when is_list(args) do
+    with {:ok, code, env, next, fun_reg} <- expr(fun_ast, env, next, code),
+         {:ok, code, env, next, arg_regs} <- map_exprs(args, env, next, code) do
+      dest = next
+      instr = %{"op" => "apply", "dest" => dest, "fun" => fun_reg, "args" => arg_regs}
+      {:ok, code ++ [instr], env, next + 1, dest}
+    end
+  end
+
+  # Single-clause `fn` → lift + make_fun (IR v11).
+  defp expr({:fn, _, clauses}, env, next, code) do
+    case clauses do
+      [{:->, _, [params, body]}] ->
+        lower_fn(params, body, env, next, code)
+
+      _ ->
+        {:error, "multi-clause fn not supported"}
+    end
+  end
+
   defp expr({:|>, _, [left, right]}, env, next, code) do
     case desugar_pipe(left, right) do
       {:ok, call} -> expr(call, env, next, code)
@@ -419,28 +726,198 @@ defmodule AutumnCompiler.Lower do
                 :__aliases__,
                 :__block__,
                 :case,
+                :if,
+                :unless,
+                :cond,
                 :try,
                 :raise,
                 :receive,
                 :spawn,
                 :spawn_link,
                 :link,
+                :monitor,
+                :demonitor,
                 :send,
-                :recv
+                :recv,
+                :fn
               ] do
     arity = length(args)
 
-    fun =
-      case Map.fetch(@builtins, {name, arity}) do
-        {:ok, builtin} -> builtin
-        :error -> "__local__:#{name}/#{arity}"
-      end
+    cond do
+      arity == 1 and is_map_key(@type_guards, name) ->
+        # `is_float(x)` etc. as expressions → is_tag (same as guards).
+        [arg] = args
+        tag = Map.fetch!(@type_guards, name)
 
-    lower_call_named(fun, args, env, next, code)
+        with {:ok, code, env, next, reg} <- expr(arg, env, next, code) do
+          dest = next
+          instr = %{"op" => "is_tag", "dest" => dest, "reg" => reg, "tag" => tag}
+          {:ok, code ++ [instr], env, next + 1, dest}
+        end
+
+      true ->
+        fun =
+          case Map.fetch(@builtins, {name, arity}) do
+            {:ok, builtin} -> builtin
+            :error -> "__local__:#{name}/#{arity}"
+          end
+
+        lower_call_named(fun, args, env, next, code)
+    end
   end
 
   defp expr(other, _env, _next, _code) do
     {:error, "unsupported expression: #{Macro.to_string(other)}"}
+  end
+
+  defp lower_if(cond_ast, then_ast, else_ast, env, next, code) do
+    result_reg = next
+    next = next + 1
+
+    with {:ok, code, env, next, c_reg} <- expr(cond_ast, env, next, code) do
+      # jump to else when cond is false or nil
+      code =
+        code ++
+          [
+            %{
+              "op" => "jump_if_eq",
+              "target" => 0,
+              "reg" => c_reg,
+              "lit" => %{"bool" => false}
+            }
+          ]
+
+      jump_false = length(code) - 1
+
+      code =
+        code ++
+          [
+            %{
+              "op" => "jump_if_eq",
+              "target" => 0,
+              "reg" => c_reg,
+              "lit" => nil
+            }
+          ]
+
+      jump_nil = length(code) - 1
+
+      with {:ok, code, env, next, then_reg} <- expr(then_ast, env, next, code) do
+        code =
+          code ++
+            [
+              %{"op" => "move", "dest" => result_reg, "src" => then_reg},
+              %{"op" => "jump", "target" => 0}
+            ]
+
+        jump_end = length(code) - 1
+        else_ip = length(code)
+
+        with {:ok, code, env, next, else_reg} <- expr(else_ast, env, next, code) do
+          code =
+            code ++
+              [
+                %{"op" => "move", "dest" => result_reg, "src" => else_reg}
+              ]
+
+          end_ip = length(code)
+
+          code =
+            code
+            |> List.update_at(jump_false, fn j -> %{j | "target" => else_ip} end)
+            |> List.update_at(jump_nil, fn j -> %{j | "target" => else_ip} end)
+            |> List.update_at(jump_end, fn j -> %{j | "target" => end_ip} end)
+
+          {:ok, code, env, next, result_reg}
+        end
+      end
+    end
+  end
+
+  defp lower_cond(clauses, env, next, code) do
+    result_reg = next
+    next = next + 1
+
+    with {:ok, code, env, next, end_jumps} <-
+           Enum.reduce_while(clauses, {:ok, code, env, next, []}, fn clause,
+                                                                     {:ok, code, env, next, jumps} ->
+             case lower_cond_clause(clause, result_reg, env, next, code) do
+               {:ok, code, env, next, jump_end} ->
+                 {:cont, {:ok, code, env, next, [jump_end | jumps]}}
+
+               {:error, _} = err ->
+                 {:halt, err}
+             end
+           end) do
+      # No clause matched → raise :cond_clause_error (like match_error).
+      with {:ok, code, env, next, err_reg} <-
+             emit_lit(%{"atom" => "cond_clause_error"}, env, next, code) do
+        code = code ++ [%{"op" => "raise", "reg" => err_reg}]
+        end_ip = length(code)
+
+        code =
+          Enum.reduce(end_jumps, code, fn idx, code ->
+            List.update_at(code, idx, fn %{"op" => "jump"} = j ->
+              %{j | "target" => end_ip}
+            end)
+          end)
+
+        {:ok, code, env, next, result_reg}
+      end
+    end
+  end
+
+  defp lower_cond_clause({:->, _, [[cond_ast], body]}, result_reg, env, next, code) do
+    with {:ok, code, env, next, c_reg} <- expr(cond_ast, env, next, code) do
+      code =
+        code ++
+          [
+            %{
+              "op" => "jump_if_eq",
+              "target" => 0,
+              "reg" => c_reg,
+              "lit" => %{"bool" => false}
+            }
+          ]
+
+      jump_false = length(code) - 1
+
+      code =
+        code ++
+          [
+            %{
+              "op" => "jump_if_eq",
+              "target" => 0,
+              "reg" => c_reg,
+              "lit" => nil
+            }
+          ]
+
+      jump_nil = length(code) - 1
+
+      with {:ok, code, env, next, body_reg} <- expr(body, env, next, code) do
+        code =
+          code ++
+            [
+              %{"op" => "move", "dest" => result_reg, "src" => body_reg},
+              %{"op" => "jump", "target" => 0}
+            ]
+
+        jump_end = length(code) - 1
+        next_clause = length(code)
+
+        code =
+          code
+          |> List.update_at(jump_false, fn j -> %{j | "target" => next_clause} end)
+          |> List.update_at(jump_nil, fn j -> %{j | "target" => next_clause} end)
+
+        {:ok, code, env, next, jump_end}
+      end
+    end
+  end
+
+  defp lower_cond_clause(other, _result_reg, _env, _next, _code) do
+    {:error, "unsupported cond clause: #{Macro.to_string(other)}"}
   end
 
   defp lower_spawn(fun_ast, args_ast, env, next, code) do
@@ -898,13 +1375,36 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
-  defp lower_clause({:->, _, [[{:when, _, [pat, guard]}], body]}, scr_reg, result_reg, env, next, code) do
+  defp lower_clause(
+         {:->, _, [[{:when, _, [pat, guard]}], body]},
+         scr_reg,
+         result_reg,
+         env,
+         next,
+         code
+       ) do
     lower_clause_guarded(pat, guard, body, scr_reg, result_reg, env, next, code)
   end
 
   # rescue e in [lit, …] / case-style `x in […]` (value-based tag filter)
-  defp lower_clause({:->, _, [[{:in, _, [var, targets]}], body]}, scr_reg, result_reg, env, next, code) do
-    lower_clause_guarded({:in, [], [var, targets]}, nil, body, scr_reg, result_reg, env, next, code)
+  defp lower_clause(
+         {:->, _, [[{:in, _, [var, targets]}], body]},
+         scr_reg,
+         result_reg,
+         env,
+         next,
+         code
+       ) do
+    lower_clause_guarded(
+      {:in, [], [var, targets]},
+      nil,
+      body,
+      scr_reg,
+      result_reg,
+      env,
+      next,
+      code
+    )
   end
 
   defp lower_clause({:->, _, [[pat], body]}, scr_reg, result_reg, env, next, code) do
@@ -1117,7 +1617,11 @@ defmodule AutumnCompiler.Lower do
         with {:ok, code, env, next, t_reg} <- expr(tail, env, next, code),
              {:ok, code, env, next, h_reg} <- expr(head, env, next, code) do
           dest = next
-          code = code ++ [%{"op" => "call", "dest" => dest, "fun" => "cons/2", "args" => [h_reg, t_reg]}]
+
+          code =
+            code ++
+              [%{"op" => "call", "dest" => dest, "fun" => "cons/2", "args" => [h_reg, t_reg]}]
+
           next = next + 1
 
           Enum.reduce_while(Enum.reverse(prefix), {:ok, code, env, next, dest}, fn
@@ -1125,7 +1629,11 @@ defmodule AutumnCompiler.Lower do
               case expr(elem, env, next, code) do
                 {:ok, code, env, next, er} ->
                   d = next
-                  code = code ++ [%{"op" => "call", "dest" => d, "fun" => "cons/2", "args" => [er, acc]}]
+
+                  code =
+                    code ++
+                      [%{"op" => "call", "dest" => d, "fun" => "cons/2", "args" => [er, acc]}]
+
                   {:cont, {:ok, code, env, next + 1, d}}
 
                 {:error, _} = err ->
@@ -1142,7 +1650,11 @@ defmodule AutumnCompiler.Lower do
               case expr(elem, env, next, code) do
                 {:ok, code, env, next, er} ->
                   d = next
-                  code = code ++ [%{"op" => "call", "dest" => d, "fun" => "cons/2", "args" => [er, acc]}]
+
+                  code =
+                    code ++
+                      [%{"op" => "call", "dest" => d, "fun" => "cons/2", "args" => [er, acc]}]
+
                   {:cont, {:ok, code, env, next + 1, d}}
 
                 {:error, _} = err ->
@@ -1205,8 +1717,49 @@ defmodule AutumnCompiler.Lower do
     emit_pattern_test({:_, [], nil}, scr, env, next, code)
   end
 
+  # Pin: ^var — equality against the currently bound register (via ==/2).
+  defp emit_pattern_test({:^, _, [{name, _, nil}]}, scr, env, next, code) when is_atom(name) do
+    case Map.fetch(env, name) do
+      :error ->
+        {:error, "unbound pin ^#{name}"}
+
+      {:ok, pin_reg} ->
+        eq_reg = next
+        next = next + 1
+
+        code =
+          code ++
+            [
+              %{
+                "op" => "call",
+                "dest" => eq_reg,
+                "fun" => "==/2",
+                "args" => [scr, pin_reg]
+              }
+            ]
+
+        matched = length(code) + 2
+
+        code =
+          code ++
+            [
+              %{
+                "op" => "jump_if_eq",
+                "target" => matched,
+                "reg" => eq_reg,
+                "lit" => %{"bool" => true}
+              },
+              %{"op" => "jump", "target" => 0}
+            ]
+
+        fail_idx = length(code) - 1
+        {:ok, code, env, next, fail_idx}
+    end
+  end
+
   defp emit_pattern_test(lit, scr, env, next, code)
-       when is_integer(lit) or is_atom(lit) or is_boolean(lit) or is_nil(lit) do
+       when is_integer(lit) or is_float(lit) or is_binary(lit) or is_atom(lit) or is_boolean(lit) or
+              is_nil(lit) do
     {:ok, jlit} = lit_value(lit)
     matched = length(code) + 2
 
@@ -1430,8 +1983,18 @@ defmodule AutumnCompiler.Lower do
               {name, _, nil} when is_atom(name) ->
                 {:cont, {:ok, code, env, next, fail_idx}}
 
-              _ ->
-                {:halt, {:error, "unsupported list pattern element"}}
+              other ->
+                emit_nested_elem_pattern_test(
+                  "get_list_elem",
+                  "list",
+                  other,
+                  idx,
+                  scr,
+                  fail_idx,
+                  env,
+                  next,
+                  code
+                )
             end
         end
     end)
@@ -1541,11 +2104,50 @@ defmodule AutumnCompiler.Lower do
               {name, _, nil} when is_atom(name) ->
                 {:cont, {:ok, code, env, next, fail_idx}}
 
-              _ ->
-                {:halt, {:error, "unsupported #{tag} pattern element"}}
+              other ->
+                emit_nested_elem_pattern_test(
+                  get_op,
+                  get_field,
+                  other,
+                  idx,
+                  scr,
+                  fail_idx,
+                  env,
+                  next,
+                  code
+                )
             end
         end
     end)
+  end
+
+  defp emit_nested_elem_pattern_test(get_op, get_field, pat, idx, scr, fail_idx, env, next, code) do
+    er = next
+    next = next + 1
+
+    code =
+      code ++
+        [
+          %{
+            "op" => get_op,
+            "dest" => er,
+            get_field => scr,
+            "index" => idx
+          }
+        ]
+
+    case emit_pattern_test(pat, er, env, next, code) do
+      {:ok, code, env, next, inner_fail} ->
+        code =
+          List.update_at(code, inner_fail, fn j ->
+            %{j | "target" => fail_idx}
+          end)
+
+        {:cont, {:ok, code, env, next, fail_idx}}
+
+      {:error, _} = err ->
+        {:halt, err}
+    end
   end
 
   defp emit_pattern_binds({name, _, nil}, scr, env, next, code)
@@ -1553,6 +2155,8 @@ defmodule AutumnCompiler.Lower do
     env = Map.put(env, name, scr)
     {:ok, code, env, next}
   end
+
+  defp emit_pattern_binds({:^, _, _}, _scr, env, next, code), do: {:ok, code, env, next}
 
   defp emit_pattern_binds({:{}, _, elems}, scr, env, next, code) do
     emit_compound_pattern_binds("get_tuple_elem", "tuple", elems, scr, env, next, code)
@@ -1788,8 +2392,41 @@ defmodule AutumnCompiler.Lower do
 
         {:cont, {:ok, code, Map.put(env, name, dest), next}}
 
-      {_, _}, acc ->
+      # `_`, pins, and literals need no bind work.
+      {{:_, _, nil}, _idx}, acc ->
         {:cont, acc}
+
+      {{:^, _, _}, _idx}, acc ->
+        {:cont, acc}
+
+      {elem, idx}, {:ok, code, env, next} ->
+        case lit_value(elem) do
+          {:ok, _} ->
+            {:cont, {:ok, code, env, next}}
+
+          :error ->
+            dest = next
+            next = next + 1
+
+            code =
+              code ++
+                [
+                  %{
+                    "op" => get_op,
+                    "dest" => dest,
+                    get_field => scr,
+                    "index" => idx
+                  }
+                ]
+
+            case emit_pattern_binds(elem, dest, env, next, code) do
+              {:ok, code, env, next} ->
+                {:cont, {:ok, code, env, next}}
+
+              {:error, _} = err ->
+                {:halt, err}
+            end
+        end
     end)
   end
 
@@ -1867,6 +2504,8 @@ defmodule AutumnCompiler.Lower do
   defp lit_value(nil), do: {:ok, nil}
   defp lit_value(b) when is_boolean(b), do: {:ok, %{"bool" => b}}
   defp lit_value(n) when is_integer(n), do: {:ok, %{"int" => n}}
+  defp lit_value(f) when is_float(f), do: {:ok, %{"float" => f}}
+  defp lit_value(s) when is_binary(s), do: {:ok, %{"string" => s}}
   defp lit_value(a) when is_atom(a), do: {:ok, %{"atom" => Atom.to_string(a)}}
   defp lit_value(list) when is_list(list), do: literal_list(list)
 
@@ -1885,7 +2524,8 @@ defmodule AutumnCompiler.Lower do
   defp resolve_locals(fun, mod_name) do
     code =
       Enum.map(fun["code"], fn
-        %{"op" => op, "fun" => "__local__:" <> rest} = instr when op in ["call", "spawn"] ->
+        %{"op" => op, "fun" => "__local__:" <> rest} = instr
+        when op in ["call", "spawn", "make_fun"] ->
           %{instr | "fun" => "#{mod_name}.#{rest}"}
 
         instr ->
@@ -1894,4 +2534,234 @@ defmodule AutumnCompiler.Lower do
 
     %{fun | "code" => code}
   end
+
+  defp lower_fn(params, body, env, next, code) do
+    with {:ok, param_names} <- fn_param_names(params) do
+      frees =
+        body
+        |> free_vars(MapSet.new(param_names))
+        |> Enum.filter(&Map.has_key?(env, &1))
+        |> Enum.sort()
+
+      id = next_fn_id!()
+      mod = Process.get({:autumn, :mod})
+      arity = length(frees) + length(param_names)
+      fun_name = "#{mod}.__fn_#{id}/#{arity}"
+      lifted_params = frees ++ param_names
+
+      with {:ok, lifted_code, locals} <- lower_body(body, lifted_params) do
+        push_lifted!(%{
+          "name" => fun_name,
+          "arity" => arity,
+          "locals" => locals,
+          "code" => lifted_code
+        })
+
+        cap_regs = Enum.map(frees, &Map.fetch!(env, &1))
+        dest = next
+
+        instr = %{
+          "op" => "make_fun",
+          "dest" => dest,
+          "fun" => fun_name,
+          "captures" => cap_regs
+        }
+
+        {:ok, code ++ [instr], env, next + 1, dest}
+      end
+    end
+  end
+
+  defp fn_param_names(params) when is_list(params) do
+    if all_var_params?(params) do
+      {:ok, Enum.map(params, fn {n, _, nil} -> n end)}
+    else
+      {:error, "fn params must be variables (no patterns)"}
+    end
+  end
+
+  defp fn_param_names(_), do: {:error, "unsupported fn params"}
+
+  # Free variables relative to `bound` (already in scope).
+  defp free_vars({name, _, nil}, bound) when is_atom(name) do
+    if MapSet.member?(bound, name), do: MapSet.new(), else: MapSet.new([name])
+  end
+
+  defp free_vars({:=, _, [{name, _, nil}, rhs]}, bound) when is_atom(name) do
+    free_vars(rhs, bound)
+  end
+
+  defp free_vars({:=, _, [pat, rhs]}, bound) do
+    MapSet.union(free_vars(rhs, bound), free_vars_pattern(pat, bound))
+  end
+
+  defp free_vars({:__block__, _, stmts}, bound), do: free_vars_stmts(stmts, bound)
+
+  defp free_vars({:fn, _, clauses}, bound) do
+    Enum.reduce(clauses, MapSet.new(), fn
+      {:->, _, [params, body]}, acc ->
+        names =
+          case fn_param_names(params) do
+            {:ok, ns} -> ns
+            _ -> []
+          end
+
+        MapSet.union(acc, free_vars(body, MapSet.union(bound, MapSet.new(names))))
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp free_vars({:case, _, [scrut, [do: clauses]]}, bound) do
+    MapSet.union(free_vars(scrut, bound), free_vars_case_clauses(clauses, bound))
+  end
+
+  defp free_vars({:if, _, [cond_ast, opts]}, bound) when is_list(opts) do
+    [
+      free_vars(cond_ast, bound),
+      free_vars(Keyword.get(opts, :do), bound),
+      free_vars(Keyword.get(opts, :else), bound)
+    ]
+    |> Enum.reduce(MapSet.new(), &MapSet.union/2)
+  end
+
+  defp free_vars({:unless, _, [cond_ast, opts]}, bound) when is_list(opts) do
+    free_vars({:if, [], [cond_ast, opts]}, bound)
+  end
+
+  defp free_vars({:cond, _, [[do: clauses]]}, bound) do
+    Enum.reduce(clauses, MapSet.new(), fn
+      {:->, _, [[c], body]}, acc ->
+        MapSet.union(acc, MapSet.union(free_vars(c, bound), free_vars(body, bound)))
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp free_vars({{:., _, [{:__aliases__, _, _}, _]}, _, args}, bound) when is_list(args) do
+    free_vars(args, bound)
+  end
+
+  defp free_vars({{:., _, [fun_ast]}, _, args}, bound) when is_list(args) do
+    Enum.reduce([fun_ast | args], MapSet.new(), fn a, acc ->
+      MapSet.union(acc, free_vars(a, bound))
+    end)
+  end
+
+  defp free_vars({:%{}, _, pairs}, bound) when is_list(pairs) do
+    Enum.reduce(pairs, MapSet.new(), fn
+      {k, v}, acc ->
+        MapSet.union(acc, MapSet.union(free_vars(k, bound), free_vars(v, bound)))
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp free_vars({:{}, _, elems}, bound) when is_list(elems), do: free_vars(elems, bound)
+  defp free_vars({a, b}, bound), do: MapSet.union(free_vars(a, bound), free_vars(b, bound))
+
+  defp free_vars(list, bound) when is_list(list) do
+    Enum.reduce(list, MapSet.new(), fn a, acc -> MapSet.union(acc, free_vars(a, bound)) end)
+  end
+
+  defp free_vars({_name, _, args}, bound) when is_list(args), do: free_vars(args, bound)
+  defp free_vars(_, _), do: MapSet.new()
+
+  defp free_vars_stmts(stmts, bound) do
+    {acc, _} =
+      Enum.reduce(stmts, {MapSet.new(), bound}, fn stmt, {acc, bound} ->
+        case stmt do
+          {:=, _, [{name, _, nil}, rhs]} when is_atom(name) ->
+            {MapSet.union(acc, free_vars(rhs, bound)), MapSet.put(bound, name)}
+
+          {:=, _, [pat, rhs]} ->
+            frees = MapSet.union(free_vars(rhs, bound), free_vars_pattern(pat, bound))
+            {MapSet.union(acc, frees), MapSet.union(bound, pattern_vars(pat))}
+
+          other ->
+            {MapSet.union(acc, free_vars(other, bound)), bound}
+        end
+      end)
+
+    acc
+  end
+
+  defp free_vars_case_clauses(clauses, bound) do
+    Enum.reduce(clauses, MapSet.new(), fn
+      {:->, _, [[{:when, _, [pat, guard]}], body]}, acc ->
+        pb = MapSet.union(bound, pattern_vars(pat))
+
+        MapSet.union(
+          acc,
+          MapSet.union(
+            free_vars_pattern(pat, bound),
+            MapSet.union(free_vars(guard, pb), free_vars(body, pb))
+          )
+        )
+
+      {:->, _, [[pat], body]}, acc ->
+        pb = MapSet.union(bound, pattern_vars(pat))
+
+        MapSet.union(
+          acc,
+          MapSet.union(free_vars_pattern(pat, bound), free_vars(body, pb))
+        )
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  # Free vars *used* by a pattern (pins); binders are not free.
+  defp free_vars_pattern({:^, _, [{name, _, nil}]}, bound) when is_atom(name) do
+    if MapSet.member?(bound, name), do: MapSet.new(), else: MapSet.new([name])
+  end
+
+  defp free_vars_pattern({:{}, _, elems}, bound) when is_list(elems),
+    do: free_vars_pattern(elems, bound)
+
+  defp free_vars_pattern({a, b}, bound),
+    do: MapSet.union(free_vars_pattern(a, bound), free_vars_pattern(b, bound))
+
+  defp free_vars_pattern(list, bound) when is_list(list) do
+    Enum.reduce(list, MapSet.new(), fn e, acc ->
+      MapSet.union(acc, free_vars_pattern(e, bound))
+    end)
+  end
+
+  defp free_vars_pattern({:%{}, _, pairs}, bound) when is_list(pairs) do
+    Enum.reduce(pairs, MapSet.new(), fn
+      {_k, v}, acc -> MapSet.union(acc, free_vars_pattern(v, bound))
+      _, acc -> acc
+    end)
+  end
+
+  defp free_vars_pattern({:|, _, [h, t]}, bound),
+    do: MapSet.union(free_vars_pattern(h, bound), free_vars_pattern(t, bound))
+
+  defp free_vars_pattern({:in, _, [var, _]}, bound), do: free_vars_pattern(var, bound)
+  defp free_vars_pattern(_, _), do: MapSet.new()
+
+  defp pattern_vars({name, _, nil}) when is_atom(name) and name != :_, do: MapSet.new([name])
+  defp pattern_vars({:^, _, _}), do: MapSet.new()
+  defp pattern_vars({:{}, _, elems}) when is_list(elems), do: pattern_vars(elems)
+  defp pattern_vars({a, b}), do: MapSet.union(pattern_vars(a), pattern_vars(b))
+
+  defp pattern_vars(list) when is_list(list) do
+    Enum.reduce(list, MapSet.new(), fn e, acc -> MapSet.union(acc, pattern_vars(e)) end)
+  end
+
+  defp pattern_vars({:%{}, _, pairs}) when is_list(pairs) do
+    Enum.reduce(pairs, MapSet.new(), fn
+      {_k, v}, acc -> MapSet.union(acc, pattern_vars(v))
+      _, acc -> acc
+    end)
+  end
+
+  defp pattern_vars({:|, _, [h, t]}), do: MapSet.union(pattern_vars(h), pattern_vars(t))
+  defp pattern_vars({:in, _, [var, _]}), do: pattern_vars(var)
+  defp pattern_vars(_), do: MapSet.new()
 end

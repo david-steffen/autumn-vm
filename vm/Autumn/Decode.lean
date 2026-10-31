@@ -51,6 +51,10 @@ def decodeTag (j : Json) : Except StepError Tag := do
   | "list" => pure .list
   | "map" => pure .map
   | "pid" => pure .pid
+  | "ref" => pure .ref
+  | "float" => pure .float
+  | "string" => pure .string
+  | "fun" => pure .fun
   | other => err s!"unknown tag: {other}"
 
 partial def decodeLit (j : Json) : Except StepError Term := do
@@ -86,6 +90,24 @@ partial def decodeLit (j : Json) : Except StepError Term := do
   | .error _ => pure ()
   match j.getObjVal? "pid" with
   | .ok v => return Term.pid (← asNat v)
+  | .error _ => pure ()
+  match j.getObjVal? "ref" with
+  | .ok v => return Term.reference (← asNat v)
+  | .error _ => pure ()
+  match j.getObjVal? "float" with
+  | .ok v =>
+    match v.getNum? with
+    | .ok n => return Term.float n.toFloat
+    | .error e => err e
+  | .error _ => pure ()
+  match j.getObjVal? "string" with
+  | .ok v => return Term.string (← asString v)
+  | .error _ => pure ()
+  match j.getObjVal? "closure" with
+  | .ok v =>
+    let funName ← asString (← field v "fun")
+    let env ← (← asArray (← field v "env")).mapM decodeLit
+    return Term.closure funName env
   | .error _ => err "unknown literal tag"
 
 def decodeInstr (j : Json) : Except StepError Instr := do
@@ -148,6 +170,18 @@ def decodeInstr (j : Json) : Except StepError Instr := do
     pure (.raise (← asNat (← field j "reg")))
   | "link" =>
     pure (.link (← asNat (← field j "pid")))
+  | "monitor" =>
+    pure (.monitor (← asNat (← field j "dest")) (← asNat (← field j "pid")))
+  | "demonitor" =>
+    pure (.demonitor (← asNat (← field j "ref")))
+  | "make_fun" =>
+    pure (.makeFun (← asNat (← field j "dest")) (← asString (← field j "fun"))
+      (← (← asArray (← field j "captures")).mapM asNat))
+  | "apply" =>
+    pure (.apply (← asNat (← field j "dest")) (← asNat (← field j "fun"))
+      (← (← asArray (← field j "args")).mapM asNat))
+  | "load_file" =>
+    pure (.loadFile (← asNat (← field j "dest")) (← asNat (← field j "path")))
   | other => err s!"unknown op: {other}"
 
 /-- Resolve `label` ops to jump targets; strip labels from code. -/
@@ -167,14 +201,36 @@ def decodeFunction (j : Json) : Except StepError Function := do
     err s!"function {name}: locals ({locals_}) < arity ({arity})"
   pure { name, arity, locals := locals_, code }
 
+def decodeCodeModule (j : Json) : Except StepError CodeModule := do
+  let name ← asString (← field j "name")
+  let functions ← (← asArray (← field j "functions")).mapM decodeFunction
+  pure { name, functions }
+
+/-- `Mod.path.fun/N` → `Mod.path`. -/
+def moduleNameFromEntry (entry : FunName) : String :=
+  let head := (entry.splitOn "/").headD entry
+  let parts := head.splitOn "."
+  if parts.length ≤ 1 then head
+  else String.intercalate "." parts.dropLast
+
 def decodeModule (j : Json) : Except StepError Module := do
   let version ← asNat (← field j "version")
   if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 &&
-      version != 6 && version != 7 && version != 8 then
+      version != 6 && version != 7 && version != 8 && version != 9 && version != 10 &&
+      version != 11 && version != 12 && version != 13 then
     err s!"unsupported IR version: {version}"
   let entry ← asString (← field j "entry")
-  let functions ← (← asArray (← field j "functions")).mapM decodeFunction
-  pure { version, entry, functions }
+  match j.getObjVal? "modules" with
+  | .ok mods =>
+    let modules ← (← asArray mods).mapM decodeCodeModule
+    if modules.isEmpty then
+      err "modules array must be non-empty"
+    else
+      pure { version, entry, modules }
+  | .error _ =>
+    -- Legacy flat `functions` (IR v1–11): wrap as one CodeModule.
+    let functions ← (← asArray (← field j "functions")).mapM decodeFunction
+    pure (Module.ofFunctions version entry functions (moduleNameFromEntry entry))
 
 def fromString (s : String) : Except StepError Module :=
   match Json.parse s with

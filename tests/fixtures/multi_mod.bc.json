@@ -1,0 +1,114 @@
+{
+  "entry": "Main.main/0",
+  "modules": [
+    {
+      "functions": [
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "+/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "Math.add/2"
+        },
+        {
+          "arity": 1,
+          "code": [
+            {
+              "args": [
+                0,
+                0
+              ],
+              "dest": 1,
+              "fun": "Math.add/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 1
+            }
+          ],
+          "locals": 2,
+          "name": "Math.double/1"
+        }
+      ],
+      "name": "Math"
+    },
+    {
+      "functions": [
+        {
+          "arity": 0,
+          "code": [
+            {
+              "lit": {
+                "int": 10
+              },
+              "op": "load_lit",
+              "reg": 0
+            },
+            {
+              "lit": {
+                "int": 5
+              },
+              "op": "load_lit",
+              "reg": 1
+            },
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "Math.add/2",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "load_lit",
+              "reg": 3
+            },
+            {
+              "args": [
+                3
+              ],
+              "dest": 4,
+              "fun": "Math.double/1",
+              "op": "call"
+            },
+            {
+              "args": [
+                2,
+                4
+              ],
+              "dest": 5,
+              "fun": "+/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 5
+            }
+          ],
+          "locals": 6,
+          "name": "Main.main/0"
+        }
+      ],
+      "name": "Main"
+    }
+  ],
+  "version": 12
+}

@@ -38,21 +38,27 @@ structure Process where
   waitDeadline : Option Nat := none
   /-- Linked peer pids (IR v8). EXIT signals go here on exit. -/
   links : Array Nat := #[]
+  /-- Outbound monitors (IR v9): `(targetPid, refId)`. -/
+  monitors : Array (Nat × Nat) := #[]
+  /-- Inbound monitors (IR v9): `(fromPid, refId)`. DOWN signals go here on exit. -/
+  monitoredBy : Array (Nat × Nat) := #[]
   deriving Repr, Inhabited
 
-/-- Whole-machine state: cooperative multi-process VM. -/
+/-- Whole-machine state: reduction-preemptive multi-process VM. -/
 structure State where
   module : Module
   processes : Array Process
   /-- Index into `processes` of the currently running process (if any). -/
   current : Nat
-  /-- Reductions left before forced yield. -/
+  /-- Reductions left in the current quantum before forced yield. -/
   reductions : Nat
   /-- Entry process pid (machine result comes from this process). -/
   entryPid : Nat
   /-- Machine-level result (materialized `Term`) once the entry process has exited. -/
   result : Option Term
   nextPid : Nat
+  /-- Next unique reference id (IR v9). -/
+  nextRef : Nat := 0
   /-- Logical clock for `wait` timeouts (advanced each step / idle jump). -/
   clock : Nat := 0
   deriving Repr, Inhabited
