@@ -8,15 +8,15 @@ Ordered backlog for the Elixir subset → IR JSON → Lean 4 VM. Check items off
 - Prefer fixtures + Mix test + `lake exe autumn` before deep new lemmas.
 - Catchable language exceptions (`raise`) stay distinct from uncatchable stepper `typeError`.
 
-## Done (through IR v8)
+## Done (through IR v13)
 
-- [x] Register IR v1–8: literals/calls through selective receive + process links (`link` / EXIT signals)
+- [x] Register IR v1–13: literals/calls through monitors, floats/strings, closures, multi-module, `load_file`
 - [x] Generational heap + GC lemmas; reduction-preemptive scheduler (logical clock for timeouts)
 - [x] Mix lowerer for the teaching subset + golden fixtures (`try_rescue`, `counter_server`, `link_exit`, guards/maps/dyn cons-tuple, …)
 - [x] Exceptions path: nested try, `try/after`, match miss → `raise` `:match_error`, named `rescue e in […]`
 - [x] Selective `receive` / `after`; OTP-style sequenced counter server
 - [x] Fold `handlersWF` into `Process.WF`; document catchable exceptions vs `typeError` in `vm/IR.md`
-- [x] Step/state WF lemmas closed (no `sorry` in `vm/Autumn/*.lean`); `stepInstr_preserves` covers ops through v8
+- [x] Step/state WF lemmas closed (no `sorry` in `vm/Autumn/*.lean`); `stepInstr_preserves` + `finishLoadFile_preserves` / `Module.checkWF` gate
 
 ## Phase 5 — Monitors + refs (IR v9)
 
@@ -77,6 +77,7 @@ No big new term kinds:
 1. [x] `load_file` opcode + `Module.installModules`; IO runner; catchable `:enoent` / `:badarg` / `:bad_bytecode`
 2. [x] Mix `Code.load_file/1`; fixtures `hot_load/` + `hot_load.ex`; VM smoke → `11`
 3. [x] Document in `vm/IR.md`
+4. [x] Gate successful install on `Module.checkWF` + live `processesModuleOkB`; `finishLoadFile_preserves` / `raiseLoadAtCurrent_preserves`
 
 ## Later (deprioritized)
 
