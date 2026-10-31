@@ -173,7 +173,7 @@ When a process **exits**, each monitorer in its inbound monitor list receives `{
 - `{"op":"load_file","dest":D,"path":P}` — `P` holds a **string** path to an Autumn IR JSON (`.bc.json`). On success `D` ← atom `:ok`. Host `entry` is unchanged; each incoming `CodeModule` **replaces** the same `name` or is appended; `version := max(host, incoming, 13)`.
 - Teaching VM loads **bytecode images**, not Elixir source (no compiler in Lean). Mix lowers `Code.load_file(path)`.
 - Soft-purge lite: frames already hold `Function` by value, so in-flight stacks keep old code; new `call` / `spawn` / `apply` see the updated MFA table.
-- Catchable failures (same path as `raise`, so `try`/`rescue` works): non-string path → `:badarg`; missing/unreadable file → `:enoent`; bad JSON/decode → `:bad_bytecode`.
+- Catchable failures (same path as `raise`, so `try`/`rescue` works): non-string path → `:badarg`; missing/unreadable file → `:enoent`; bad JSON/decode **or** install that fails `Module.checkWF` / live-process stack WF under the new image → `:bad_bytecode`.
 - The pure stepper stubs `load_file` as `:enoent`; `Step.runIO` / `autumn` exe services real `IO.FS.readFile`. See fixture `hot_load.ex`.
 
 ## Builtins

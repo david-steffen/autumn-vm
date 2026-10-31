@@ -1434,6 +1434,80 @@ theorem stepInstr_preserves
       simp [hpath] at h
       exact raiseValue_preserves s p frame (.atom "badarg") hs hp hres hstat htop h
 
+/-- `raiseLoadAtCurrent` preserves WF (`:enoent` / `:badarg` from the IO runner). -/
+theorem raiseLoadAtCurrent_preserves
+    (s : State) (reason : String) {s'}
+    (hs : State.WF s)
+    (hstat0 : (s.processes[s.current]'hs.2.2.1).status = .runnable)
+    (hres0 : (s.processes[s.current]'hs.2.2.1).result = none)
+    (h : raiseLoadAtCurrent s reason = .ok s') :
+    State.WF s' := by
+  have hcur := hs.2.2.1
+  let p := s.processes[s.current]'hcur
+  have hp : Process.WF s.module p := hs.2.2.2 s.current hcur
+  have hstat : p.status = .runnable := hstat0
+  have hres : p.result = none := hres0
+  have hsz : 0 < p.stack.size := runnable_stack_pos hp hstat hres
+  simp [raiseLoadAtCurrent, hcur, show 0 < (s.processes[s.current]).stack.size from hsz] at h
+  exact raiseValue_preserves s p (p.stack[p.stack.size - 1]!) (.atom reason)
+    hs hp hres hstat hsz h
+
+/-- Successful / rejecting `finishLoadFile` preserves WF.
+On the install-success path, `hip` must hold (`load_file` is nonterminal). -/
+theorem finishLoadFile_preserves
+    (s : State) (dest : Reg) (contents : String) {s'}
+    (hs : State.WF s)
+    (hstat0 : (s.processes[s.current]'hs.2.2.1).status = .runnable)
+    (hres0 : (s.processes[s.current]'hs.2.2.1).result = none)
+    (hip :
+      ((s.processes[s.current]'hs.2.2.1).stack[
+        (s.processes[s.current]'hs.2.2.1).stack.size - 1]!).ip + 1 <
+      ((s.processes[s.current]'hs.2.2.1).stack[
+        (s.processes[s.current]'hs.2.2.1).stack.size - 1]!).function.code.size)
+    (h : finishLoadFile s dest contents = .ok s') :
+    State.WF s' := by
+  have hcur := hs.2.2.1
+  let p := s.processes[s.current]'hcur
+  have hp : Process.WF s.module p := hs.2.2.2 s.current hcur
+  have hstat : p.status = .runnable := hstat0
+  have hres : p.result = none := hres0
+  have hsz : 0 < p.stack.size := runnable_stack_pos hp hstat hres
+  let frame := p.stack[p.stack.size - 1]!
+  have hip' : frame.ip + 1 < frame.function.code.size := hip
+  simp [finishLoadFile, hcur, show 0 < (s.processes[s.current]).stack.size from hsz] at h
+  cases hdec : Decode.fromString contents with
+  | error _ =>
+    simp [hdec] at h
+    exact raiseValue_preserves s p frame (.atom "bad_bytecode") hs hp hres hstat hsz h
+  | ok incoming =>
+    simp [hdec] at h
+    by_cases hok :
+        Module.checkWF (Module.installModules s.module incoming) = true ∧
+          State.processesModuleOkB (Module.installModules s.module incoming) s = true
+    · simp [hok, ↓reduceIte] at h
+      let m' := Module.installModules s.module incoming
+      have hm'WF : Module.WF m' := Module.checkWF_sound m' hok.1
+      have hs1 : State.WF { s with module := m' } :=
+        State.WF_with_module s m' hs hm'WF hok.2
+      have hp1 : Process.WF m' p := by simpa [p] using hs1.2.2.2 s.current hcur
+      have hfwf0 : Frame.WF m' frame := by
+        simpa [frame] using runnable_top_WF hp1 hstat hres
+      let frame1 := setReg! frame dest (.atom "ok")
+      have hfwf1 : Frame.WF m' frame1 := setReg!_WF frame dest (.atom "ok") m' hfwf0
+      let frame2 := { frame1 with ip := frame1.ip + 1 }
+      have hip2 : frame1.ip + 1 < frame1.function.code.size := by
+        simpa [frame1, setReg!] using hip'
+      have hfwf2 : Frame.WF m' frame2 := bumpIp_frame frame1 m' hfwf1 hip2
+      have hs2 :
+          State.WF
+            ({ s with module := m' }.setCurrentProcess (State.setCurrentFrame p frame2)) :=
+        apply_top_frame_preserves { s with module := m' } p frame2 hs1 hp1 hres hstat
+          hsz hfwf2 (by simp [frame2, frame1, setReg!, frame])
+          (by simp [frame2, frame1, setReg!, frame])
+      cases h
+      exact hs2
+    · simp [hok, ↓reduceIte] at h
+      exact raiseValue_preserves s p frame (.atom "bad_bytecode") hs hp hres hstat hsz h
 
 end Step
 end Autumn

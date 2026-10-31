@@ -1,6 +1,7 @@
 import Autumn.State
 import Autumn.Process
 import Autumn.Decode
+import Autumn.WellFormed
 
 namespace Autumn
 
@@ -606,34 +607,38 @@ def peekLoadFile (s : State) : Option (Reg × String) :=
 
 /-- Finish `load_file` after bytes are read (or raise `:bad_bytecode`). -/
 def finishLoadFile (s : State) (dest : Reg) (contents : String) :
-    Except StepError State := do
-  if ¬(s.current < s.processes.size) then
-    throw .noRunnable
-  else
-    let p := s.processes[s.current]!
-    if p.stack.isEmpty then
-      throw .emptyStack
-    else
+    Except StepError State :=
+  if hcur : s.current < s.processes.size then
+    let p := s.processes[s.current]
+    if hsz : 0 < p.stack.size then
       let frame := p.stack[p.stack.size - 1]!
       match Decode.fromString contents with
       | .error _ => raiseValue s p frame (.atom "bad_bytecode")
       | .ok incoming =>
-        let s := { s with module := Module.installModules s.module incoming }
-        let frame := setReg! frame dest (.atom "ok")
-        let frame := { frame with ip := frame.ip + 1 }
-        pure (s.setCurrentProcess (State.setCurrentFrame p frame))
+        let m' := Module.installModules s.module incoming
+        if hok : Module.checkWF m' && State.processesModuleOkB m' s then
+          let s := { s with module := m' }
+          let frame := setReg! frame dest (.atom "ok")
+          let frame := { frame with ip := frame.ip + 1 }
+          .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
+        else
+          raiseValue s p frame (.atom "bad_bytecode")
+    else
+      .error .emptyStack
+  else
+    .error .noRunnable
 
 /-- Raise a load failure from the current frame (`:enoent` / `:badarg`). -/
-def raiseLoadAtCurrent (s : State) (reason : String) : Except StepError State := do
-  if ¬(s.current < s.processes.size) then
-    throw .noRunnable
-  else
-    let p := s.processes[s.current]!
-    if p.stack.isEmpty then
-      throw .emptyStack
-    else
+def raiseLoadAtCurrent (s : State) (reason : String) : Except StepError State :=
+  if hcur : s.current < s.processes.size then
+    let p := s.processes[s.current]
+    if hsz : 0 < p.stack.size then
       let frame := p.stack[p.stack.size - 1]!
       raiseValue s p frame (.atom reason)
+    else
+      .error .emptyStack
+  else
+    .error .noRunnable
 
 def step (s : State) : Except StepError State :=
   if s.result.isSome then
