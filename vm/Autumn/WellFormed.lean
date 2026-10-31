@@ -17,6 +17,7 @@ def regsOk (locals : Nat) : Instr → Bool
   | .jump _ => true
   | .jumpIfEq _ r _ => r < locals
   | .getTupleElem d t _ => d < locals && t < locals
+  | .getListElem d t _ => d < locals && t < locals
   | .isTag d r _ => d < locals && r < locals
   | .spawn d _ args => d < locals && args.all (· < locals)
   | .send p m => p < locals && m < locals
@@ -77,7 +78,7 @@ def uniqueNames (m : Module) : Prop :=
     i ≠ j → m.functions[i].name ≠ m.functions[j].name
 
 def WF (m : Module) : Prop :=
-  (m.version = 1 ∨ m.version = 2) ∧
+  (m.version = 1 ∨ m.version = 2 ∨ m.version = 3) ∧
   (m.findFunction m.entry).isSome ∧
   uniqueNames m ∧
   ∀ i : Fin m.functions.size, Function.WF m m.functions[i]

@@ -2,7 +2,7 @@
 
 Versioned bytecode exchanged as JSON between the Mix lowerer and the Lean VM.
 
-Supported `version` values: `1` (literals/calls) and `2` (lists, case ops, processes).
+Supported `version` values: `1` (literals/calls), `2` (lists, case ops, processes), and `3` (`get_list_elem`, `list_size/1`).
 
 ## Module
 
@@ -62,6 +62,10 @@ Registers: dense `r0 .. r(locals-1)`. Params occupy `r0 .. r(arity-1)`.
 - `{"op":"send","pid":0,"msg":1}`
 - `{"op":"recv","dest":0}` — pop mailbox or park until message
 
+### v3 list patterns
+
+- `{"op":"get_list_elem","dest":1,"list":0,"index":0}` — 0-based list element (mirror of `get_tuple_elem`)
+
 ## Builtins
 
 | MFA | Meaning |
@@ -69,6 +73,7 @@ Registers: dense `r0 .. r(locals-1)`. Params occupy `r0 .. r(arity-1)`.
 | `+/2` `-/2` `*/2` | integer arithmetic |
 | `==/2` | structural equality → bool |
 | `tuple_size/1` | tuple length → int |
+| `list_size/1` | list length → int (v3) |
 | `elem/2` | `(tuple, index)` → element (0-based) |
 
 ## Scheduling

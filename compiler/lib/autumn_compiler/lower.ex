@@ -7,6 +7,7 @@ defmodule AutumnCompiler.Lower do
     {:*, 2} => "*/2",
     {:==, 2} => "==/2",
     {:tuple_size, 1} => "tuple_size/1",
+    {:list_size, 1} => "list_size/1",
     {:elem, 2} => "elem/2"
   }
 
@@ -14,11 +15,11 @@ defmodule AutumnCompiler.Lower do
     mod_name = module_name(alias_ast)
     defs = flatten_block(body)
 
-    with :ok <- reject_duplicate_defs(defs),
-         {:ok, funs} <- lower_defs(defs, mod_name) do
+    with {:ok, groups} <- group_defs(defs),
+         {:ok, funs} <- lower_groups(groups, mod_name) do
       funs = Enum.map(funs, &resolve_locals(&1, mod_name))
       entry = "#{mod_name}.main/0"
-      version = if needs_v2?(funs), do: 2, else: 1
+      version = module_version(funs)
 
       if Enum.any?(funs, &(&1["name"] == entry)) do
         {:ok, %{"version" => version, "entry" => entry, "functions" => funs}}
@@ -30,6 +31,20 @@ defmodule AutumnCompiler.Lower do
 
   def lower(_) do
     {:error, "expected a single defmodule at the top level"}
+  end
+
+  defp module_version(funs) do
+    cond do
+      needs_v3?(funs) -> 3
+      needs_v2?(funs) -> 2
+      true -> 1
+    end
+  end
+
+  defp needs_v3?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn instr -> instr["op"] == "get_list_elem" end)
+    end)
   end
 
   defp needs_v2?(funs) do
@@ -49,44 +64,107 @@ defmodule AutumnCompiler.Lower do
   defp flatten_block({:__block__, _, stmts}), do: stmts
   defp flatten_block(other), do: [other]
 
-  defp reject_duplicate_defs(defs) do
-    keys =
-      Enum.flat_map(defs, fn
-        {:def, _, [head, _]} ->
-          case parse_head(head) do
-            {:ok, name, params} -> [{name, length(params)}]
-            _ -> []
-          end
+  # Group defs by {name, arity}, preserving first-seen order.
+  defp group_defs(defs) do
+    Enum.reduce_while(defs, {:ok, [], %{}}, fn def_ast, {:ok, order, map} ->
+      case take_def_clause(def_ast) do
+        {:ok, name, params, body} ->
+          key = {name, length(params)}
 
-        _ ->
-          []
-      end)
+          {order, map} =
+            if Map.has_key?(map, key) do
+              {order, Map.update!(map, key, &(&1 ++ [{params, body}]))}
+            else
+              {order ++ [key], Map.put(map, key, [{params, body}])}
+            end
 
-    case keys -- Enum.uniq(keys) do
-      [] ->
-        :ok
+          {:cont, {:ok, order, map}}
 
-      [{name, arity} | _] ->
-        {:error, "duplicate def #{name}/#{arity} (multi-clause not lowered yet; use case)"}
+        {:error, _} = err ->
+          {:halt, err}
+      end
+    end)
+    |> case do
+      {:ok, order, map} ->
+        {:ok, Enum.map(order, fn key -> {key, Map.fetch!(map, key)} end)}
+
+      {:error, _} = err ->
+        err
     end
   end
 
-  defp lower_defs(defs, mod_name) do
-    Enum.reduce_while(defs, {:ok, []}, fn def_ast, {:ok, acc} ->
-      case lower_def(def_ast, mod_name) do
+  defp take_def_clause({:def, _meta, [head, [do: body]]}) do
+    with {:ok, name, params} <- parse_head_patterns(head) do
+      {:ok, name, params, body}
+    end
+  end
+
+  defp take_def_clause({:def, _, _}),
+    do: {:error, "unsupported def form (guards/defaults not allowed)"}
+
+  defp take_def_clause(other),
+    do: {:error, "unsupported module form: #{Macro.to_string(other)}"}
+
+  defp lower_groups(groups, mod_name) do
+    Enum.reduce_while(groups, {:ok, []}, fn {{name, arity}, clauses}, {:ok, acc} ->
+      case lower_grouped_def(name, arity, clauses, mod_name) do
         {:ok, fun} -> {:cont, {:ok, acc ++ [fun]}}
         {:error, _} = err -> {:halt, err}
       end
     end)
   end
 
-  defp lower_def({:def, _meta, [head, [do: body]]}, mod_name) do
-    with {:ok, fname, params} <- parse_head(head),
-         arity = length(params),
-         {:ok, code, locals} <- lower_body(body, params) do
+  defp lower_grouped_def(name, arity, [{params, body}], mod_name) do
+    if all_var_params?(params) do
+      names = Enum.map(params, fn {n, _, nil} -> n end)
+
+      with {:ok, code, locals} <- lower_body(body, names) do
+        {:ok,
+         %{
+           "name" => "#{mod_name}.#{name}/#{arity}",
+           "arity" => arity,
+           "locals" => locals,
+           "code" => code
+         }}
+      end
+    else
+      lower_multi_clause(name, arity, [{params, body}], mod_name)
+    end
+  end
+
+  defp lower_grouped_def(name, arity, clauses, mod_name) when length(clauses) > 1 do
+    lower_multi_clause(name, arity, clauses, mod_name)
+  end
+
+  defp lower_multi_clause(_name, 0, _clauses, _mod_name),
+    do: {:error, "multi-clause arity 0 not supported"}
+
+  defp lower_multi_clause(name, arity, clauses, mod_name) when arity > 0 do
+    params = Enum.map(0..(arity - 1), fn i -> String.to_atom("a#{i}") end)
+
+    scrut =
+      case arity do
+        1 -> {hd(params), [], nil}
+        _ -> {:{}, [], Enum.map(params, &{&1, [], nil})}
+      end
+
+    case_clauses =
+      Enum.map(clauses, fn {pats, body} ->
+        pat =
+          case arity do
+            1 -> hd(pats)
+            _ -> {:{}, [], pats}
+          end
+
+        {:->, [], [[pat], body]}
+      end)
+
+    body = {:case, [], [scrut, [do: case_clauses]]}
+
+    with {:ok, code, locals} <- lower_body(body, params) do
       {:ok,
        %{
-         "name" => "#{mod_name}.#{fname}/#{arity}",
+         "name" => "#{mod_name}.#{name}/#{arity}",
          "arity" => arity,
          "locals" => locals,
          "code" => code
@@ -94,29 +172,20 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
-  defp lower_def({:def, _, _}, _),
-    do: {:error, "unsupported def form (guards/defaults not allowed)"}
-
-  defp lower_def(other, _),
-    do: {:error, "unsupported module form: #{Macro.to_string(other)}"}
-
-  defp parse_head({name, _meta, nil}) when is_atom(name), do: {:ok, name, []}
-
-  defp parse_head({name, _meta, params}) when is_atom(name) and is_list(params) do
-    with {:ok, names} <- parse_params(params), do: {:ok, name, names}
-  end
-
-  defp parse_head(_), do: {:error, "unsupported function head"}
-
-  defp parse_params(params) do
-    Enum.reduce_while(params, {:ok, []}, fn
-      {name, _, nil}, {:ok, acc} when is_atom(name) ->
-        {:cont, {:ok, acc ++ [name]}}
-
-      other, _ ->
-        {:halt, {:error, "unsupported parameter: #{Macro.to_string(other)}"}}
+  defp all_var_params?(params) do
+    Enum.all?(params, fn
+      {name, _, nil} when is_atom(name) -> true
+      _ -> false
     end)
   end
+
+  defp parse_head_patterns({name, _meta, nil}) when is_atom(name), do: {:ok, name, []}
+
+  defp parse_head_patterns({name, _meta, params}) when is_atom(name) and is_list(params) do
+    {:ok, name, params}
+  end
+
+  defp parse_head_patterns(_), do: {:error, "unsupported function head"}
 
   defp lower_body(body, params) do
     env =
@@ -222,8 +291,11 @@ defmodule AutumnCompiler.Lower do
     lower_call_named("#{mod}.#{fun}/#{arity}", args, env, next, code)
   end
 
-  defp expr({:|>, _, _}, _env, _next, _code) do
-    {:error, "unsupported expression: pipe operator |>"}
+  defp expr({:|>, _, [left, right]}, env, next, code) do
+    case desugar_pipe(left, right) do
+      {:ok, call} -> expr(call, env, next, code)
+      {:error, _} = err -> err
+    end
   end
 
   defp expr({name, _meta, args}, env, next, code)
@@ -278,7 +350,23 @@ defmodule AutumnCompiler.Lower do
   defp spawn_fun(other, _),
     do: {:error, "unsupported spawn target: #{Macro.to_string(other)}"}
 
-  # Very small case compiler: literal patterns + wildcard + var + 2-tuple
+  defp desugar_pipe(left, {name, meta, args}) when is_atom(name) and is_list(args) do
+    {:ok, {name, meta, [left | args]}}
+  end
+
+  defp desugar_pipe(left, {name, meta, ctx}) when is_atom(name) and is_atom(ctx) do
+    # `x |> foo` (no parens) — Elixir encodes the call context atom as the third element.
+    {:ok, {name, meta, [left]}}
+  end
+
+  defp desugar_pipe(left, {{:., _, _} = remote, meta, args}) when is_list(args) do
+    {:ok, {remote, meta, [left | args]}}
+  end
+
+  defp desugar_pipe(_left, other),
+    do: {:error, "unsupported pipe right-hand side: #{Macro.to_string(other)}"}
+
+  # Very small case compiler: literal patterns + wildcard + var + tuple + fixed list
   defp lower_case(scrutinee, clauses, env, next, code) do
     with {:ok, code, env, next, scr_reg} <- expr(scrutinee, env, next, code) do
       result_reg = next
@@ -410,10 +498,64 @@ defmodule AutumnCompiler.Lower do
   end
 
   defp emit_pattern_test({:{}, _, elems}, scr, env, next, code) when is_list(elems) do
-    # is_tag tuple; jump fail if false; then check each literal elem
+    emit_compound_pattern_test("tuple", "get_tuple_elem", "tuple", elems, scr, env, next, code)
+  end
+
+  # Empty list / fixed-length list patterns. Reject [h | t].
+  defp emit_pattern_test(elems, scr, env, next, code) when is_list(elems) do
+    if list_has_cons?(elems) do
+      {:error, "cons list patterns [h | t] are not lowered yet"}
+    else
+      case elems do
+        [] ->
+          matched = length(code) + 2
+
+          code =
+            code ++
+              [
+                %{
+                  "op" => "jump_if_eq",
+                  "target" => matched,
+                  "reg" => scr,
+                  "lit" => %{"list" => []}
+                },
+                %{"op" => "jump", "target" => 0}
+              ]
+
+          fail_idx = length(code) - 1
+          {:ok, code, env, next, fail_idx}
+
+        _ ->
+          emit_compound_pattern_test(
+            "list",
+            "get_list_elem",
+            "list",
+            elems,
+            scr,
+            env,
+            next,
+            code,
+            length_check: true
+          )
+      end
+    end
+  end
+
+  defp emit_pattern_test(other, _, _, _, _),
+    do: {:error, "unsupported pattern: #{Macro.to_string(other)}"}
+
+  defp list_has_cons?(elems) when is_list(elems) do
+    Enum.any?(elems, fn
+      {:|, _, _} -> true
+      _ -> false
+    end)
+  end
+
+  defp emit_compound_pattern_test(tag, get_op, get_field, elems, scr, env, next, code, opts \\ []) do
+    length_check? = Keyword.get(opts, :length_check, false)
     tag_reg = next
     next = next + 1
-    code = code ++ [%{"op" => "is_tag", "dest" => tag_reg, "reg" => scr, "tag" => "tuple"}]
+    code = code ++ [%{"op" => "is_tag", "dest" => tag_reg, "reg" => scr, "tag" => tag}]
     matched_after_tag = length(code) + 2
 
     code =
@@ -430,7 +572,48 @@ defmodule AutumnCompiler.Lower do
 
     fail_idx = length(code) - 1
 
-    # For literal elements only in tests; binds handled separately
+    {code, env, next, fail_idx} =
+      if length_check? do
+        size_reg = next
+        next = next + 1
+
+        code =
+          code ++
+            [
+              %{
+                "op" => "call",
+                "dest" => size_reg,
+                "fun" => "list_size/1",
+                "args" => [scr]
+              }
+            ]
+
+        matched = length(code) + 2
+
+        code =
+          code ++
+            [
+              %{
+                "op" => "jump_if_eq",
+                "target" => matched,
+                "reg" => size_reg,
+                "lit" => %{"int" => length(elems)}
+              },
+              %{"op" => "jump", "target" => 0}
+            ]
+
+        new_fail = length(code) - 1
+
+        code =
+          List.update_at(code, new_fail, fn j ->
+            %{j | "target" => fail_idx}
+          end)
+
+        {code, env, next, fail_idx}
+      else
+        {code, env, next, fail_idx}
+      end
+
     Enum.reduce_while(Enum.with_index(elems), {:ok, code, env, next, fail_idx}, fn
       {elem, idx}, {:ok, code, env, next, fail_idx} ->
         case lit_value(elem) do
@@ -442,9 +625,9 @@ defmodule AutumnCompiler.Lower do
               code ++
                 [
                   %{
-                    "op" => "get_tuple_elem",
+                    "op" => get_op,
                     "dest" => er,
-                    "tuple" => scr,
+                    get_field => scr,
                     "index" => idx
                   }
                 ]
@@ -458,21 +641,13 @@ defmodule AutumnCompiler.Lower do
                   %{"op" => "jump", "target" => 0}
                 ]
 
-            # redirect previous fail? keep first fail_idx for all — need OR of fails
-            # Patch this new fail to same ultimate fail — store list of fails
             new_fail = length(code) - 1
-            # Link old fail_idx also — for now chain: update fail jumps at end of clause
-            # Keep collecting — use first fail only incorrectly.
-            # Patch: point this fail to a shared fail — we'll use the first fail_idx and
-            # also point new_fail to same place when we know after_clause.
-            # Store fail_idx as the first; also update emit to return all fails.
-            # Pragmatic: point new_fail jump to old fail_idx instruction which jumps to after.
+
             code =
               List.update_at(code, new_fail, fn j ->
                 %{j | "target" => fail_idx}
               end)
 
-            # Wait — fail_idx is a jump instr; jumping TO fail_idx executes the fail jump. Good.
             {:cont, {:ok, code, env, next, fail_idx}}
 
           :error ->
@@ -481,14 +656,11 @@ defmodule AutumnCompiler.Lower do
                 {:cont, {:ok, code, env, next, fail_idx}}
 
               _ ->
-                {:halt, {:error, "unsupported tuple pattern element"}}
+                {:halt, {:error, "unsupported #{tag} pattern element"}}
             end
         end
     end)
   end
-
-  defp emit_pattern_test(other, _, _, _, _),
-    do: {:error, "unsupported pattern: #{Macro.to_string(other)}"}
 
   defp emit_pattern_binds({name, _, nil}, scr, env, next, code)
        when is_atom(name) and name != :_ do
@@ -497,6 +669,24 @@ defmodule AutumnCompiler.Lower do
   end
 
   defp emit_pattern_binds({:{}, _, elems}, scr, env, next, code) do
+    emit_compound_pattern_binds("get_tuple_elem", "tuple", elems, scr, env, next, code)
+  end
+
+  defp emit_pattern_binds({a, b}, scr, env, next, code) do
+    emit_pattern_binds({:{}, [], [a, b]}, scr, env, next, code)
+  end
+
+  defp emit_pattern_binds(elems, scr, env, next, code) when is_list(elems) do
+    if list_has_cons?(elems) do
+      {:error, "cons list patterns [h | t] are not lowered yet"}
+    else
+      emit_compound_pattern_binds("get_list_elem", "list", elems, scr, env, next, code)
+    end
+  end
+
+  defp emit_pattern_binds(_, _scr, env, next, code), do: {:ok, code, env, next}
+
+  defp emit_compound_pattern_binds(get_op, get_field, elems, scr, env, next, code) do
     Enum.reduce_while(Enum.with_index(elems), {:ok, code, env, next}, fn
       {{name, _, nil}, idx}, {:ok, code, env, next} when is_atom(name) and name != :_ ->
         dest = next
@@ -504,25 +694,21 @@ defmodule AutumnCompiler.Lower do
 
         code =
           code ++
-            [%{"op" => "get_tuple_elem", "dest" => dest, "tuple" => scr, "index" => idx}]
+            [
+              %{
+                "op" => get_op,
+                "dest" => dest,
+                get_field => scr,
+                "index" => idx
+              }
+            ]
 
         {:cont, {:ok, code, Map.put(env, name, dest), next}}
-
-      {{a, b}, idx}, acc ->
-        emit_pattern_binds_elem({:{}, [], [a, b]}, idx, scr, acc)
 
       {_, _}, acc ->
         {:cont, acc}
     end)
   end
-
-  defp emit_pattern_binds({a, b}, scr, env, next, code) do
-    emit_pattern_binds({:{}, [], [a, b]}, scr, env, next, code)
-  end
-
-  defp emit_pattern_binds(_, _scr, env, next, code), do: {:ok, code, env, next}
-
-  defp emit_pattern_binds_elem(_, _, _, acc), do: {:cont, acc}
 
   defp lower_call_named(fun, args, env, next, code) do
     with {:ok, code, env, next, arg_regs} <- map_exprs(args, env, next, code) do

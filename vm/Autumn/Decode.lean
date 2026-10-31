@@ -100,6 +100,9 @@ def decodeInstr (j : Json) : Except StepError Instr := do
   | "get_tuple_elem" =>
     pure (.getTupleElem (← asNat (← field j "dest")) (← asNat (← field j "tuple"))
       (← asNat (← field j "index")))
+  | "get_list_elem" =>
+    pure (.getListElem (← asNat (← field j "dest")) (← asNat (← field j "list"))
+      (← asNat (← field j "index")))
   | "is_tag" =>
     pure (.isTag (← asNat (← field j "dest")) (← asNat (← field j "reg"))
       (← decodeTag (← field j "tag")))
@@ -131,7 +134,7 @@ def decodeFunction (j : Json) : Except StepError Function := do
 
 def decodeModule (j : Json) : Except StepError Module := do
   let version ← asNat (← field j "version")
-  if version != 1 && version != 2 then
+  if version != 1 && version != 2 && version != 3 then
     err s!"unsupported IR version: {version}"
   let entry ← asString (← field j "entry")
   let functions ← (← asArray (← field j "functions")).mapM decodeFunction

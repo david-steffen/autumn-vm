@@ -297,6 +297,20 @@ theorem stepInstr_error_not_structural
         )
       )
     )
+  | getListElem dest listReg index =>
+    simp [stepInstr] at herr
+    split at herr
+    all_goals (
+      try split at herr
+      all_goals (
+        try split at herr
+        all_goals (
+          try { injection herr with heq; subst heq; rfl }
+          try { cases herr }
+          try { exact nomatch herr }
+        )
+      )
+    )
   | isTag dest reg tag =>
     simp [stepInstr] at herr; exact nomatch herr
   | spawn dest funName argRegs =>
@@ -721,6 +735,24 @@ theorem stepInstr_preserves
         · cases h
           rename_i elems htu hge
           have hnt : Instr.isTerminal (.getTupleElem dest tupleReg index) = false := rfl
+          have hip := ip_succ_lt_of_nonterminal hfwf.1 hfwf.2.2.1 hcode hnt
+          let frame1 := setReg! frame dest elems[index]!
+          let frame2 := { frame1 with ip := frame1.ip + 1 }
+          have hfwf2 : Frame.WF s.module frame2 :=
+            bumpIp_frame _ _ (setReg!_WF _ _ _ _ hfwf) (by simpa [frame1, setReg!] using hip)
+          exact apply_top_frame_preserves s p frame2 hs hp hres hstat htop hfwf2
+            (by simp [frame2, frame1, setReg!, hframe]) (by simp [frame2, frame1, setReg!, hframe])
+      · exact nomatch h
+    · exact nomatch h
+  | getListElem dest listReg index =>
+    simp [stepInstr] at h
+    split at h
+    · split at h
+      · split at h
+        · exact nomatch h
+        · cases h
+          rename_i elems hls hge
+          have hnt : Instr.isTerminal (.getListElem dest listReg index) = false := rfl
           have hip := ip_succ_lt_of_nonterminal hfwf.1 hfwf.2.2.1 hcode hnt
           let frame1 := setReg! frame dest elems[index]!
           let frame2 := { frame1 with ip := frame1.ip + 1 }

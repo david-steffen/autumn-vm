@@ -39,6 +39,8 @@ def encodeInstr : Instr → Json
       Json.mkObj [("op", "jump_if_eq"), ("target", t), ("reg", r), ("lit", encodeLit lit)]
   | .getTupleElem d t i =>
       Json.mkObj [("op", "get_tuple_elem"), ("dest", d), ("tuple", t), ("index", i)]
+  | .getListElem d t i =>
+      Json.mkObj [("op", "get_list_elem"), ("dest", d), ("list", t), ("index", i)]
   | .isTag d r tag =>
       Json.mkObj [("op", "is_tag"), ("dest", d), ("reg", r), ("tag", encodeTag tag)]
   | .spawn d f args =>

@@ -25,6 +25,8 @@ inductive Instr where
   | spawn (dest : Reg) (funName : FunName) (args : Array Reg)
   | send (pidReg msgReg : Reg)
   | recv (dest : Reg)
+  -- IR v3 list patterns
+  | getListElem (dest : Reg) (listReg : Reg) (index : Nat)
   deriving Repr, BEq, Inhabited
 
 structure Function where
@@ -51,6 +53,6 @@ end Module
 /-- Builtin MFA names. -/
 def isBuiltinName (name : FunName) : Bool :=
   name == "+/2" || name == "-/2" || name == "*/2" || name == "==/2" ||
-  name == "tuple_size/1" || name == "elem/2"
+  name == "tuple_size/1" || name == "elem/2" || name == "list_size/1"
 
 end Autumn

@@ -1,0 +1,60 @@
+{
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 2,
+      "code": [
+        {
+          "args": [
+            0,
+            1
+          ],
+          "dest": 2,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "op": "return",
+          "reg": 2
+        }
+      ],
+      "locals": 3,
+      "name": "Main.add/2"
+    },
+    {
+      "arity": 0,
+      "code": [
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 0
+        },
+        {
+          "lit": {
+            "int": 2
+          },
+          "op": "load_lit",
+          "reg": 1
+        },
+        {
+          "args": [
+            0,
+            1
+          ],
+          "dest": 2,
+          "fun": "Main.add/2",
+          "op": "call"
+        },
+        {
+          "op": "return",
+          "reg": 2
+        }
+      ],
+      "locals": 3,
+      "name": "Main.main/0"
+    }
+  ],
+  "version": 1
+}

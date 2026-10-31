@@ -34,6 +34,14 @@ def builtin (h : Heap) (name : FunName) (args : Array Value) :
         | some (.tuple elems) => .ok (.int elems.size)
         | _ => .error (.typeError "tuple_size/1 expects a tuple")
       | _ => .error (.typeError "tuple_size/1 expects a tuple")
+  | "list_size/1" =>
+    if args.size != 1 then .error (.badArity name 1 args.size)
+    else match args[0]! with
+      | .ref r =>
+        match h.get? r with
+        | some (.list elems) => .ok (.int elems.size)
+        | _ => .error (.typeError "list_size/1 expects a list")
+      | _ => .error (.typeError "list_size/1 expects a list")
   | "elem/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
@@ -147,6 +155,20 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
           pure (s.setCurrentProcess (State.setCurrentFrame p frame))
       | _ => throw (.typeError "get_tuple_elem expects a tuple")
     | _ => throw (.typeError "get_tuple_elem expects a tuple")
+  | .getListElem dest listReg index =>
+    let v := getReg! frame listReg
+    match v with
+    | .ref r =>
+      match p.heap.get? r with
+      | some (.list elems) =>
+        if index ≥ elems.size then
+          throw (.typeError "get_list_elem index out of range")
+        else
+          let frame := setReg! frame dest elems[index]!
+          let frame := { frame with ip := frame.ip + 1 }
+          pure (s.setCurrentProcess (State.setCurrentFrame p frame))
+      | _ => throw (.typeError "get_list_elem expects a list")
+    | _ => throw (.typeError "get_list_elem expects a list")
   | .isTag dest reg tag =>
     let v := getReg! frame reg
     let frame := setReg! frame dest (.bool (tagOf p.heap v == tag))
