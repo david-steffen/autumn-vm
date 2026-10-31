@@ -19,7 +19,8 @@ def encodeTag : Tag → Json
   | .string => "string"
   | .fun => "fun"
 
-partial def encodeLit : Term → Json
+/-- Well-founded encode (no opaque `partial`) so Encode↔Decode lemmas can unfold. -/
+def encodeLit : Term → Json
   | .nil => Json.null
   | .bool b => Json.mkObj [("bool", b)]
   | .int n => Json.mkObj [("int", Json.num n)]
@@ -29,16 +30,28 @@ partial def encodeLit : Term → Json
       | .inl _ => Json.mkObj [("float", Json.num ⟨0, 0⟩)]
   | .atom s => Json.mkObj [("atom", s)]
   | .string s => Json.mkObj [("string", s)]
-  | .tuple elems => Json.mkObj [("tuple", Json.arr (elems.map encodeLit))]
-  | .list elems => Json.mkObj [("list", Json.arr (elems.map encodeLit))]
+  | .tuple elems =>
+      Json.mkObj [("tuple", Json.arr (elems.attach.map fun ⟨e, _⟩ => encodeLit e))]
+  | .list elems =>
+      Json.mkObj [("list", Json.arr (elems.attach.map fun ⟨e, _⟩ => encodeLit e))]
   | .map entries =>
-      Json.mkObj [("map", Json.arr (entries.map fun (k, v) =>
+      Json.mkObj [("map", Json.arr (entries.attach.map fun ⟨⟨k, v⟩, _⟩ =>
         Json.mkObj [("key", encodeLit k), ("value", encodeLit v)]))]
   | .pid id => Json.mkObj [("pid", id)]
   | .reference id => Json.mkObj [("ref", id)]
   | .closure funName env =>
       Json.mkObj [("closure", Json.mkObj
-        [("fun", funName), ("env", Json.arr (env.map encodeLit))])]
+        [("fun", funName),
+         ("env", Json.arr (env.attach.map fun ⟨e, _⟩ => encodeLit e))])]
+termination_by t => sizeOf t
+decreasing_by
+  all_goals (
+    simp_wf
+    have hmem := Array.sizeOf_lt_of_mem ‹_›
+    · -- tuple / list / env / map-pair
+      first | omega |
+        (have hkv : sizeOf (k, v) = 1 + sizeOf k + sizeOf v := rfl; omega)
+  )
 
 def encodeInstr : Instr → Json
   | .loadLit r lit =>

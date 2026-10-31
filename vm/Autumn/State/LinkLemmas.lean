@@ -467,6 +467,170 @@ theorem linkWith_error_not_structural (s : State) (otherPid : Nat) {e}
         · cases h; rfl
         · exact nomatch h
 
+/-! ## Machine `result` is stable under process-only mutations -/
+
+theorem notifyDownPeer_result (s : State) (fromPid : Nat) (heap : Heap)
+    (reason : Value) (monitorerPid refId : Nat) :
+    (State.notifyDownPeer s fromPid heap reason monitorerPid refId).result = s.result := by
+  cases hfnd : s.findProcessIdx monitorerPid with
+  | none => simp [State.notifyDownPeer, hfnd]
+  | some idx =>
+    simp [State.notifyDownPeer, hfnd]
+    split
+    · split <;> simp [processes_update_result]
+    · rfl
+
+theorem clearTargetMonitor_result (s : State) (fromPid targetPid refId : Nat) :
+    (State.clearTargetMonitor s fromPid targetPid refId).result = s.result := by
+  cases hfnd : s.findProcessIdx targetPid with
+  | none => simp [State.clearTargetMonitor, hfnd]
+  | some idx =>
+    simp [State.clearTargetMonitor, hfnd]
+    split <;> simp [processes_update_result]
+
+theorem propagateExit.goDown_result (s : State) (fromPid : Nat) (heap : Heap)
+    (reason : Value) (downs : List (Nat × Nat)) :
+    (State.propagateExit.goDown s fromPid heap reason downs).result = s.result := by
+  induction downs generalizing s with
+  | nil => simp [State.propagateExit.goDown]
+  | cons head rest ih =>
+    cases head with
+    | mk monitorerPid refId =>
+      simp only [State.propagateExit.goDown]
+      rw [ih, notifyDownPeer_result]
+
+theorem propagateExit.goClear_result (s : State) (fromPid : Nat)
+    (outs : List (Nat × Nat)) :
+    (State.propagateExit.goClear s fromPid outs).result = s.result := by
+  induction outs generalizing s with
+  | nil => simp [State.propagateExit.goClear]
+  | cons head rest ih =>
+    cases head with
+    | mk targetPid refId =>
+      simp only [State.propagateExit.goClear]
+      rw [ih, clearTargetMonitor_result]
+
+theorem notifyExitMailbox_result (s : State) (fromPid : Nat) (heap : Heap)
+    (reason : Value) (peerPid : Nat) :
+    (State.notifyExitMailbox s fromPid heap reason peerPid).result = s.result := by
+  cases hfnd : s.findProcessIdx peerPid with
+  | none => simp [State.notifyExitMailbox, hfnd]
+  | some idx =>
+    simp [State.notifyExitMailbox, hfnd]
+    split
+    · split <;> simp [processes_update_result]
+    · rfl
+
+mutual
+  theorem signalLink_result (fuel : Nat) (s : State) (fromPid : Nat) (heap : Heap)
+      (reason : Value) (peerPid : Nat) :
+      (State.signalLink fuel s fromPid heap reason peerPid).result = s.result := by
+    cases fuel with
+    | zero =>
+      cases hfnd : s.findProcessIdx peerPid with
+      | none => simp [State.signalLink, hfnd]
+      | some idx =>
+        simp [State.signalLink, hfnd]
+        split
+        · split
+          · rfl
+          · exact notifyExitMailbox_result _ _ _ _ _
+        · rfl
+    | succ fuel =>
+      cases hfnd : s.findProcessIdx peerPid with
+      | none => simp [State.signalLink, hfnd]
+      | some idx =>
+        simp [State.signalLink, hfnd]
+        split
+        · split
+          · rfl
+          · split
+            · exact notifyExitMailbox_result _ _ _ _ _
+            · -- kill: `{s with processes := _}` then `from`
+              rw [propagateExit.from_result]
+        · rfl
+
+  theorem signalLinks_result (fuel : Nat) (s : State) (fromPid : Nat) (heap : Heap)
+      (reason : Value) (links : List Nat) :
+      (State.signalLinks fuel s fromPid heap reason links).result = s.result := by
+    induction links generalizing s with
+    | nil => simp [State.signalLinks]
+    | cons peer rest ih =>
+      simp only [State.signalLinks]
+      rw [ih, signalLink_result]
+
+  theorem propagateExit.from_result (fuel : Nat) (s : State) (fromPid : Nat)
+      (heap : Heap) (reason : Value) (links : List Nat) (downs outs : List (Nat × Nat)) :
+      (State.propagateExit.from fuel s fromPid heap reason links downs outs).result =
+        s.result := by
+    simp only [State.propagateExit.from]
+    rw [propagateExit.goClear_result, propagateExit.goDown_result, signalLinks_result]
+end
+
+theorem propagateExit_result (s : State) (exitedIdx : Nat) (reason : Value) :
+    (State.propagateExit s exitedIdx reason).result = s.result := by
+  unfold State.propagateExit
+  split
+  · rw [propagateExit.from_result]
+  · rfl
+
+theorem forceExitPid_result (s : State) (pid : Nat) (reason : Value) :
+    (State.forceExitPid s pid reason).result = s.result := by
+  cases hfnd : s.findProcessIdx pid with
+  | none => simp [State.forceExitPid, hfnd]
+  | some idx =>
+    simp [State.forceExitPid, hfnd]
+    split
+    · split
+      · rfl
+      · rw [propagateExit_result]
+    · rfl
+
+theorem linkWith_result (s : State) (otherPid : Nat) {s' : State}
+    (h : State.linkWith s otherPid = .ok s') :
+    s'.result = s.result := by
+  cases hfnd : s.findProcessIdx otherPid with
+  | none => simp [State.linkWith, hfnd] at h
+  | some idx =>
+    simp [State.linkWith, hfnd] at h
+    split at h
+    · exact nomatch h
+    · split at h
+      · cases h; rfl
+      · split at h
+        · exact nomatch h
+        · cases h
+          rw [setCurrentProcess_result]
+
+theorem monitorWith_result (s : State) (targetPid refId : Nat) {s' : State}
+    (h : State.monitorWith s targetPid refId = .ok s') :
+    s'.result = s.result := by
+  cases hfnd : s.findProcessIdx targetPid with
+  | none => simp [State.monitorWith, hfnd] at h
+  | some idx =>
+    simp [State.monitorWith, hfnd] at h
+    split at h
+    · exact nomatch h
+    · split at h
+      · cases h
+        exact notifyDownPeer_result _ _ _ _ _ _
+      · split at h
+        · cases h
+          exact setCurrentProcess_result _ _
+        · cases h
+          rw [setCurrentProcess_result]
+
+theorem demonitorWith_result (s : State) (refId : Nat) {s' : State}
+    (h : State.demonitorWith s refId = .ok s') :
+    s'.result = s.result := by
+  simp [State.demonitorWith] at h
+  split at h
+  · exact nomatch h
+  · split at h
+    · cases h; rfl
+    · cases h
+      rw [clearTargetMonitor_result, setCurrentProcess_result]
+
 /-! ## Observational OTP: `trap_exit` delivers mailbox EXIT (does not kill) -/
 
 /-- With positive fuel and `trapExit`, `signalLink` is mailbox EXIT delivery. -/

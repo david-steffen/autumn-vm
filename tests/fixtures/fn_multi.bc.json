@@ -1,0 +1,145 @@
+{
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 0,
+      "code": [
+        {
+          "captures": [],
+          "dest": 0,
+          "fun": "Main.__fn_0/1",
+          "op": "make_fun"
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 1
+        },
+        {
+          "args": [
+            1
+          ],
+          "dest": 2,
+          "fun": 0,
+          "op": "apply"
+        },
+        {
+          "lit": {
+            "int": 2
+          },
+          "op": "load_lit",
+          "reg": 3
+        },
+        {
+          "args": [
+            3
+          ],
+          "dest": 4,
+          "fun": 0,
+          "op": "apply"
+        },
+        {
+          "args": [
+            2,
+            4
+          ],
+          "dest": 5,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "op": "return",
+          "reg": 5
+        }
+      ],
+      "locals": 6,
+      "name": "Main.main/0"
+    },
+    {
+      "arity": 1,
+      "code": [
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "jump_if_eq",
+          "reg": 0,
+          "target": 2
+        },
+        {
+          "op": "jump",
+          "target": 5
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 2
+        },
+        {
+          "dest": 1,
+          "op": "move",
+          "src": 2
+        },
+        {
+          "op": "jump",
+          "target": 13
+        },
+        {
+          "op": "jump",
+          "target": 7
+        },
+        {
+          "op": "jump",
+          "target": 11
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 3
+        },
+        {
+          "args": [
+            0,
+            3
+          ],
+          "dest": 4,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "dest": 1,
+          "op": "move",
+          "src": 4
+        },
+        {
+          "op": "jump",
+          "target": 13
+        },
+        {
+          "lit": {
+            "atom": "match_error"
+          },
+          "op": "load_lit",
+          "reg": 5
+        },
+        {
+          "op": "raise",
+          "reg": 5
+        },
+        {
+          "op": "return",
+          "reg": 1
+        }
+      ],
+      "locals": 6,
+      "name": "Main.__fn_0/1"
+    }
+  ],
+  "version": 11
+}

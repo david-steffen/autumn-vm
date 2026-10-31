@@ -121,6 +121,8 @@ Unmatched `case` / multi-clause fallthrough lowers to `raise` of atom `match_err
 
 Match assignment `pat = expr` is lowerer-only (same pattern emitters as `case`): miss → `raise :match_error`; success value is the RHS. Bare `x = e` still just rebinds. Pin `^x` in patterns (including under `=` / `case` / `receive`) compares via `==/2` against the currently bound register (no new opcode).
 
+**Language sugar (lowerer-only, no new opcodes):** multi-clause / patterned `fn` → synthetic `case` + `make_fun` (v11). `hd/1` → `get_list_elem` index 0; `tl/1` → `get_list_rest` index 0; `++/2` → per-module lifted `__list_append__/2` (case + `cons/2`).
+
 `if` / `unless` / `cond` are lowerer-only (no new opcodes): truthiness is Elixir-like (`false` and `nil` falsy; everything else truthy) via `jump_if_eq` on those literals. Missing `else` yields `nil`. Exhausted `cond` raises atom `cond_clause_error`.
 
 `rescue e in [lit, …]` (and `rescue lit ->`) stays **value-based**: the raised value is matched with `jump_if_eq` / patterns (no BEAM exception structs). `rescue e in [:a, :b]` is an or of literal tests that binds `e` on match.

@@ -673,6 +673,63 @@ theorem processExit_preserves
       exact scheduleNext_preserves _ _ hs2 h
   · exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
 
+/-- When `peekLoadFile` succeeds, the current instruction is `load_file` with a string path. -/
+theorem peekLoadFile_spec (s : State) (dest : Reg) (path : String)
+    (hs : State.WF s) (h : peekLoadFile s = some (dest, path)) :
+    let p := s.processes[s.current]'hs.2.2.1
+    let frame := p.stack[p.stack.size - 1]!
+    s.result = none ∧
+      p.status = .runnable ∧
+      p.result = none ∧
+      0 < p.stack.size ∧
+      frame.ip < frame.function.code.size ∧
+      ∃ pathReg,
+        frame.function.code[frame.ip]! = .loadFile dest pathReg ∧
+          getReg! frame pathReg = .string path := by
+  have hcur := hs.2.2.1
+  have hres0 : s.result.isSome = false := by
+    by_cases hr : s.result.isSome = true
+    · simp [peekLoadFile, hr] at h
+    · exact Bool.eq_false_of_ne_true hr
+  have hr : s.result = none := by
+    cases hx : s.result with
+    | none => rfl
+    | some _ => simp [Option.isSome, hx] at hres0
+  simp [peekLoadFile, hres0, hcur] at h
+  obtain ⟨⟨⟨hstatB, hpres⟩, hne⟩, hip, hmatch⟩ := h
+  have hrun : (s.processes[s.current]).status = .runnable := by
+    have hnr :
+        ¬(((s.processes[s.current]).status != .runnable) = true ∨
+          (s.processes[s.current]).result.isSome = true) := by
+      rintro (h | h)
+      · rw [hstatB] at h; exact Bool.false_ne_true h
+      · simp [hpres, Option.isSome] at h
+    exact (status_runnable_of_not_deschedule _ _ hnr).1
+  have hsz : 0 < (s.processes[s.current]).stack.size :=
+    Nat.pos_of_ne_zero (mt Array.eq_empty_of_size_eq_zero hne)
+  cases hcode :
+      (s.processes[s.current]).stack[
+        (s.processes[s.current]).stack.size - 1]!.function.code[
+        (s.processes[s.current]).stack[
+          (s.processes[s.current]).stack.size - 1]!.ip]! with
+  | loadFile d pathReg =>
+    simp [hcode] at hmatch
+    cases hpath :
+        getReg! (s.processes[s.current]).stack[
+          (s.processes[s.current]).stack.size - 1]! pathReg with
+    | string path' =>
+      simp [hpath] at hmatch
+      obtain ⟨rfl, rfl⟩ := hmatch
+      exact ⟨hr, hrun, hpres, hsz, hip, pathReg, hcode, hpath⟩
+    | nil | bool _ | int _ | float _ | atom _ | pid _ | reference _ | ref _ =>
+      simp [hpath] at hmatch
+  | loadLit _ _ | move _ _ | call _ _ _ | return_ _ | halt _ | jump _ | jumpIfEq _ _ _
+    | getTupleElem _ _ _ | getListElem _ _ _ | getListRest _ _ _ | isTag _ _ _
+    | spawn _ _ _ | send _ _ | recv _ | recvPeek _ _ _ | recvDrop _ | wait _ _ _
+    | enterTry _ _ | leaveTry | raise _ | link _ | monitor _ _ | demonitor _
+    | makeFun _ _ _ | apply _ _ _ =>
+    simp [hcode] at hmatch
+
 /-- `raiseLoadAtCurrent` preserves WF (`:enoent` / `:badarg` from the IO runner). -/
 theorem raiseLoadAtCurrent_preserves
     (s : State) (reason : String) {s'}
@@ -747,6 +804,27 @@ theorem finishLoadFile_preserves
       exact hs2
     · simp [hok, ↓reduceIte] at h
       exact raiseValue_preserves s p frame (.atom "bad_bytecode") hs hp hres hstat hsz h
+
+/-- Shared load outcome (`some` ↔ finish, `none` ↔ `:enoent`) preserves WF. -/
+theorem interpretLoadFile_preserves
+    (s : State) (dest : Reg) (read : Option String) {s'}
+    (hs : State.WF s)
+    (hstat0 : (s.processes[s.current]'hs.2.2.1).status = .runnable)
+    (hres0 : (s.processes[s.current]'hs.2.2.1).result = none)
+    (hip :
+      ((s.processes[s.current]'hs.2.2.1).stack[
+        (s.processes[s.current]'hs.2.2.1).stack.size - 1]!).ip + 1 <
+      ((s.processes[s.current]'hs.2.2.1).stack[
+        (s.processes[s.current]'hs.2.2.1).stack.size - 1]!).function.code.size)
+    (h : interpretLoadFile s dest read = .ok s') :
+    State.WF s' := by
+  cases read with
+  | some contents =>
+    simp [interpretLoadFile] at h
+    exact finishLoadFile_preserves s dest contents hs hstat0 hres0 hip h
+  | none =>
+    simp [interpretLoadFile] at h
+    exact raiseLoadAtCurrent_preserves s "enoent" hs hstat0 hres0 h
 
 end Step
 end Autumn

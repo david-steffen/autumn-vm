@@ -259,6 +259,38 @@ theorem result_update_preserves (s : State) (v : Term) (hs : State.WF s) :
     State.WF { s with result := some v } :=
   ⟨hs.1, hs.2.1, hs.2.2.1, hs.2.2.2⟩
 
+/-- Updating `processes` does not touch the machine result. -/
+theorem processes_update_result (s : State) (ps : Array Process) :
+    ({ s with processes := ps } : State).result = s.result :=
+  rfl
+
+/-- `setCurrentProcess` does not touch the machine result. -/
+theorem setCurrentProcess_result (s : State) (p : Process) :
+    (State.setCurrentProcess s p).result = s.result := by
+  simp [State.setCurrentProcess]
+  split <;> rfl
+
+/-- `setCurrentProcess` does not change `current`. -/
+theorem setCurrentProcess_current (s : State) (p : Process) :
+    (State.setCurrentProcess s p).current = s.current := by
+  simp [State.setCurrentProcess]
+  split <;> rfl
+
+/-- Clock update does not touch the machine result. -/
+theorem clock_result (s : State) (n : Nat) :
+    ({ s with clock := n } : State).result = s.result :=
+  rfl
+
+/-- Reductions update does not touch the machine result. -/
+theorem reductions_result (s : State) (n : Nat) :
+    ({ s with reductions := n } : State).result = s.result :=
+  rfl
+
+/-- Module / nextRef updates do not touch the machine result. -/
+theorem nextRef_result (s : State) (n : Nat) :
+    ({ s with nextRef := n } : State).result = s.result :=
+  rfl
+
 theorem process_mailbox_WF (m : Module) (p : Process) (mb : Array Value)
     (hp : Process.WF m p) :
     Process.WF m { p with mailbox := mb } := by

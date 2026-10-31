@@ -179,6 +179,7 @@ defmodule AutumnCompiler.Lower do
     Process.put({:autumn, :mod}, mod_name)
     Process.put({:autumn, :fn_id}, 0)
     Process.put({:autumn, :lifted}, [])
+    Process.put({:autumn, :list_append}, false)
   end
 
   defp take_lifted! do
@@ -714,15 +715,22 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
-  # Single-clause `fn` → lift + make_fun (IR v11).
-  defp expr({:fn, _, clauses}, env, next, code) do
+  # `fn` → lift + make_fun (IR v11). Multi-clause / patterned heads → synthetic case.
+  defp expr({:fn, _, clauses}, env, next, code) when is_list(clauses) and clauses != [] do
     case clauses do
       [{:->, _, [params, body]}] ->
-        lower_fn(params, body, env, next, code)
+        case fn_param_names(params) do
+          {:ok, _} -> lower_fn(params, body, env, next, code)
+          {:error, _} -> lower_multi_fn(clauses, env, next, code)
+        end
 
       _ ->
-        {:error, "multi-clause fn not supported"}
+        lower_multi_fn(clauses, env, next, code)
     end
+  end
+
+  defp expr({:fn, _, _}, _env, _next, _code) do
+    {:error, "fn: expected one or more clauses (fn pat -> body; … end)"}
   end
 
   defp expr({:|>, _, [left, right]}, env, next, code) do
@@ -780,6 +788,16 @@ defmodule AutumnCompiler.Lower do
           {:ok, code ++ [instr], env, next + 1, dest}
         end
 
+      name == :hd and arity == 1 ->
+        lower_hd_tl(:hd, hd(args), env, next, code)
+
+      name == :tl and arity == 1 ->
+        lower_hd_tl(:tl, hd(args), env, next, code)
+
+      name == :++ and arity == 2 ->
+        [left, right] = args
+        lower_list_append(left, right, env, next, code)
+
       true ->
         fun =
           case Map.fetch(@builtins, {name, arity}) do
@@ -793,6 +811,85 @@ defmodule AutumnCompiler.Lower do
 
   defp expr(other, _env, _next, _code) do
     {:error, "unsupported expression: #{Macro.to_string(other)}"}
+  end
+
+  defp lower_hd_tl(which, arg, env, next, code) do
+    with {:ok, code, env, next, list_reg} <- expr(arg, env, next, code) do
+      dest = next
+
+      instr =
+        case which do
+          :hd ->
+            %{"op" => "get_list_elem", "dest" => dest, "list" => list_reg, "index" => 0}
+
+          :tl ->
+            %{"op" => "get_list_rest", "dest" => dest, "list" => list_reg, "index" => 0}
+        end
+
+      {:ok, code ++ [instr], env, next + 1, dest}
+    end
+  end
+
+  # `a ++ b` → call a per-module lifted `__list_append__/2` (case + cons).
+  defp lower_list_append(left, right, env, next, code) do
+    fun_name = ensure_list_append!()
+    lower_call_named(fun_name, [left, right], env, next, code)
+  end
+
+  defp ensure_list_append! do
+    mod = Process.get({:autumn, :mod})
+    fun_name = "#{mod}.__list_append__/2"
+
+    unless Process.get({:autumn, :list_append}) do
+      # xs, ys. case xs do [] -> ys; [h|t] -> [h | append(t, ys)] end
+      xs = {:xs, [], nil}
+      ys = {:ys, [], nil}
+      h = {:h, [], nil}
+      t = {:t, [], nil}
+
+      body =
+        {:case, [],
+         [
+           xs,
+           [
+             do: [
+               # Quote shapes: `[] -> ys` and `[h|t] -> …` (see Code.string_to_quoted)
+               {:->, [], [[[]], ys]},
+               {:->, [],
+                [
+                  [[{:|, [], [h, t]}]],
+                  {:cons, [], [h, {String.to_atom("__list_append__"), [], [t, ys]}]}
+                ]}
+             ]
+           ]
+         ]}
+
+      case lower_body(body, [:xs, :ys]) do
+        {:ok, lifted_code, locals} ->
+          lifted_code =
+            Enum.map(lifted_code, fn
+              %{"op" => "call", "fun" => "__local__:__list_append__/2"} = instr ->
+                %{instr | "fun" => fun_name}
+
+              instr ->
+                instr
+            end)
+
+          push_lifted!(%{
+            "name" => fun_name,
+            "arity" => 2,
+            "locals" => locals,
+            "code" => lifted_code
+          })
+
+          Process.put({:autumn, :list_append}, true)
+
+        {:error, msg} ->
+          raise "internal: failed to lower __list_append__/2: #{msg}"
+      end
+    end
+
+    fun_name
   end
 
   defp lower_if(cond_ast, then_ast, else_ast, env, next, code) do
@@ -1860,7 +1957,9 @@ defmodule AutumnCompiler.Lower do
   end
 
   defp emit_pattern_test(other, _, _, _, _),
-    do: {:error, "unsupported pattern: #{Macro.to_string(other)}"}
+    do:
+      {:error,
+       "match (=): unsupported pattern #{Macro.to_string(other)} (use case/fn clauses for complex heads)"}
 
   defp split_list_pattern(elems) when is_list(elems) do
     {prefix, rest} =
@@ -2597,15 +2696,116 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
+  defp lower_multi_fn(clauses, env, next, code) do
+    with {:ok, parsed} <- parse_fn_clauses(clauses),
+         {:ok, arity} <- fn_clauses_arity(parsed) do
+      params = Enum.map(0..(arity - 1), fn i -> String.to_atom("a#{i}") end)
+
+      scrut =
+        case arity do
+          1 -> {hd(params), [], nil}
+          _ -> {:{}, [], Enum.map(params, &{&1, [], nil})}
+        end
+
+      case_clauses =
+        Enum.map(parsed, fn {pats, body, guard} ->
+          pat =
+            case arity do
+              1 -> hd(pats)
+              _ -> {:{}, [], pats}
+            end
+
+          lhs = if guard == nil, do: [pat], else: [{:when, [], [pat, guard]}]
+          {:->, [], [lhs, body]}
+        end)
+
+      body = {:case, [], [scrut, [do: case_clauses]]}
+
+      frees =
+        body
+        |> free_vars(MapSet.new(params))
+        |> Enum.filter(&Map.has_key?(env, &1))
+        |> Enum.sort()
+
+      id = next_fn_id!()
+      mod = Process.get({:autumn, :mod})
+      fun_arity = length(frees) + arity
+      fun_name = "#{mod}.__fn_#{id}/#{fun_arity}"
+      lifted_params = frees ++ params
+
+      with {:ok, lifted_code, locals} <- lower_body(body, lifted_params) do
+        push_lifted!(%{
+          "name" => fun_name,
+          "arity" => fun_arity,
+          "locals" => locals,
+          "code" => lifted_code
+        })
+
+        cap_regs = Enum.map(frees, &Map.fetch!(env, &1))
+        dest = next
+
+        instr = %{
+          "op" => "make_fun",
+          "dest" => dest,
+          "fun" => fun_name,
+          "captures" => cap_regs
+        }
+
+        {:ok, code ++ [instr], env, next + 1, dest}
+      end
+    end
+  end
+
+  defp parse_fn_clauses(clauses) do
+    Enum.reduce_while(clauses, {:ok, []}, fn
+      {:->, _, [lhs, body]}, {:ok, acc} ->
+        case normalize_fn_lhs(lhs) do
+          {:ok, pats, guard} -> {:cont, {:ok, acc ++ [{pats, body, guard}]}}
+          {:error, _} = err -> {:halt, err}
+        end
+
+      other, _ ->
+        {:halt, {:error, "fn: unsupported clause #{Macro.to_string(other)}"}}
+    end)
+  end
+
+  defp normalize_fn_lhs([{:when, _, [pat, guard]}]) do
+    {:ok, [pat], guard}
+  end
+
+  defp normalize_fn_lhs([{:when, _, pats_and_guard}]) when is_list(pats_and_guard) do
+    case List.pop_at(pats_and_guard, -1) do
+      {guard, pats} when pats != [] -> {:ok, pats, guard}
+      _ -> {:error, "fn: malformed when-clause"}
+    end
+  end
+
+  defp normalize_fn_lhs(pats) when is_list(pats), do: {:ok, pats, nil}
+  defp normalize_fn_lhs(other), do: {:error, "fn: unsupported head #{Macro.to_string(other)}"}
+
+  defp fn_clauses_arity([{pats, _, _} | rest]) do
+    arity = length(pats)
+
+    if arity == 0 do
+      {:error, "fn: zero-arity multi-clause not supported (use fn -> … end)"}
+    else
+      if Enum.all?(rest, fn {p, _, _} -> length(p) == arity end) do
+        {:ok, arity}
+      else
+        {:error, "fn: clauses must share the same arity"}
+      end
+    end
+  end
+
   defp fn_param_names(params) when is_list(params) do
     if all_var_params?(params) do
       {:ok, Enum.map(params, fn {n, _, nil} -> n end)}
     else
-      {:error, "fn params must be variables (no patterns)"}
+      {:error, "fn: patterned params need multi-clause lowering"}
     end
   end
 
-  defp fn_param_names(_), do: {:error, "unsupported fn params"}
+  defp fn_param_names(_), do: {:error, "fn: params must be a list (fn a, b -> … end)"}
 
   # Free variables relative to `bound` (already in scope).
   defp free_vars({name, _, nil}, bound) when is_atom(name) do

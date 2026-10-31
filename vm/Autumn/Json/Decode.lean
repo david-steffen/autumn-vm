@@ -55,58 +55,67 @@ def decodeTag (j : Json) : Except StepError Tag := do
   | "fun" => pure .fun
   | other => err s!"unknown tag: {other}"
 
-partial def decodeLit (j : Json) : Except StepError Term := do
-  if j.isNull then
-    return Term.nil
-  match j.getObjVal? "bool" with
-  | .ok v => return Term.bool (← asBool v)
-  | .error _ => pure ()
-  match j.getObjVal? "int" with
-  | .ok v => return Term.int (← asInt v)
-  | .error _ => pure ()
-  match j.getObjVal? "atom" with
-  | .ok v => return Term.atom (← asString v)
-  | .error _ => pure ()
-  match j.getObjVal? "tuple" with
-  | .ok v =>
-    let elems ← asArray v
-    return Term.tuple (← elems.mapM decodeLit)
-  | .error _ => pure ()
-  match j.getObjVal? "list" with
-  | .ok v =>
-    let elems ← asArray v
-    return Term.list (← elems.mapM decodeLit)
-  | .error _ => pure ()
-  match j.getObjVal? "map" with
-  | .ok v =>
-    let elems ← asArray v
-    let entries ← elems.mapM fun e => do
-      let k ← decodeLit (← field e "key")
-      let val ← decodeLit (← field e "value")
-      pure (k, val)
-    return Term.map entries
-  | .error _ => pure ()
-  match j.getObjVal? "pid" with
-  | .ok v => return Term.pid (← asNat v)
-  | .error _ => pure ()
-  match j.getObjVal? "ref" with
-  | .ok v => return Term.reference (← asNat v)
-  | .error _ => pure ()
-  match j.getObjVal? "float" with
-  | .ok v =>
-    match v.getNum? with
-    | .ok n => return Term.float n.toFloat
-    | .error e => err e
-  | .error _ => pure ()
-  match j.getObjVal? "string" with
-  | .ok v => return Term.string (← asString v)
-  | .error _ => pure ()
-  match j.getObjVal? "closure" with
-  | .ok v =>
-    let funName ← asString (← field v "fun")
-    let env ← (← asArray (← field v "env")).mapM decodeLit
-    return Term.closure funName env
-  | .error _ => err "unknown literal tag"
+/-- Fuel-bounded literal decode (unfoldable for Encode↔Decode lemmas). -/
+def decodeLitWithFuel : Nat → Json → Except StepError Term
+  | 0, _ => err "literal nesting too deep"
+  | fuel + 1, j => do
+    if j.isNull then
+      return Term.nil
+    match j.getObjVal? "bool" with
+    | .ok v => return Term.bool (← asBool v)
+    | .error _ => pure ()
+    match j.getObjVal? "int" with
+    | .ok v => return Term.int (← asInt v)
+    | .error _ => pure ()
+    match j.getObjVal? "atom" with
+    | .ok v => return Term.atom (← asString v)
+    | .error _ => pure ()
+    match j.getObjVal? "tuple" with
+    | .ok v =>
+      let elems ← asArray v
+      return Term.tuple (← elems.mapM (decodeLitWithFuel fuel))
+    | .error _ => pure ()
+    match j.getObjVal? "list" with
+    | .ok v =>
+      let elems ← asArray v
+      return Term.list (← elems.mapM (decodeLitWithFuel fuel))
+    | .error _ => pure ()
+    match j.getObjVal? "map" with
+    | .ok v =>
+      let elems ← asArray v
+      let entries ← elems.mapM fun e => do
+        let k ← decodeLitWithFuel fuel (← field e "key")
+        let val ← decodeLitWithFuel fuel (← field e "value")
+        pure (k, val)
+      return Term.map entries
+    | .error _ => pure ()
+    match j.getObjVal? "pid" with
+    | .ok v => return Term.pid (← asNat v)
+    | .error _ => pure ()
+    match j.getObjVal? "ref" with
+    | .ok v => return Term.reference (← asNat v)
+    | .error _ => pure ()
+    match j.getObjVal? "float" with
+    | .ok v =>
+      match v.getNum? with
+      | .ok n => return Term.float n.toFloat
+      | .error e => err e
+    | .error _ => pure ()
+    match j.getObjVal? "string" with
+    | .ok v => return Term.string (← asString v)
+    | .error _ => pure ()
+    match j.getObjVal? "closure" with
+    | .ok v =>
+      let funName ← asString (← field v "fun")
+      let env ← (← asArray (← field v "env")).mapM (decodeLitWithFuel fuel)
+      return Term.closure funName env
+    | .error _ => err "unknown literal tag"
+
+/-- Public decode (fuel-bounded via nesting depth of the value).
+Uses a generous static fuel so Mix goldens / REPL are unaffected; roundtrip
+lemmas reason about `decodeLitWithFuel` directly. -/
+def decodeLit (j : Json) : Except StepError Term :=
+  decodeLitWithFuel 100000 j
 
 def decodeInstr (j : Json) : Except StepError Instr := do
   let op ← asString (← field j "op")

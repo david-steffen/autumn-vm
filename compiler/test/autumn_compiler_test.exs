@@ -291,6 +291,25 @@ defmodule AutumnCompilerTest do
     assert Enum.any?(code, &(&1["op"] == "raise"))
   end
 
+  test "lowers genserver_counter / genserver_call_down (call+ref+monitor)" do
+    path = Path.join(@fixtures, "genserver_counter.ex")
+    expected_path = Path.join(@fixtures, "genserver_counter.bc.json")
+    assert {:ok, module} = AutumnCompiler.compile_file(path)
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+    assert module["version"] == 9
+    code = Enum.flat_map(module["functions"], & &1["code"])
+    assert Enum.any?(code, &(&1["op"] == "monitor"))
+    assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "make_ref/0"))
+
+    path = Path.join(@fixtures, "genserver_call_down.ex")
+    expected_path = Path.join(@fixtures, "genserver_call_down.bc.json")
+    assert {:ok, module} = AutumnCompiler.compile_file(path)
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+    assert module["version"] == 9
+  end
+
   test "lowers float_string (IR v10)" do
     path = Path.join(@fixtures, "float_string.ex")
     expected_path = Path.join(@fixtures, "float_string.bc.json")
@@ -383,6 +402,39 @@ defmodule AutumnCompilerTest do
     code = Enum.flat_map(module["functions"], & &1["code"])
     assert Enum.any?(code, &(&1["op"] == "load_file"))
     assert Enum.any?(code, &(&1["op"] == "enter_try"))
+  end
+
+  test "lowers list_lit" do
+    path = Path.join(@fixtures, "list_lit.ex")
+    expected_path = Path.join(@fixtures, "list_lit.bc.json")
+
+    assert {:ok, module} = AutumnCompiler.compile_file(path)
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+  end
+
+  test "lowers multi-clause fn" do
+    path = Path.join(@fixtures, "fn_multi.ex")
+    expected_path = Path.join(@fixtures, "fn_multi.bc.json")
+
+    assert {:ok, module} = AutumnCompiler.compile_file(path)
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+    assert module["version"] == 11
+    assert Enum.any?(module["functions"], &String.contains?(&1["name"], "__fn_"))
+  end
+
+  test "lowers hd/tl/++ list helpers" do
+    path = Path.join(@fixtures, "list_helpers.ex")
+    expected_path = Path.join(@fixtures, "list_helpers.bc.json")
+
+    assert {:ok, module} = AutumnCompiler.compile_file(path)
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+    code = Enum.flat_map(module["functions"], & &1["code"])
+    assert Enum.any?(code, &(&1["op"] == "get_list_elem"))
+    assert Enum.any?(code, &(&1["op"] == "get_list_rest"))
+    assert Enum.any?(module["functions"], &(&1["name"] == "Main.__list_append__/2"))
   end
 
   test "eval_expr wraps expression as Repl.main/0" do

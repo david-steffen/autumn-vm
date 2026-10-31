@@ -720,8 +720,40 @@ def runModule (m : Module) (fuel : Nat := 100000)
   let s ← State.initial m heapCapacity
   run fuel s
 
+/-- Shared `load_file` outcome: `some contents` ↔ successful read; `none` ↔ `:enoent`.
+Used by `runIOStatePure` and the IO runner so both share one transition. -/
+def interpretLoadFile (s : State) (dest : Reg) (read : Option String) :
+    Except StepError State :=
+  match read with
+  | some contents => finishLoadFile s dest contents
+  | none => raiseLoadAtCurrent s "enoent"
+
+/-- Pure FS model of `runIOState`: `fs path = some contents` stands for a successful
+`IO.FS.readFile`, `none` for enoent. Returns the final state (not the machine result). -/
+def runIOStatePure (fs : String → Option String) (fuel : Nat) (s : State) :
+    Except StepError State :=
+  match fuel with
+  | 0 => .error (.typeError "out of fuel")
+  | fuel + 1 =>
+    match s.result with
+    | some _ => .ok s
+    | none =>
+      match peekLoadFile s with
+      | some (dest, path) =>
+        match interpretLoadFile s dest (fs path) with
+        | .error e => .error e
+        | .ok s =>
+          match afterInstr s with
+          | .error e => .error e
+          | .ok s => runIOStatePure fs fuel s
+      | none =>
+        match step s with
+        | .error e => .error e
+        | .ok s => runIOStatePure fs fuel s
+
 /-- IO runner: services `load_file` via `IO.FS.readFile`, then pure `step`.
-Returns the final state so callers (REPL) can keep hot-loaded modules. -/
+Returns the final state so callers (REPL) can keep hot-loaded modules.
+The load branch is `interpretLoadFile` (same as `runIOStatePure`). -/
 partial def runIOState (fuel : Nat) (s : State) : IO (Except StepError (State × Term)) := do
   match fuel with
   | 0 => pure (.error (.typeError "out of fuel"))
@@ -731,13 +763,12 @@ partial def runIOState (fuel : Nat) (s : State) : IO (Except StepError (State ×
     | none =>
       match peekLoadFile s with
       | some (dest, path) =>
-        let loaded ←
+        let read ←
           try
-            let contents ← IO.FS.readFile path
-            pure (finishLoadFile s dest contents)
+            pure (some (← IO.FS.readFile path))
           catch _ =>
-            pure (raiseLoadAtCurrent s "enoent")
-        match loaded with
+            pure none
+        match interpretLoadFile s dest read with
         | .error e => pure (.error e)
         | .ok s =>
           match afterInstr s with

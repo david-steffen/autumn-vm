@@ -102,13 +102,63 @@ One-step `step_progress` / `step_preserves` are closed. Push past single-step WF
 1. [x] `State.initial_WF` + multi-step `run_progress` / `runModule_progress` (`runModule` path)
 2. [x] Durable-drain semantics: `scheduleNext_result_is_toTerm` (idle publish ⇒ `Heap.toTerm`)
 3. [x] Factor `stepInstr_preserves` / `stepInstr_error_not_structural` case towers (per-opcode helpers)
-4. [x] Encode ↔ Decode tag roundtrip (`decodeTag_encodeTag`); Instr/Module full roundtrip still open
-5. [x] `afterInstr_preserves` (clock / reductions / `scheduleNext`); full `runIOState` still open
-6. [x] `versionOkB_complete` + `FunName.resolvableB_complete`; `regsOk` / `moduleOkB` completeness still open
+4. [x] Encode ↔ Decode tag roundtrip (`decodeTag_encodeTag`); Instr/Module roundtrip → Phase 17.1
+5. [x] `afterInstr_preserves` (clock / reductions / `scheduleNext`); `runIOState` → Phase 17.1 pure FS
+6. [x] `versionOkB_complete` + `FunName.resolvableB_complete`; `regsOk` / `moduleOkB` → Phase 17.1
 7. [x] Observational OTP: `signalLink_trapExit_eq_mailbox` (`trap_exit` ⇒ mailbox EXIT, not kill)
+
+## Phase 17 — Proof tails, REPL, lowerer, CI
+
+Demo + trust. One theme per PR. Float JSON / live-`IO` tails → Phase 18.
+
+### 17.1 — Close Phase 16 proof tails
+
+1. [x] `decodeLit_encodeLit` (non-float) → `decodeInstr_encodeInstr` → `decodeModule_encodeModule` (`modules[]` image); move `resolvableB_complete` into `WellFormed`
+   - Done: structural `Term.FloatFree`; `decodeLitWithFuel_encodeLit` / `decodeLit_encodeLit` (all non-float terms); `decodeInstr_encodeInstr`; `decodeModule_encodeModule` (`modules[]`); `resolvableB_complete` in `WellFormed`.
+2. [x] `peekLoadFile_spec` + pure `runIOStatePure` + `runIOStatePure_preserves` / `_progress`
+3. [x] `instrOkB_complete` → uniqueness/`checkWF` completeness → `moduleOkB_complete` / `processesModuleOkB_complete`
+
+### 17.2 — REPL as the demo
+
+1. [x] Mix `.help` / `.bindings`; unknown `.foo` → Mix error (not lowerer)
+2. [x] AGENTS “First 5 minutes” REPL walkthrough
+
+### 17.3 — Lowerer ergonomics
+
+1. [x] Multi-clause `fn` (reuse multi-clause `def` → `case`); fixture + golden
+2. [x] `hd` / `tl` / `++` lowerer-only onto existing list IR; fixture + golden; IR.md sugar note
+3. [x] Clearer diagnostics for bad `fn` / `pat =` (context prefix)
+
+### 17.4 — Fixture gallery + CI smoke
+
+1. [x] Wire `list_lit` Mix golden assert
+2. [x] `mix autumn.smoke` allowlist → `lake exe autumn` / `AUTUMN_VM`
+3. [x] GitHub Actions: `mix test` + `lake build` + smoke; document in AGENTS
+
+## Phase 18 — Deferred Phase 17 tails
+
+1. [x] Float JSON encode/decode roundtrip under `JsonNumber.fromFloat? = .inr _` (`.inl` → `⟨0,0⟩`); see `decodeLit_encodeLit_float_*`
+2. [x] Live `load_file` IO bridge: `interpretLoadFile` shared by `runIOState` / `runIOStatePure`; `interpretLoadFile_preserves`
+
+## Phase 19 — GenServer patterns + smoke gallery
+
+No new IR (teaching GenServer as lowerer patterns on monitors / selective receive / refs).
+
+1. [x] `genserver_counter.ex`: `{:call, from, ref, req}` / `{:reply, ref, _}` + `make_ref` + monitor; Mix golden; VM → `7`
+2. [x] `genserver_call_down.ex`: pinned `^mref` DOWN on crash; Mix golden; VM → `1`
+3. [x] Expand `mix autumn.smoke` allowlist (`fn_multi`, `list_helpers`, genserver_*, `counter_server`, `list_lit`, …)
+
+## Phase 20 — Multi-step preservation + idle-drain observational
+
+Dual of `run_progress`; lift `scheduleNext_result_is_toTerm` through the runner.
+
+1. [x] `run_preserves` / `runModule_preserves` — successful `run` witnesses WF state with that machine result
+2. [x] `afterInstr_result_is_toTerm` / `stepInstr_result_is_toTerm` / `step_result_is_toTerm`
+3. [x] `run_result_is_toTerm` / `runModule_result_is_toTerm` — idle-drain value is `Heap.toTerm`
 
 ## Later (deprioritized)
 
 - ETS
-- Stdlib (`GenServer` / `Supervisor` / …)
+- Stdlib (`GenServer` / `Supervisor` as real modules, not fixtures)
 - Verified compiler
+- Bit-identical float identity (`n.toFloat = f`) when `fromFloat?` succeeds

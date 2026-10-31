@@ -26,6 +26,7 @@ Elixir subset → versioned IR JSON → Lean 4 VM. The Mix lowerer emits bytecod
 mix deps.get
 mix test
 mix autumn.compile ../tests/fixtures/add_main.ex /tmp/add.bc.json
+mix autumn.smoke   # allowlisted fixtures on the Lean VM (build VM first)
 ```
 
 **VM** (from `vm/`, Lean 4.35):
@@ -38,18 +39,30 @@ lake exe autumn --lean-demo
 lake exe autumn --repl   # EVAL/LOAD/QUIT line protocol (usually via Mix)
 ```
 
+**CI:** `.github/workflows/ci.yml` — Mix test via mise; Lake build + `mix autumn.smoke`.
+
 **REPL** (build the VM first, then from `compiler/`):
 
 ```bash
 mix autumn.repl
-# autumn(1)> 1 + 2
-# autumn(2)> .load ../tests/fixtures/add_main.ex
-# autumn(3)> Main.add(10, 20)
-# autumn(4)> .quit
 ```
 
-Expressions lower as `Repl.main/0` so a loaded `Main` is not overwritten. Mix replays simple `var = …` bindings across lines; Lean keeps modules and resets processes each `EVAL`. Protocol: `EVAL`/`LOAD` JSON lines, `QUIT`.
+### First 5 minutes
 
+```text
+autumn(1)> .help
+autumn(2)> .load ../tests/fixtures/add_main.ex
+autumn(3)> Main.add(10, 20)
+30
+autumn(4)> x = Main.add(1, 2)
+3
+autumn(5)> x + 10
+13
+autumn(6)> .bindings
+autumn(7)> .quit
+```
+
+Expressions lower as `Repl.main/0` so a loaded `Main` is not overwritten. Mix replays simple `var = …` bindings across lines (RHS re-runs on later lines); Lean keeps modules and resets processes each `EVAL`. Dot commands: `.help`, `.bindings`, `.load`, `.clear`, `.quit`. Protocol: `EVAL`/`LOAD` JSON lines, `QUIT`.
 ## Coding defaults
 
 - Prefer **type-centered modules** (type + its operations colocated). Cross-type pipelines (`Json.Decode`, `Json.Encode`, `Step`) stay separate. See [`.agents/skills/type-centered-modules/SKILL.md`](.agents/skills/type-centered-modules/SKILL.md).

@@ -15,6 +15,8 @@ defmodule Mix.Tasks.Autumn.Repl do
   ### Commands
 
       <expr>          lower + EVAL (`Repl.main/0`)
+      .help           this help
+      .bindings       list Mix-side session bindings
       .load <path>    compile file, LOAD (install only)
       .clear          drop Mix-side bindings
       .quit / .q      exit
@@ -23,6 +25,20 @@ defmodule Mix.Tasks.Autumn.Repl do
   """
 
   use Mix.Task
+
+  @help """
+  Commands:
+    <expr>           lower + EVAL as Repl.main/0
+    .help            show this help
+    .bindings        list Mix-side var = … bindings
+    .load <path>     compile + LOAD (modules persist)
+    .clear           drop Mix-side bindings
+    .quit / .q       exit
+
+  Bindings: only simple `var = expr` (atom LHS). Mix replays prior assigns as
+  AST before each new line (side-effecting RHS re-runs). Lean resets processes
+  each EVAL; modules from .load stay installed.
+  """
 
   @impl Mix.Task
   def run(_args) do
@@ -52,7 +68,7 @@ defmodule Mix.Tasks.Autumn.Repl do
 
     case await_ready(port) do
       :ok ->
-        Mix.shell().info("Autumn REPL (Ctrl-C or .quit to exit)")
+        Mix.shell().info("Autumn REPL (.help for commands; Ctrl-C or .quit to exit)")
         loop(port, 1, [])
 
       {:error, reason} ->
@@ -94,6 +110,14 @@ defmodule Mix.Tasks.Autumn.Repl do
             send_line(port, "QUIT")
             drain_exit(port)
 
+          line == ".help" ->
+            Mix.shell().info(String.trim_trailing(@help))
+            loop(port, n + 1, bindings)
+
+          line == ".bindings" ->
+            print_bindings(bindings)
+            loop(port, n + 1, bindings)
+
           line == ".clear" ->
             Mix.shell().info(":ok")
             loop(port, n + 1, [])
@@ -112,6 +136,11 @@ defmodule Mix.Tasks.Autumn.Repl do
                 Mix.shell().error("** #{msg}")
                 loop(port, n + 1, bindings)
             end
+
+          String.starts_with?(line, ".") ->
+            cmd = line |> String.split(~r/\s+/, parts: 2) |> hd()
+            Mix.shell().error("** unknown command #{cmd} (try .help)")
+            loop(port, n + 1, bindings)
 
           true ->
             case AutumnCompiler.eval_expr(line, bindings) do
@@ -133,6 +162,16 @@ defmodule Mix.Tasks.Autumn.Repl do
             end
         end
     end
+  end
+
+  defp print_bindings([]) do
+    Mix.shell().info("(no bindings)")
+  end
+
+  defp print_bindings(bindings) do
+    Enum.each(bindings, fn {var, rhs} ->
+      Mix.shell().info("#{var} = #{Macro.to_string(rhs)}")
+    end)
   end
 
   defp send_line(port, line) do

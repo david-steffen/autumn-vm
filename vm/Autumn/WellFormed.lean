@@ -15,6 +15,11 @@ theorem FunName.resolvableB_sound (m : Module) (name : FunName)
   simp only [FunName.resolvableB, FunName.resolvable, Bool.or_eq_true] at h ⊢
   exact h
 
+theorem FunName.resolvableB_complete (m : Module) (name : FunName)
+    (h : FunName.resolvable m name) : FunName.resolvableB m name = true := by
+  simp only [FunName.resolvable, FunName.resolvableB, Bool.or_eq_true] at h ⊢
+  exact h
+
 namespace Instr
 
 def regsOk (locals : Nat) : Instr → Bool
@@ -89,6 +94,16 @@ theorem instrOkB_sound (m : Module) (f : Function) (i : Instr)
   | makeFun _ name _ => exact FunName.resolvableB_sound _ _ h.2
   | _ => trivial
 
+theorem instrOkB_complete (m : Module) (f : Function) (i : Instr)
+    (h : instrOk m f i) : instrOkB m f i = true := by
+  simp only [instrOk, instrOkB, Bool.and_eq_true] at h ⊢
+  refine ⟨⟨h.1, h.2.1⟩, ?_⟩
+  cases i with
+  | call _ name _ => exact FunName.resolvableB_complete _ _ h.2.2
+  | spawn _ name _ => exact h.2.2
+  | makeFun _ name _ => exact FunName.resolvableB_complete _ _ h.2.2
+  | _ => rfl
+
 def WF (m : Module) (f : Function) : Prop :=
   f.locals ≥ f.arity ∧
   0 < f.code.size ∧
@@ -123,6 +138,19 @@ theorem checkWF_sound (m : Module) (f : Function) (h : checkWF m f = true) : WF 
     have := hall i.val (List.mem_range.2 hi)
     simpa [hi, ↓reduceDIte] using this
   exact instrOkB_sound m f _ hb
+
+theorem checkWF_complete (m : Module) (f : Function) (h : WF m f) : checkWF m f = true := by
+  simp only [checkWF, Bool.and_eq_true, decide_eq_true_eq]
+  refine ⟨⟨h.1, h.2.1⟩, ?_⟩
+  simp only [h.2.1, ↓reduceDIte, Bool.and_eq_true]
+  refine ⟨?_, ?_⟩
+  · have hterm := h.2.2.1
+    simpa [getElem!_pos f.code (f.code.size - 1) (Nat.sub_one_lt_of_lt h.2.1)] using hterm
+  · apply (List.all_eq_true).2
+    intro i hi
+    have hi' : i < f.code.size := List.mem_range.1 hi
+    simp only [hi', ↓reduceDIte]
+    exact instrOkB_complete m f _ (h.2.2.2 ⟨i, hi'⟩)
 
 theorem nonterminal_ip_lt {f : Function} {ip : Nat}
     (hsz : 0 < f.code.size)
@@ -203,6 +231,21 @@ theorem uniqueFunNamesB_sound (m : Module) (h : uniqueFunNamesB m = true) :
   simp only [i.isLt, j.isLt, ↓reduceDIte, Bool.or_eq_true, bne_iff_ne, beq_iff_eq] at hj
   exact hj.resolve_left (Fin.val_ne_of_ne hne)
 
+theorem uniqueFunNamesB_complete (m : Module) (h : uniqueFunNames m) :
+    uniqueFunNamesB m = true := by
+  simp only [uniqueFunNamesB]
+  apply (List.all_eq_true).2
+  intro i hi
+  have hi' : i < m.allFunctions.size := List.mem_range.1 hi
+  apply (List.all_eq_true).2
+  intro j hj
+  have hj' : j < m.allFunctions.size := List.mem_range.1 hj
+  simp only [hi', hj', ↓reduceDIte, Bool.or_eq_true, bne_iff_ne, beq_iff_eq]
+  by_cases heq : i = j
+  · left; exact heq
+  · right
+    exact h ⟨i, hi'⟩ ⟨j, hj'⟩ (Fin.ne_of_val_ne heq)
+
 theorem uniqueModuleNamesB_sound (m : Module) (h : uniqueModuleNamesB m = true) :
     uniqueModuleNames m := by
   intro i j hne
@@ -212,6 +255,21 @@ theorem uniqueModuleNamesB_sound (m : Module) (h : uniqueModuleNamesB m = true) 
   have hj := hallj j.val (List.mem_range.2 j.isLt)
   simp only [i.isLt, j.isLt, ↓reduceDIte, Bool.or_eq_true, bne_iff_ne, beq_iff_eq] at hj
   exact hj.resolve_left (Fin.val_ne_of_ne hne)
+
+theorem uniqueModuleNamesB_complete (m : Module) (h : uniqueModuleNames m) :
+    uniqueModuleNamesB m = true := by
+  simp only [uniqueModuleNamesB]
+  apply (List.all_eq_true).2
+  intro i hi
+  have hi' : i < m.modules.size := List.mem_range.1 hi
+  apply (List.all_eq_true).2
+  intro j hj
+  have hj' : j < m.modules.size := List.mem_range.1 hj
+  simp only [hi', hj', ↓reduceDIte, Bool.or_eq_true, bne_iff_ne, beq_iff_eq]
+  by_cases heq : i = j
+  · left; exact heq
+  · right
+    exact h ⟨i, hi'⟩ ⟨j, hj'⟩ (Fin.ne_of_val_ne heq)
 
 def WF (m : Module) : Prop :=
   versionOk m.version ∧
@@ -241,6 +299,16 @@ theorem checkWF_sound (m : Module) (h : checkWF m = true) : WF m := by
   have hb' : Function.checkWF m (m.allFunctions[i.val]) = true := by
     simpa [i.isLt, ↓reduceDIte] using hb
   exact Function.checkWF_sound m _ hb'
+
+theorem checkWF_complete (m : Module) (h : WF m) : checkWF m = true := by
+  simp only [checkWF, Bool.and_eq_true, decide_eq_true_eq]
+  refine ⟨⟨⟨⟨⟨versionOkB_complete _ h.1, h.2.1⟩, h.2.2.1⟩,
+    uniqueModuleNamesB_complete _ h.2.2.2.1⟩, uniqueFunNamesB_complete _ h.2.2.2.2.1⟩, ?_⟩
+  apply (List.all_eq_true).2
+  intro i hi
+  have hi' : i < m.allFunctions.size := List.mem_range.1 hi
+  simp only [hi', ↓reduceDIte]
+  exact Function.checkWF_complete m _ (h.2.2.2.2.2 ⟨i, hi'⟩)
 
 theorem findFunction_mem {m : Module} {name : FunName} {f : Function}
     (h : m.findFunction name = some f) : f ∈ m.allFunctions.toList := by
@@ -372,6 +440,10 @@ theorem checkWF_sound (m : Module) (f : Frame) (h : checkWF m f = true) : WF m f
   simp only [checkWF, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
   exact ⟨Function.checkWF_sound m _ h.1.1.1, h.1.1.2, h.1.2, h.2⟩
 
+theorem checkWF_complete (m : Module) (f : Frame) (h : WF m f) : checkWF m f = true := by
+  simp only [checkWF, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq]
+  exact ⟨⟨⟨Function.checkWF_complete m _ h.1, h.2.1⟩, h.2.2.1⟩, h.2.2.2⟩
+
 /-- Frame registers are valid in `h`. -/
 def regsWF (h : Heap) (f : Frame) : Prop :=
   ∀ i, (hi : i < f.regs.size) → Heap.valueWF h (f.regs[i]'hi)
@@ -420,6 +492,24 @@ theorem stackWF_B_sound (m : Module) (stack : Array Frame) (h : stackWF_B m stac
           (stack[i - 1]'(Nat.lt_of_le_of_lt (Nat.pred_le i) hi)).function.locals) = true := by
       simpa [hi, ↓reduceDIte, hne, Bool.or_false] using hb
     exact of_decide_eq_true hb'
+
+theorem stackWF_B_complete (m : Module) (stack : Array Frame) (h : stackWF m stack) :
+    stackWF_B m stack = true := by
+  simp only [stackWF_B, Bool.and_eq_true]
+  refine ⟨?_, ?_⟩
+  · apply (List.all_eq_true).2
+    intro i hi
+    have hi' : i < stack.size := List.mem_range.1 hi
+    simp only [hi', ↓reduceDIte]
+    exact Frame.checkWF_complete m _ (h.1 i hi')
+  · apply (List.all_eq_true).2
+    intro i hi
+    have hi' : i < stack.size := List.mem_range.1 hi
+    simp only [hi', ↓reduceDIte, Bool.or_eq_true, beq_iff_eq]
+    by_cases hi0 : i = 0
+    · left; exact hi0
+    · right
+      exact decide_eq_true (h.2 i hi' (Nat.pos_of_ne_zero hi0))
 
 /-- Module-dependent conjunct of `Process.WF` (stack frames under a new image). -/
 def moduleOkB (m : Module) (p : Process) : Bool :=
@@ -487,6 +577,26 @@ theorem WF_of_moduleOkB (m m' : Module) (p : Process)
         simpa [hr, hs] using hp.2
       exact ⟨hp'.1, stackWF_B_sound m' p.stack hok, hp'.2.2⟩
 
+/-- Under `Process.WF m p`, the module-dependent Bool check succeeds. -/
+theorem moduleOkB_complete (m : Module) (p : Process) (hp : WF m p) :
+    moduleOkB m p = true := by
+  simp only [moduleOkB]
+  cases hr : p.result with
+  | some _ => rfl
+  | none =>
+    cases hs : p.status with
+    | exited =>
+      have hfalse : False := by simpa [hr, hs] using hp.2
+      exact hfalse.elim
+    | runnable =>
+      have hp' : p.stack.size > 0 ∧ stackWF m p.stack ∧ handlersWF p.stack p.handlers := by
+        simpa [hr, hs] using hp.2
+      exact stackWF_B_complete m p.stack hp'.2.1
+    | waiting =>
+      have hp' : p.stack.size > 0 ∧ stackWF m p.stack ∧ handlersWF p.stack p.handlers := by
+        simpa [hr, hs] using hp.2
+      exact stackWF_B_complete m p.stack hp'.2.1
+
 end Process
 
 namespace State
@@ -517,6 +627,16 @@ theorem WF_with_module (s : State) (m' : Module)
   have hokᵢ : Process.moduleOkB m' (s.processes[i]) = true := by
     simpa [hi, ↓reduceDIte] using hb
   exact Process.WF_of_moduleOkB s.module m' _ (hs.2.2.2 i hi) hokᵢ
+
+theorem processesModuleOkB_complete (m : Module) (s : State)
+    (h : ∀ i, (hi : i < s.processes.size) → Process.WF m (s.processes[i]'hi)) :
+    processesModuleOkB m s = true := by
+  simp only [processesModuleOkB]
+  apply (List.all_eq_true).2
+  intro i hi
+  have hi' : i < s.processes.size := List.mem_range.1 hi
+  simp only [hi', ↓reduceDIte]
+  exact Process.moduleOkB_complete m _ (h i hi')
 
 end State
 
