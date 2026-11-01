@@ -1,5 +1,6 @@
 import Autumn.Obs.Schedule
 import Autumn.OTP.Supervisor
+import Autumn.Meaning
 
 namespace Autumn
 namespace Meta
@@ -37,6 +38,8 @@ def scheduleLemmaHints : List String :=
   , "Obs.Schedule.drainSiblings_tapes_observe_zero"
   , "OTP.GenServer.counterCall_observes_seven"
   , "Meaning.addMain_observes_three"
+  , "Meaning.bitstringAppendPartial_observes_one"
+  , "Meaning.bitstringUtf8Get_observes_65"
   ]
 
 /-- `#eval` demo: drain-siblings under prefer tape. -/

@@ -117,4 +117,43 @@ def drainSiblingsModule : Module :=
     }
   ]
 
+/-- Partial `<>/2` then compare to aligned `0xB8` → `1` (smoke twin of
+`bitstring_append_partial`). -/
+def bitstringAppendPartialModule : Module :=
+  Module.ofFunctions "Main.main/0" #[
+    {
+      name := "Main.main/0"
+      arity := 0
+      locals := 5
+      code := #[
+        .loadLit 0 (.bitstring (Term.Bitstring.ofBits? #[1, 0, 1]).get!),
+        .loadLit 1 (.bitstring (Term.Bitstring.ofBits? #[1, 1, 0, 0, 0]).get!),
+        .call 2 "<>/2" #[0, 1],
+        .loadLit 3 (.bitstring (Term.Bitstring.ofBytes (ByteArray.mk #[0xB8]))),
+        .call 4 "==/2" #[2, 3],
+        .jumpIfEq 8 4 (.bool true),
+        .loadLit 0 (.int 0),
+        .jump 9,
+        .loadLit 0 (.int 1),
+        .return_ 0
+      ]
+    }
+  ]
+
+/-- `bs_get_utf8/1` on `<<65>>` → codepoint `65` (smoke twin of utf8 match). -/
+def bitstringUtf8GetModule : Module :=
+  Module.ofFunctions "Main.main/0" #[
+    {
+      name := "Main.main/0"
+      arity := 0
+      locals := 3
+      code := #[
+        .loadLit 0 (.bitstring (Term.Bitstring.ofBytes (ByteArray.mk #[65]))),
+        .call 1 "bs_get_utf8/1" #[0],
+        .getTupleElem 2 1 0,
+        .return_ 2
+      ]
+    }
+  ]
+
 end Autumn

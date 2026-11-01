@@ -515,6 +515,27 @@ defmodule AutumnCompilerTest do
     assert {:ok, _} = AutumnCompiler.compile_file(Path.join(@fixtures, "binary_utf8.ex"))
   end
 
+  test "lowers for comprehension to __for_map__ / __for_filter__" do
+    path = Path.join(@fixtures, "for_basic.ex")
+    assert {:ok, module} = AutumnCompiler.compile_file(path)
+    funs = all_funs(module)
+    assert Enum.any?(funs, &(&1["name"] == "Main.__for_map__/2"))
+    assert Enum.any?(funs, &(&1["name"] == "Main.__for_filter__/2"))
+  end
+
+  test "rejects nested for generators" do
+    src = """
+    defmodule Main do
+      def main do
+        for x <- [1], y <- [2], do: {x, y}
+      end
+    end
+    """
+
+    assert {:error, msg} = AutumnCompiler.Lower.lower(Code.string_to_quoted!(src))
+    assert msg =~ "nested"
+  end
+
   test "lowers if_else / cond_main" do
     path = Path.join(@fixtures, "if_else.ex")
     assert {:ok, module} = AutumnCompiler.compile_file(path)

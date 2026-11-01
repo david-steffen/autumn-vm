@@ -215,5 +215,43 @@ def getUtf8? (b : Bitstring) : Option (Nat × Bitstring) :=
             | none => none
     else none
 
+/-! ## Pure laws for append / UTF-8 decode (teaching subset) -/
+
+/-- `3`-bit `0b101` `<>` `5`-bit `0b11000` packs to aligned `0xB8`. -/
+theorem append_partial_observes_0xb8 :
+    (match (do
+        let a ← ofBits? #[1, 0, 1]
+        let b ← ofBits? #[1, 1, 0, 0, 0]
+        append a b) with
+      | some c => c.beq (ofBytes (ByteArray.mk #[0xB8])) && isBinary c
+      | none => false) =
+      true := by
+  native_decide
+
+/-- Aligned ASCII `A` decodes as codepoint `65` with empty rest. -/
+theorem getUtf8_ascii_A :
+    (match getUtf8? (ofBytes (ByteArray.mk #[65])) with
+      | some (65, rest) => decide (bitSize rest = 0)
+      | _ => false) =
+      true := by
+  native_decide
+
+/-- Two-byte UTF-8 `U+00E9` (é) decodes with empty rest. -/
+theorem getUtf8_e_acute :
+    (match getUtf8? (ofBytes (ByteArray.mk #[0xC3, 0xA9])) with
+      | some (0xE9, rest) => decide (bitSize rest = 0)
+      | _ => false) =
+      true := by
+  native_decide
+
+/-- Empty / invalid lead byte soft-fails. -/
+theorem getUtf8_empty_none :
+    getUtf8? (ofBytes ByteArray.empty) = none := by
+  native_decide
+
+theorem getUtf8_invalid_cont_none :
+    getUtf8? (ofBytes (ByteArray.mk #[0x80])) = none := by
+  native_decide
+
 end Bitstring
 end Autumn.Term

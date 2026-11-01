@@ -368,6 +368,8 @@ defmodule AutumnCompiler.Lower do
     Process.put({:autumn, :fn_id}, 0)
     Process.put({:autumn, :lifted}, [])
     Process.put({:autumn, :list_append}, false)
+    Process.put({:autumn, :for_map}, false)
+    Process.put({:autumn, :for_filter}, false)
   end
 
   defp take_lifted! do
@@ -852,9 +854,27 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
-  # `for` / `with` are not in the teaching subset (avoid "unbound var" via call fallback).
-  defp expr({:for, _, _}, _env, _next, _code) do
-    {:error, "list comprehensions (for) are not supported yet"}
+  # `for x <- xs, filter?, do: body` → lifted `__for_filter__` / `__for_map__`.
+  # Teaching: one generator, simple var pattern, boolean filters; no `into:` / nested gens.
+  defp expr({:for, _, args}, env, next, code) when is_list(args) do
+    case parse_for(args) do
+      {:ok, %{var: var, enum: enum_ast, filters: filters, body: body}} ->
+        _ = ensure_for_map!()
+
+        enum_ast =
+          Enum.reduce(filters, enum_ast, fn filt, enum_ast ->
+            _ = ensure_for_filter!()
+            filter_fn = {:fn, [], [{:->, [], [[{var, [], nil}], filt]}]}
+            {String.to_atom("__for_filter__"), [], [enum_ast, filter_fn]}
+          end)
+
+        map_fn = {:fn, [], [{:->, [], [[{var, [], nil}], body]}]}
+        call = {String.to_atom("__for_map__"), [], [enum_ast, map_fn]}
+        expr(call, env, next, code)
+
+      {:error, _} = err ->
+        err
+    end
   end
 
   defp expr({:with, _, _}, _env, _next, _code) do
@@ -999,6 +1019,169 @@ defmodule AutumnCompiler.Lower do
 
         {:error, msg} ->
           raise "internal: failed to lower __list_append__/2: #{msg}"
+      end
+    end
+
+    fun_name
+  end
+
+  # Parse `for` args: one `x <- enum`, zero+ filters, trailing `[do: body]`.
+  defp parse_for(args) when is_list(args) and args != [] do
+    case List.pop_at(args, -1) do
+      {opts, clauses} when is_list(opts) ->
+        case Keyword.fetch(opts, :do) do
+          {:ok, body} ->
+            if Keyword.has_key?(opts, :into) do
+              {:error, "for into: is not supported (teaching subset)"}
+            else
+              parse_for_clauses(clauses, body)
+            end
+
+          :error ->
+            {:error, "for requires do: body"}
+        end
+
+      _ ->
+        {:error, "for requires do: body"}
+    end
+  end
+
+  defp parse_for_clauses(clauses, body) do
+    gens = Enum.filter(clauses, &match?({:<-, _, [_, _]}, &1))
+    filters = Enum.reject(clauses, &match?({:<-, _, [_, _]}, &1))
+
+    case gens do
+      [{:<-, _, [{var, _, ctx}, enum]}] when is_atom(var) and (is_atom(ctx) or is_nil(ctx)) ->
+        if Enum.any?(filters, &match?({:<-, _, _}, &1)) do
+          {:error, "for: unexpected generator shape"}
+        else
+          {:ok, %{var: var, enum: enum, filters: filters, body: body}}
+        end
+
+      [{:<-, _, _}] ->
+        {:error, "for generator pattern must be a simple variable (teaching subset)"}
+
+      [] ->
+        {:error, "for requires one generator x <- enumerable"}
+
+      _ ->
+        {:error, "nested for generators are not supported yet (teaching subset)"}
+    end
+  end
+
+  defp ensure_for_map! do
+    mod = Process.get({:autumn, :mod})
+    fun_name = "#{mod}.__for_map__/2"
+
+    unless Process.get({:autumn, :for_map}) do
+      # list, fun. case list do [] -> []; [h|t] -> [fun.(h) | __for_map__(t, fun)] end
+      list = {:list, [], nil}
+      fun = {:fun, [], nil}
+      h = {:h, [], nil}
+      t = {:t, [], nil}
+
+      body =
+        {:case, [],
+         [
+           list,
+           [
+             do: [
+               {:->, [], [[[]], []]},
+               {:->, [],
+                [
+                  [[{:|, [], [h, t]}]],
+                  {:cons, [],
+                   [
+                     {{:., [], [fun]}, [], [h]},
+                     {String.to_atom("__for_map__"), [], [t, fun]}
+                   ]}
+                ]}
+             ]
+           ]
+         ]}
+
+      case lower_body(body, [:list, :fun]) do
+        {:ok, lifted_code, locals} ->
+          lifted_code =
+            Enum.map(lifted_code, fn
+              %{"op" => "call", "fun" => "__local__:__for_map__/2"} = instr ->
+                %{instr | "fun" => fun_name}
+
+              instr ->
+                instr
+            end)
+
+          push_lifted!(%{
+            "name" => fun_name,
+            "arity" => 2,
+            "locals" => locals,
+            "code" => lifted_code
+          })
+
+          Process.put({:autumn, :for_map}, true)
+
+        {:error, msg} ->
+          raise "internal: failed to lower __for_map__/2: #{msg}"
+      end
+    end
+
+    fun_name
+  end
+
+  defp ensure_for_filter! do
+    mod = Process.get({:autumn, :mod})
+    fun_name = "#{mod}.__for_filter__/2"
+
+    unless Process.get({:autumn, :for_filter}) do
+      # list, pred. case list do [] -> []; [h|t] -> if pred.(h), do: [h|rest], else: rest end
+      list = {:list, [], nil}
+      pred = {:pred, [], nil}
+      h = {:h, [], nil}
+      t = {:t, [], nil}
+      rest = {String.to_atom("__for_filter__"), [], [t, pred]}
+
+      body =
+        {:case, [],
+         [
+           list,
+           [
+             do: [
+               {:->, [], [[[]], []]},
+               {:->, [],
+                [
+                  [[{:|, [], [h, t]}]],
+                  {:if, [],
+                   [
+                     {{:., [], [pred]}, [], [h]},
+                     [do: {:cons, [], [h, rest]}, else: rest]
+                   ]}
+                ]}
+             ]
+           ]
+         ]}
+
+      case lower_body(body, [:list, :pred]) do
+        {:ok, lifted_code, locals} ->
+          lifted_code =
+            Enum.map(lifted_code, fn
+              %{"op" => "call", "fun" => "__local__:__for_filter__/2"} = instr ->
+                %{instr | "fun" => fun_name}
+
+              instr ->
+                instr
+            end)
+
+          push_lifted!(%{
+            "name" => fun_name,
+            "arity" => 2,
+            "locals" => locals,
+            "code" => lifted_code
+          })
+
+          Process.put({:autumn, :for_filter}, true)
+
+        {:error, msg} ->
+          raise "internal: failed to lower __for_filter__/2: #{msg}"
       end
     end
 

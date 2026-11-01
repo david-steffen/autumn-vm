@@ -164,7 +164,8 @@ Teaching subset (no new Instr — builtins / call-specials):
 - Mix: `<<x::N, rest::binary>>` (literal `N ∈ 1…32`), exact lit `<<1,2>>`, exact-size `<<x::N>>`, and `<<x::utf8>>` / `<<cp::utf8, rest::binary>>` in `case` / `=` / heads; miss → `:match_error`. Sizes **9…32** lower as repeated 1…8-bit `bs_get_integer` chunks combined MSB-first (construct side stays **N ∈ 1…8**). Patterns apply to raw bitstrings only (exclude `string` via `is_tag`).
 - Construct: mid-partial integer segments (`<<1::3, 2::5>>`) when bits concatenate; byte/string segments still require alignment. `<<cp::utf8>>` packs a literal codepoint to UTF-8 bytes.
 - Match: `<<x::size(n)>>` when `n` is a bound variable (runtime `bs_get_integer` / `bs_drop` with that register).
-- Out of scope: comprehensions, full BEAM binary syntax.
+- Mix: `for x <- xs, filter?, do: body` — one generator, simple var pattern, boolean filters; lowers via lifted `__for_map__/2` / `__for_filter__/2` (no new opcodes). Nested generators / `into:` rejected.
+- Out of scope: nested `for` generators, `into:`, full BEAM binary syntax.
 
 ### Closures
 

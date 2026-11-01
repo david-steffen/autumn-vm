@@ -34,4 +34,7 @@ Full GenServer refinement stays out of scope.
 
 `Meaning.instr_induction` (Prop case split on every opcode) plus
 `wf_instr_regsOk` / `wf_instr_jumpOk` / `wf_code_terminal` lift `Function.WF`
-to per-opcode facts. Program-level example: `Meaning.addMain_observes_three`.
+to per-opcode facts. Program-level examples: `Meaning.addMain_observes_three`,
+`bitstringAppendPartial_observes_one`, `bitstringUtf8Get_observes_65`. Pure
+bitstring laws (`append_partial_observes_0xb8`, `getUtf8_*`) live next to
+`Term.Bitstring`.

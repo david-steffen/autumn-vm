@@ -147,5 +147,37 @@ theorem addMain_image_WF : Module.WF addMainModule :=
   | .ok (.int 3) => true
   | _ => false)
 
+/-! ## Bitstring surfaces just shipped (`<>` partials, `bs_get_utf8`) -/
+
+theorem bitstringAppendPartial_checkWF :
+    Module.checkWF bitstringAppendPartialModule = true := by
+  native_decide
+
+theorem bitstringAppendPartial_observes_one :
+    (match Step.runModule bitstringAppendPartialModule (fuel := 100) with
+      | .ok (.int 1) => true
+      | _ => false) =
+      true := by
+  native_decide
+
+theorem bitstringUtf8Get_checkWF :
+    Module.checkWF bitstringUtf8GetModule = true := by
+  native_decide
+
+theorem bitstringUtf8Get_observes_65 :
+    (match Step.runModule bitstringUtf8GetModule (fuel := 100) with
+      | .ok (.int 65) => true
+      | _ => false) =
+      true := by
+  native_decide
+
+#guard (match Step.runModule bitstringAppendPartialModule (fuel := 100) with
+  | .ok (.int 1) => true
+  | _ => false)
+
+#guard (match Step.runModule bitstringUtf8GetModule (fuel := 100) with
+  | .ok (.int 65) => true
+  | _ => false)
+
 end Meaning
 end Autumn
