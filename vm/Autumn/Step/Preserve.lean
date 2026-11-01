@@ -387,17 +387,18 @@ theorem cons_preserves (s : State) (p : Process) (frame : Frame) (dest : Reg)
     · exact nomatch h
   · exact nomatch h
 
-/-- `raiseValue` preserves WF (shared by `raise` and pure `load_file`). -/
-theorem raiseValue_preserves
-    (s : State) (p : Process) (frame : Frame) (v : Value) {s'}
+/-- `raiseValueWith` preserves WF. -/
+theorem raiseValueWith_preserves
+    (choice : State.ScheduleChoice) (s : State) (p : Process) (frame : Frame)
+    (v : Value) {s'}
     (hs : State.WF s) (hp : Process.WF s.module p)
     (hres : p.result = none) (hstat : p.status = .runnable)
     (htop : p.stack.size > 0)
-    (h : raiseValue s p frame v = .ok s') :
+    (h : raiseValueWith choice s p frame v = .ok s') :
     State.WF s' := by
     cases hEmp : p.handlers.isEmpty with
     | true =>
-      simp [raiseValue, hEmp] at h
+      simp [raiseValueWith, hEmp] at h
       let pEx :=
         { p with
           stack := #[]
@@ -409,9 +410,9 @@ theorem raiseValue_preserves
             v) :=
         propagateExit_preserves _ _ _
           (setCurrentProcess_WF s pEx hs (exited_process_WF _ p _ hp.1))
-      exact scheduleNext_preserves _ _ hs2 h
+      exact scheduleNextWith_preserves _ _ choice hs2 h
     | false =>
-      simp [raiseValue, hEmp] at h
+      simp [raiseValueWith, hEmp] at h
       have hempty : p.handlers ≠ #[] := by
         intro heq; simp [heq, Array.isEmpty] at hEmp
       have hp' := runnable_WF_parts hp (Or.inl hstat) hres
@@ -561,6 +562,16 @@ theorem raiseValue_preserves
         simp [Array.size_pop]
       rw [hszMin, hszPop] at hp2
       exact setCurrentProcess_WF s _ hs hp2
+
+/-- `raiseValue` preserves WF (round-robin uncaught exit). -/
+theorem raiseValue_preserves
+    (s : State) (p : Process) (frame : Frame) (v : Value) {s'}
+    (hs : State.WF s) (hp : Process.WF s.module p)
+    (hres : p.result = none) (hstat : p.status = .runnable)
+    (htop : p.stack.size > 0)
+    (h : raiseValue s p frame v = .ok s') :
+    State.WF s' :=
+  raiseValueWith_preserves .roundRobin s p frame v hs hp hres hstat htop h
 
 theorem makeFun_preserves (s : State) (p : Process) (frame : Frame) (dest : Reg)
     (funName : FunName) (caps : Array Value)
@@ -1196,21 +1207,21 @@ theorem etsSelect_preserves
         exact finishWithTerm_preserves s p frame dest (.list vals)
           hs hp hfwf hres hstat htop hframe hip h
 
-/-- Successful `Process.exit/2` preserves WF. -/
-theorem processExit_preserves
-    (s : State) (p : Process) (frame : Frame) (dest : Reg)
-    (pidV reason : Value) {s'}
+/-- Successful `processExitWith` preserves WF. -/
+theorem processExitWith_preserves
+    (choice : State.ScheduleChoice) (s : State) (p : Process) (frame : Frame)
+    (dest : Reg) (pidV reason : Value) {s'}
     (hs : State.WF s) (hp : Process.WF s.module p) (hfwf : Frame.WF s.module frame)
     (hres : p.result = none) (hstat : p.status = .runnable)
     (htop : p.stack.size > 0) (hframe : p.stack[p.stack.size - 1]! = frame)
     (hip : frame.ip + 1 < frame.function.code.size)
-    (h : processExit s p frame dest pidV reason = .ok s') :
+    (h : processExitWith choice s p frame dest pidV reason = .ok s') :
     State.WF s' := by
-  simp [processExit] at h
+  simp [processExitWith] at h
   split at h
   · rename_i pid
     split at h
-    · exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+    · exact raiseValueWith_preserves choice _ _ _ _ hs hp hres hstat htop h
     · let frame1 := setReg! frame dest (.atom "true")
       let frame2 := { frame1 with ip := frame1.ip + 1 }
       have hfwf2 : Frame.WF s.module frame2 :=
@@ -1221,8 +1232,21 @@ theorem processExit_preserves
           (by simp [frame2, frame1, setReg!, hframe])
       have hs2 := forceExitPid_preserves
         (s.setCurrentProcess (State.setCurrentFrame p frame2)) pid reason hs1
-      exact scheduleNext_preserves _ _ hs2 h
-  · exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+      exact scheduleNextWith_preserves _ _ choice hs2 h
+  · exact raiseValueWith_preserves choice _ _ _ _ hs hp hres hstat htop h
+
+/-- Successful `Process.exit/2` preserves WF (round-robin). -/
+theorem processExit_preserves
+    (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (pidV reason : Value) {s'}
+    (hs : State.WF s) (hp : Process.WF s.module p) (hfwf : Frame.WF s.module frame)
+    (hres : p.result = none) (hstat : p.status = .runnable)
+    (htop : p.stack.size > 0) (hframe : p.stack[p.stack.size - 1]! = frame)
+    (hip : frame.ip + 1 < frame.function.code.size)
+    (h : processExit s p frame dest pidV reason = .ok s') :
+    State.WF s' :=
+  processExitWith_preserves .roundRobin s p frame dest pidV reason
+    hs hp hfwf hres hstat htop hframe hip h
 
 /-- Successful `Process.hibernate/0` preserves WF. -/
 theorem processHibernate_preserves

@@ -61,6 +61,31 @@ def tryRescueModule : Module :=
     }
   ]
 
+/-- Hand-built park-on-recv: spawn a worker then `recv` (empty mailbox → park).
+Used by `Obs.Schedule` prefer-at-park observational checks. -/
+def parkRecvModule : Module :=
+  Module.ofFunctions "Main.main/0" #[
+    {
+      name := "Main.worker/0"
+      arity := 0
+      locals := 1
+      code := #[
+        .loadLit 0 (.int 1),
+        .return_ 0
+      ]
+    },
+    {
+      name := "Main.main/0"
+      arity := 0
+      locals := 2
+      code := #[
+        .spawn 0 "Main.worker/0" #[],
+        .recv 1,
+        .return_ 1
+      ]
+    }
+  ]
+
 /-- Hand-built drain-siblings: entry returns `0` after spawning a short worker
 that must still be drained (matches `tests/fixtures/drain_siblings.ex`). -/
 def drainSiblingsModule : Module :=

@@ -425,7 +425,7 @@ theorem raiseValue_result_is_toTerm
     (h : raiseValue s p frame exc = .ok s')
     (ht : s'.result = some t) :
     ∃ (heap : Heap) (val : Value), t = Heap.toTerm heap val := by
-  simp [raiseValue] at h
+  simp [raiseValue, raiseValueWith] at h
   split at h
   · -- uncaught: exit + propagateExit + scheduleNext
     refine scheduleNext_result_is_toTerm _ _ ?_ h ht
@@ -446,7 +446,7 @@ theorem processExit_result_is_toTerm
     (h : processExit s p frame dest pidV reason = .ok s')
     (ht : s'.result = some t) :
     ∃ (heap : Heap) (val : Value), t = Heap.toTerm heap val := by
-  simp [processExit] at h
+  simp [processExit, processExitWith] at h
   split at h
   · rename_i pid
     split at h
@@ -910,7 +910,7 @@ theorem call_result_is_toTerm
     (h : stepInstr s p frame (.call dest funName argRegs) = .ok s')
     (ht : s'.result = some t) :
     ∃ (heap : Heap) (val : Value), t = Heap.toTerm heap val := by
-  simp [stepInstr] at h
+  simp [stepInstr, stepInstrWith] at h
   by_cases hmp : funName = "map_put/3"
   · simp [hmp] at h
     by_cases har : (readArgs! frame argRegs).size = 3
@@ -1109,15 +1109,15 @@ theorem stepInstr_result_is_toTerm
     ∃ (heap : Heap) (val : Value), t = Heap.toTerm heap val := by
   cases instr with
   | loadLit reg lit =>
-    simp [stepInstr] at h; cases h
+    simp [stepInstr, stepInstrWith] at h; cases h
     simp [loadLit_result, hsr] at ht
   | move dest src =>
-    simp [stepInstr] at h; cases h
+    simp [stepInstr, stepInstrWith] at h; cases h
     simp [setCurrentProcess_result, hsr] at ht
   | call dest funName argRegs =>
     exact call_result_is_toTerm s p frame dest funName argRegs hsr h ht
   | return_ reg =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     by_cases hsz : p.stack.size = 1
     · simp [hsz] at h
       refine scheduleNext_result_is_toTerm _ _ ?_ h ht
@@ -1127,17 +1127,17 @@ theorem stepInstr_result_is_toTerm
       · exact nomatch h
       · cases h; simp [setCurrentProcess_result, hsr] at ht
   | halt reg =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     refine scheduleNext_result_is_toTerm _ _ ?_ h ht
     rw [propagateExit_result, setCurrentProcess_result, hsr]
   | jump target =>
-    simp [stepInstr] at h; cases h
+    simp [stepInstr, stepInstrWith] at h; cases h
     simp [setCurrentProcess_result, hsr] at ht
   | jumpIfEq target reg lit =>
-    simp [stepInstr] at h; cases h
+    simp [stepInstr, stepInstrWith] at h; cases h
     simp [setCurrentProcess_result, hsr] at ht
   | getTupleElem dest tupleReg index =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     split at h
     all_goals (
       try split at h
@@ -1150,10 +1150,10 @@ theorem stepInstr_result_is_toTerm
       )
     )
   | isTag dest reg tag =>
-    simp [stepInstr] at h; cases h
+    simp [stepInstr, stepInstrWith] at h; cases h
     simp [setCurrentProcess_result, hsr] at ht
   | spawn dest funName argRegs =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     split at h
     all_goals (
       try split at h
@@ -1163,7 +1163,7 @@ theorem stepInstr_result_is_toTerm
       )
     )
   | send pidReg msgReg =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     split at h
     all_goals (
       try split at h
@@ -1173,13 +1173,13 @@ theorem stepInstr_result_is_toTerm
       )
     )
   | recv dest =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     split at h
     · cases h; simp [setCurrentProcess_result, hsr] at ht
     · refine scheduleNext_result_is_toTerm _ _ ?_ h ht
       rw [setCurrentProcess_result, hsr]
   | getListElem dest listReg index =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     split at h
     all_goals (
       try split at h
@@ -1192,7 +1192,7 @@ theorem stepInstr_result_is_toTerm
       )
     )
   | getListRest dest listReg index =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     split at h
     all_goals (
       try split at h
@@ -1205,25 +1205,25 @@ theorem stepInstr_result_is_toTerm
       )
     )
   | enterTry rescueIp excReg =>
-    simp [stepInstr] at h; cases h
+    simp [stepInstr, stepInstrWith] at h; cases h
     simp [setCurrentProcess_result, hsr] at ht
   | leaveTry =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     split at h
     · exact nomatch h
     · cases h; simp [setCurrentProcess_result, hsr] at ht
   | raise reg =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     exact raiseValue_result_is_toTerm s p frame (getReg! frame reg) hsr h ht
   | recvPeek dest indexReg empty =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     split at h
     · split at h
       · exact nomatch h
       · split at h <;> (cases h; simp [setCurrentProcess_result, hsr] at ht)
     · exact nomatch h
   | recvDrop indexReg =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     split at h
     · split at h
       · exact nomatch h
@@ -1232,7 +1232,7 @@ theorem stepInstr_result_is_toTerm
         · cases h; simp [setCurrentProcess_result, hsr] at ht
     · exact nomatch h
   | wait retry after timeout =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     split at h
     · cases h; simp [setCurrentProcess_result, hsr] at ht
     · split at h
@@ -1260,28 +1260,28 @@ theorem stepInstr_result_is_toTerm
             refine scheduleNext_result_is_toTerm _ _ ?_ h ht
             rw [setCurrentProcess_result, hsr]
   | link pidReg =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     split at h
     · have := linkWith_result _ _ h
       simp [this, setCurrentProcess_result, hsr] at ht
     · exact nomatch h
   | monitor dest pidReg =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     split at h
     · have := monitorWith_result _ _ _ h
       simp [this, nextRef_result, setCurrentProcess_result, hsr] at ht
     · exact nomatch h
   | demonitor refReg =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     split at h
     · have := demonitorWith_result _ _ h
       simp [this, setCurrentProcess_result, hsr] at ht
     · exact nomatch h
   | makeFun dest funName caps =>
-    simp [stepInstr] at h; cases h
+    simp [stepInstr, stepInstrWith] at h; cases h
     simp [makeFun_result, hsr] at ht
   | apply dest funReg argRegs =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     split at h
     · split at h
       · split at h
@@ -1292,12 +1292,12 @@ theorem stepInstr_result_is_toTerm
       · exact nomatch h
     · exact nomatch h
   | loadFile dest pathReg =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     split at h
     · exact raiseValue_result_is_toTerm s p frame (.atom "enoent") hsr h ht
     · exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
   | applyMfa dest modReg funReg argRegs =>
-    simp [stepInstr] at h
+    simp [stepInstr, stepInstrWith] at h
     cases hmod : getReg! frame modReg with
     | atom modName =>
       simp [hmod] at h

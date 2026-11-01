@@ -8,9 +8,12 @@ namespace Step
 
 `State.ScheduleChoice` / `scheduleNextWith` live on `State`. This module provides
 runners that consume a choice tape at **top-level** schedule points (`step`
-deschedule + `afterInstr` preemption). Park paths inside `stepInstr` (recv /
-wait / process exit) still use deterministic `scheduleNext` — full instr-boundary
-threading is deferred so existing preserve/progress proofs stay stable.
+deschedule + `afterInstr` preemption).
+
+Park/exit inside instructions honor a choice via `stepInstrWith` (used by
+observational laws / prefer-at-park demos). The multi-step `stepScheduled` tape
+still runs `stepInstr` (round-robin park/exit) so preserve/progress stay on the
+existing RR tower; full tape-through-park remains a thin follow-up.
 
 Default `run` / smoke paths are unchanged.
 

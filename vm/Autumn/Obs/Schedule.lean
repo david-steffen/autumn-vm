@@ -60,6 +60,43 @@ theorem drainSiblings_tapes_observe_zero :
     | _ => false
   | _ => false)
 
+/-! ## Prefer-at-park (`stepInstrWith`)
+
+`stepInstrWith` threads `ScheduleChoice` into `recv`/`wait`/exit schedule sites.
+After `spawn`, the empty `recv` parks the entry process; `.prefer 1` selects the
+worker. -/
+
+theorem parkRecv_checkWF : Module.checkWF parkRecvModule = true := by
+  native_decide
+
+/-- After spawn, empty `recv` with `.prefer 1` schedules the worker (index 1). -/
+theorem park_recv_prefer_selects_worker :
+    (match State.initial parkRecvModule 64 with
+      | .ok s0 =>
+        (match Step.step s0 with
+          | .ok s1 =>
+            let p := s1.processes[s1.current]!
+            let frame := p.stack[p.stack.size - 1]!
+            (match Step.stepInstrWith (.prefer 1) s1 p frame (.recv 1) with
+              | .ok s2 => decide (s2.current == 1)
+              | _ => false)
+          | _ => false)
+      | .error _ => false) =
+      true := by
+  native_decide
+
+#guard (match State.initial parkRecvModule 64 with
+  | .ok s0 =>
+    match Step.step s0 with
+    | .ok s1 =>
+      let p := s1.processes[s1.current]!
+      let frame := p.stack[p.stack.size - 1]!
+      match Step.stepInstrWith (.prefer 1) s1 p frame (.recv 1) with
+      | .ok s2 => s2.current == 1
+      | _ => false
+    | _ => false
+  | _ => false)
+
 end Schedule
 end Obs
 end Autumn

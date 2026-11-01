@@ -175,14 +175,15 @@ def setReg! (f : Frame) (r : Reg) (v : Value) : Frame :=
   { f with regs := f.regs.setIfInBounds r v }
 
 /-- Catchable language exception (same control as the `raise` opcode).
-Uncaught: exit the process and schedule next (entry exit does not halt the machine). -/
-def raiseValue (s : State) (p : Process) (_frame : Frame) (v : Value) :
-    Except StepError State :=
+Uncaught: exit the process and schedule next (entry exit does not halt the machine).
+`choice` is honored at the uncaught exit schedule (park/exit tape threading). -/
+def raiseValueWith (choice : State.ScheduleChoice) (s : State) (p : Process)
+    (_frame : Frame) (v : Value) : Except StepError State :=
   if p.handlers.isEmpty then
     let p := { p with stack := #[], result := some v, status := .exited, handlers := #[] }
     let s := s.setCurrentProcess p
     let s := State.propagateExit s s.current v
-    State.scheduleNext s s.current
+    State.scheduleNextWith s s.current choice
   else
     let h := p.handlers[p.handlers.size - 1]!
     if h.stackDepth == 0 || p.stack.size < h.stackDepth then
@@ -199,6 +200,11 @@ def raiseValue (s : State) (p : Process) (_frame : Frame) (v : Value) :
         let top := { top with ip := h.rescueIp }
         let stack := stack.setIfInBounds (stack.size - 1) top
         .ok (s.setCurrentProcess { p with stack, handlers })
+
+/-- Round-robin uncaught exit (default `step` / builtin `:badarg` path). -/
+def raiseValue (s : State) (p : Process) (frame : Frame) (v : Value) :
+    Except StepError State :=
+  raiseValueWith .roundRobin s p frame v
 
 def readArgs! (f : Frame) (regs : Array Reg) : Array Value :=
   regs.map (getReg! f)
@@ -258,20 +264,25 @@ def processFlag (s : State) (p : Process) (frame : Frame) (dest : Reg)
     .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
   | _, _ => raiseValue s p frame (.atom "badarg")
 
-/-- `Process.exit/2` — self: `raiseValue`; other: force-exit (ignores trap) then yield. -/
-def processExit (s : State) (p : Process) (frame : Frame) (dest : Reg)
-    (pidV reason : Value) : Except StepError State :=
+/-- `Process.exit/2` — self: `raiseValueWith`; other: force-exit (ignores trap) then yield. -/
+def processExitWith (choice : State.ScheduleChoice) (s : State) (p : Process)
+    (frame : Frame) (dest : Reg) (pidV reason : Value) : Except StepError State :=
   match pidV with
   | .pid pid =>
     if pid == p.pid then
-      raiseValue s p frame reason
+      raiseValueWith choice s p frame reason
     else
       let frame := setReg! frame dest (.atom "true")
       let frame := { frame with ip := frame.ip + 1 }
       let s := s.setCurrentProcess (State.setCurrentFrame p frame)
       let s := State.forceExitPid s pid reason
-      State.scheduleNext s s.current
-  | _ => raiseValue s p frame (.atom "badarg")
+      State.scheduleNextWith s s.current choice
+  | _ => raiseValueWith choice s p frame (.atom "badarg")
+
+/-- Round-robin `Process.exit/2` (default `step`). -/
+def processExit (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (pidV reason : Value) : Except StepError State :=
+  processExitWith .roundRobin s p frame dest pidV reason
 
 /-- Teaching `Process.hibernate/0`: GC current process, return `:ok`. -/
 def processHibernate (s : State) (p : Process) (frame : Frame) (dest : Reg) :
@@ -530,9 +541,13 @@ def getListRest (s : State) (p : Process) (frame : Frame) (dest : Reg)
 Execute one instruction. Register indexing is unchecked (safe for well-formed
 code). Remaining errors are non-structural: `typeError`, `badArity`,
 `unknownFunction`, `badPid`, `noRunnable`.
+
+`choice` is used at park (`recv`/`wait`) and process-exit schedule points
+(`return_`/`halt`/`raiseValueWith`/`processExitWith`). Builtin `:badarg` helpers
+still exit via round-robin `raiseValue`.
 -/
-def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
-    Except StepError State := do
+def stepInstrWith (choice : State.ScheduleChoice) (s : State) (p : Process)
+    (frame : Frame) (instr : Instr) : Except StepError State := do
   match instr with
   | .loadLit reg lit =>
     pure (loadLit s p frame reg lit)
@@ -565,7 +580,7 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
       if args.size != 2 then
         throw (.badArity funName 2 args.size)
       else
-        processExit s p frame dest args[0]! args[1]!
+        processExitWith choice s p frame dest args[0]! args[1]!
     else if funName == "Process.hibernate/0" then
       if args.size != 0 then
         throw (.badArity funName 0 args.size)
@@ -671,7 +686,7 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
       let p := { p with stack := #[], result := some v, status := .exited, handlers := #[] }
       let s := s.setCurrentProcess p
       let s := State.propagateExit s s.current v
-      State.scheduleNext s s.current
+      State.scheduleNextWith s s.current choice
     else
       let stack := p.stack.pop
       -- Must `leave_try` before returning out of a try frame.
@@ -687,7 +702,7 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
     let p := { p with stack := #[], result := some v, status := .exited, handlers := #[] }
     let s := s.setCurrentProcess p
     let s := State.propagateExit s s.current v
-    State.scheduleNext s s.current
+    State.scheduleNextWith s s.current choice
   | .enterTry rescueIp excReg =>
     let h : Handler := {
       stackDepth := p.stack.size
@@ -705,7 +720,7 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
       let p := State.setCurrentFrame { p with handlers := p.handlers.pop } frame
       pure (s.setCurrentProcess p)
   | .raise reg =>
-    raiseValue s p frame (getReg! frame reg)
+    raiseValueWith choice s p frame (getReg! frame reg)
   | .jump target =>
     let frame := { frame with ip := target }
     pure (s.setCurrentProcess (State.setCurrentFrame p frame))
@@ -815,7 +830,7 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
     else
       let p := State.clearWait { p with status := .waiting }
       let s := s.setCurrentProcess p
-      State.scheduleNext s s.current
+      State.scheduleNextWith s s.current choice
   | .recvPeek dest indexReg empty =>
     match getReg! frame indexReg with
     | .int i =>
@@ -860,7 +875,7 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
         else
           let p := { p with status := .waiting }
           let s := s.setCurrentProcess p
-          State.scheduleNext s s.current
+          State.scheduleNextWith s s.current choice
       | none =>
         let ticks? ← resolveWaitTimeout frame timeout
         match ticks? with
@@ -874,11 +889,11 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
             waitDeadline := some (s.clock + n)
           }
           let s := s.setCurrentProcess p
-          State.scheduleNext s s.current
+          State.scheduleNextWith s s.current choice
         | none =>
           let p := State.clearWait { p with status := .waiting }
           let s := s.setCurrentProcess p
-          State.scheduleNext s s.current
+          State.scheduleNextWith s s.current choice
   | .link pidReg =>
     let pidT := getReg! frame pidReg
     let other ← match pidT with
@@ -964,6 +979,11 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
             raiseValue s p frame (.atom "badarg")
       | _ => raiseValue s p frame (.atom "badarg")
     | _ => raiseValue s p frame (.atom "badarg")
+
+/-- Default instruction step (round-robin park/exit). -/
+def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
+    Except StepError State :=
+  stepInstrWith .roundRobin s p frame instr
 
 /-- After a successful instruction, bump clock and maybe yield. -/
 def afterInstr (s : State) : Except StepError State :=

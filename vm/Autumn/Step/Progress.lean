@@ -89,22 +89,30 @@ theorem builtin_error_not_structural {heap : Heap} {selfPid : Nat} {name : FunNa
     )
   )
 
-/-- `raiseValue` errors are never structural (shared by `raise`, badarg, load_file, …). -/
-theorem raiseValue_error_not_structural
-    (s : State) (p : Process) (frame : Frame) (v : Value) {e : StepError}
-    (herr : raiseValue s p frame v = .error e) :
+/-- `raiseValueWith` errors are never structural. -/
+theorem raiseValueWith_error_not_structural
+    (choice : State.ScheduleChoice) (s : State) (p : Process) (frame : Frame)
+    (v : Value) {e : StepError}
+    (herr : raiseValueWith choice s p frame v = .error e) :
     isStructuralError e = false := by
   cases hEmp : p.handlers.isEmpty with
   | false =>
-    simp [raiseValue, hEmp] at herr
+    simp [raiseValueWith, hEmp] at herr
     split at herr
     · injection herr with heq; subst heq; rfl
     · split at herr
       · injection herr with heq; subst heq; rfl
       · exact nomatch herr
   | true =>
-    simp [raiseValue, hEmp] at herr
-    exact (scheduleNext_error_is_noRunnable _ _ herr) ▸ rfl
+    simp [raiseValueWith, hEmp] at herr
+    exact (scheduleNextWith_error_is_noRunnable _ _ choice herr) ▸ rfl
+
+/-- `raiseValue` errors are never structural (shared by `raise`, badarg, load_file, …). -/
+theorem raiseValue_error_not_structural
+    (s : State) (p : Process) (frame : Frame) (v : Value) {e : StepError}
+    (herr : raiseValue s p frame v = .error e) :
+    isStructuralError e = false :=
+  raiseValueWith_error_not_structural .roundRobin s p frame v herr
 
 
 end Step

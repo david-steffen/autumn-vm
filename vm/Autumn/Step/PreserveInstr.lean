@@ -22,7 +22,7 @@ theorem loadLit_step_preserves {s p frame} (H : StepInstrHyp s p frame)
     (h : stepInstr s p frame (.loadLit reg lit) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h; cases h
+  simp [stepInstr, stepInstrWith] at h; cases h
   have hnt : Instr.isTerminal (.loadLit reg lit) = false := rfl
   have hip := ip_succ_lt_of_nonterminal hfwf.1 hfwf.2.2.1 hcode hnt
   exact loadLit_preserves s p frame reg lit hs hp hfwf hres hstat htop hframe hip
@@ -34,7 +34,7 @@ theorem move_preserves {s p frame} (H : StepInstrHyp s p frame)
     (h : stepInstr s p frame (.move dest src) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h; cases h
+  simp [stepInstr, stepInstrWith] at h; cases h
   have hnt : Instr.isTerminal (.move dest src) = false := rfl
   have hip := ip_succ_lt_of_nonterminal hfwf.1 hfwf.2.2.1 hcode hnt
   let frame1 := setReg! frame dest (getReg! frame src)
@@ -44,15 +44,15 @@ theorem move_preserves {s p frame} (H : StepInstrHyp s p frame)
   exact apply_top_frame_preserves s p frame2 hs hp hres hstat htop hfwf2
     (by simp [frame2, frame1, setReg!, hframe]) (by simp [frame2, frame1, setReg!, hframe])
 
-/-- `call` case of `stepInstr_preserves`. -/
-theorem call_preserves {s p frame} (H : StepInstrHyp s p frame)
-    (dest : Reg) (funName : FunName) (argRegs : Array Reg) {s'}
+/-- `call` case of `stepInstrWith_preserves`. -/
+theorem callWith_preserves {s p frame} (H : StepInstrHyp s p frame)
+    (choice : State.ScheduleChoice) (dest : Reg) (funName : FunName) (argRegs : Array Reg) {s'}
     (hcode : frame.function.code[frame.ip]! = .call dest funName argRegs)
-    (h : stepInstr s p frame (.call dest funName argRegs) = .ok s') :
+    (h : stepInstrWith choice s p frame (.call dest funName argRegs) = .ok s') :
     State.WF s' := by
   have hio := H.instrOk (.call dest funName argRegs) hcode
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstrWith] at h
   have hip :=
     ip_succ_lt_of_nonterminal hfwf.1 hfwf.2.2.1 hcode rfl
   by_cases hmp : funName = "map_put/3"
@@ -101,7 +101,7 @@ theorem call_preserves {s p frame} (H : StepInstrHyp s p frame)
         · simp [hex] at h
           by_cases har : (readArgs! frame argRegs).size = 2
           · simp only [har, ↓reduceIte, ite_false] at h
-            exact processExit_preserves s p frame dest
+            exact processExitWith_preserves choice s p frame dest
               (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
               hs hp hfwf hres hstat htop hframe hip h
           · simp only [har, ↓reduceIte, ite_true] at h; cases h
@@ -341,14 +341,22 @@ theorem call_preserves {s p frame} (H : StepInstrHyp s p frame)
                                             · simp [har] at h
                                               cases h
 
-/-- `return_` case of `stepInstr_preserves`. -/
-theorem return_preserves {s p frame} (H : StepInstrHyp s p frame)
-    (reg : Reg) {s'}
+/-- `call` case of `stepInstr_preserves`. -/
+theorem call_preserves {s p frame} (H : StepInstrHyp s p frame)
+    (dest : Reg) (funName : FunName) (argRegs : Array Reg) {s'}
+    (hcode : frame.function.code[frame.ip]! = .call dest funName argRegs)
+    (h : stepInstr s p frame (.call dest funName argRegs) = .ok s') :
+    State.WF s' :=
+  callWith_preserves H .roundRobin dest funName argRegs hcode (by simpa [stepInstr] using h)
+
+/-- `return_` case of `stepInstrWith_preserves`. -/
+theorem returnWith_preserves {s p frame} (H : StepInstrHyp s p frame)
+    (choice : State.ScheduleChoice) (reg : Reg) {s'}
     (_hcode : frame.function.code[frame.ip]! = .return_ reg)
-    (h : stepInstr s p frame (.return_ reg) = .ok s') :
+    (h : stepInstrWith choice s p frame (.return_ reg) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstrWith] at h
   by_cases hsz : p.stack.size = 1
   · simp [hsz] at h
     let pEx :=
@@ -362,7 +370,7 @@ theorem return_preserves {s p frame} (H : StepInstrHyp s p frame)
           (getReg! frame reg)) :=
       propagateExit_preserves _ _ _
         (setCurrentProcess_WF s pEx hs (exited_process_WF _ p _ hp.1))
-    exact scheduleNext_preserves _ _ hs2 h
+    exact scheduleNextWith_preserves _ _ choice hs2 h
   · simp [hsz] at h
     split at h
     · exact nomatch h
@@ -410,14 +418,22 @@ theorem return_preserves {s p frame} (H : StepInstrHyp s p frame)
       rw [heq]
       exact setCurrentProcess_WF s _ hs hpPop
 
-/-- `halt` case of `stepInstr_preserves`. -/
-theorem halt_preserves {s p frame} (H : StepInstrHyp s p frame)
+/-- `return_` case of `stepInstr_preserves`. -/
+theorem return_preserves {s p frame} (H : StepInstrHyp s p frame)
     (reg : Reg) {s'}
+    (hcode : frame.function.code[frame.ip]! = .return_ reg)
+    (h : stepInstr s p frame (.return_ reg) = .ok s') :
+    State.WF s' :=
+  returnWith_preserves H .roundRobin reg hcode (by simpa [stepInstr] using h)
+
+/-- `halt` case of `stepInstrWith_preserves`. -/
+theorem haltWith_preserves {s p frame} (H : StepInstrHyp s p frame)
+    (choice : State.ScheduleChoice) (reg : Reg) {s'}
     (_hcode : frame.function.code[frame.ip]! = .halt reg)
-    (h : stepInstr s p frame (.halt reg) = .ok s') :
+    (h : stepInstrWith choice s p frame (.halt reg) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstrWith] at h
   let pEx :=
     { p with
       stack := #[]
@@ -429,7 +445,15 @@ theorem halt_preserves {s p frame} (H : StepInstrHyp s p frame)
         (getReg! frame reg)) :=
     propagateExit_preserves _ _ _
       (setCurrentProcess_WF s pEx hs (exited_process_WF _ p _ hp.1))
-  exact scheduleNext_preserves _ _ hs2 h
+  exact scheduleNextWith_preserves _ _ choice hs2 h
+
+/-- `halt` case of `stepInstr_preserves`. -/
+theorem halt_preserves {s p frame} (H : StepInstrHyp s p frame)
+    (reg : Reg) {s'}
+    (hcode : frame.function.code[frame.ip]! = .halt reg)
+    (h : stepInstr s p frame (.halt reg) = .ok s') :
+    State.WF s' :=
+  haltWith_preserves H .roundRobin reg hcode (by simpa [stepInstr] using h)
 
 /-- `jump` case of `stepInstr_preserves`. -/
 theorem jump_preserves {s p frame} (H : StepInstrHyp s p frame)
@@ -439,7 +463,7 @@ theorem jump_preserves {s p frame} (H : StepInstrHyp s p frame)
     State.WF s' := by
   have hio := H.instrOk (.jump target) hcode
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h; cases h
+  simp [stepInstr, stepInstrWith] at h; cases h
   have htgt : target < frame.function.code.size := by
     simpa [Function.instrOk, Instr.jumpTargetOk, hcode] using hio.2.1
   let frame2 := { frame with ip := target }
@@ -455,7 +479,7 @@ theorem jumpIfEq_preserves {s p frame} (H : StepInstrHyp s p frame)
     State.WF s' := by
   have hio := H.instrOk (.jumpIfEq target reg lit) hcode
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h; cases h
+  simp [stepInstr, stepInstrWith] at h; cases h
   have htgt : target < frame.function.code.size := by
     simpa [Function.instrOk, Instr.jumpTargetOk] using hio.2.1
   have hnt : Instr.isTerminal (.jumpIfEq target reg lit) = false := rfl
@@ -479,7 +503,7 @@ theorem getTupleElem_preserves {s p frame} (H : StepInstrHyp s p frame)
     (h : stepInstr s p frame (.getTupleElem dest tupleReg index) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstr, stepInstrWith] at h
   split at h
   · split at h
     · split at h
@@ -504,7 +528,7 @@ theorem isTag_preserves {s p frame} (H : StepInstrHyp s p frame)
     (h : stepInstr s p frame (.isTag dest reg tag) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h; cases h
+  simp [stepInstr, stepInstrWith] at h; cases h
   have hnt : Instr.isTerminal (.isTag dest reg tag) = false := rfl
   have hip := ip_succ_lt_of_nonterminal hfwf.1 hfwf.2.2.1 hcode hnt
   let frame1 := setReg! frame dest (.bool (Value.tagMatches p.heap (getReg! frame reg) tag))
@@ -521,7 +545,7 @@ theorem spawn_preserves {s p frame} (H : StepInstrHyp s p frame)
     (h : stepInstr s p frame (.spawn dest funName argRegs) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstr, stepInstrWith] at h
   split at h
   · split at h
     · cases h
@@ -666,7 +690,7 @@ theorem send_preserves {s p frame} (H : StepInstrHyp s p frame)
     (h : stepInstr s p frame (.send pidReg msgReg) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstr, stepInstrWith] at h
   split at h
   · rename_i pid hpid
     split at h
@@ -704,14 +728,14 @@ theorem send_preserves {s p frame} (H : StepInstrHyp s p frame)
     · exact nomatch h
   · exact nomatch h
 
-/-- `recv` case of `stepInstr_preserves`. -/
-theorem recv_preserves {s p frame} (H : StepInstrHyp s p frame)
-    (dest : Reg) {s'}
+/-- `recv` case of `stepInstrWith_preserves`. -/
+theorem recvWith_preserves {s p frame} (H : StepInstrHyp s p frame)
+    (choice : State.ScheduleChoice) (dest : Reg) {s'}
     (hcode : frame.function.code[frame.ip]! = .recv dest)
-    (h : stepInstr s p frame (.recv dest) = .ok s') :
+    (h : stepInstrWith choice s p frame (.recv dest) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstrWith] at h
   split at h
   · cases h
     rename_i hmb
@@ -730,7 +754,15 @@ theorem recv_preserves {s p frame} (H : StepInstrHyp s p frame)
     have hpW0 := process_waiting_WF _ p hp hres hstat
     have hpW := clearWait_WF _ _ hpW0
     have hsW := setCurrentProcess_WF s _ hs hpW
-    exact scheduleNext_preserves _ _ hsW h
+    exact scheduleNextWith_preserves _ _ choice hsW h
+
+/-- `recv` case of `stepInstr_preserves`. -/
+theorem recv_preserves {s p frame} (H : StepInstrHyp s p frame)
+    (dest : Reg) {s'}
+    (hcode : frame.function.code[frame.ip]! = .recv dest)
+    (h : stepInstr s p frame (.recv dest) = .ok s') :
+    State.WF s' :=
+  recvWith_preserves H .roundRobin dest hcode (by simpa [stepInstr] using h)
 
 /-- `getListElem` case of `stepInstr_preserves`. -/
 theorem getListElem_preserves {s p frame} (H : StepInstrHyp s p frame)
@@ -739,7 +771,7 @@ theorem getListElem_preserves {s p frame} (H : StepInstrHyp s p frame)
     (h : stepInstr s p frame (.getListElem dest listReg index) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstr, stepInstrWith] at h
   split at h
   · split at h
     · split at h
@@ -764,7 +796,7 @@ theorem getListRest_step_preserves {s p frame} (H : StepInstrHyp s p frame)
     (h : stepInstr s p frame (.getListRest dest listReg index) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstr, stepInstrWith] at h
   split at h
   · split at h
     · split at h
@@ -786,7 +818,7 @@ theorem enterTry_preserves {s p frame} (H : StepInstrHyp s p frame)
     State.WF s' := by
   have hio := H.instrOk (.enterTry rescueIp excReg) hcode
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h; cases h
+  simp [stepInstr, stepInstrWith] at h; cases h
   have hnt : Instr.isTerminal (.enterTry rescueIp excReg) = false := rfl
   have hip := ip_succ_lt_of_nonterminal hfwf.1 hfwf.2.2.1 hcode hnt
   let hnd : Handler := {
@@ -832,7 +864,7 @@ theorem leaveTry_preserves {s p frame} (H : StepInstrHyp s p frame)
     (h : stepInstr s p frame (.leaveTry) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstr, stepInstrWith] at h
   split at h
   · exact nomatch h
   · cases h
@@ -855,15 +887,23 @@ theorem leaveTry_preserves {s p frame} (H : StepInstrHyp s p frame)
       (by simpa [pH] using htop) hfwf2
       (by simp [frame2, pH, hframe]) (by simp [frame2, pH, hframe])
 
+/-- `raise` case of `stepInstrWith_preserves`. -/
+theorem raiseWith_preserves {s p frame} (H : StepInstrHyp s p frame)
+    (choice : State.ScheduleChoice) (reg : Reg) {s'}
+    (_hcode : frame.function.code[frame.ip]! = .raise reg)
+    (h : stepInstrWith choice s p frame (.raise reg) = .ok s') :
+    State.WF s' := by
+  obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
+  simp [stepInstrWith] at h
+  exact raiseValueWith_preserves choice s p frame (getReg! frame reg) hs hp hres hstat htop h
+
 /-- `raise` case of `stepInstr_preserves`. -/
 theorem raise_preserves {s p frame} (H : StepInstrHyp s p frame)
     (reg : Reg) {s'}
-    (_hcode : frame.function.code[frame.ip]! = .raise reg)
+    (hcode : frame.function.code[frame.ip]! = .raise reg)
     (h : stepInstr s p frame (.raise reg) = .ok s') :
-    State.WF s' := by
-  obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
-  exact raiseValue_preserves s p frame (getReg! frame reg) hs hp hres hstat htop h
+    State.WF s' :=
+  raiseWith_preserves H .roundRobin reg hcode (by simpa [stepInstr] using h)
 
 /-- `recvPeek` case of `stepInstr_preserves`. -/
 theorem recvPeek_preserves {s p frame} (H : StepInstrHyp s p frame)
@@ -873,7 +913,7 @@ theorem recvPeek_preserves {s p frame} (H : StepInstrHyp s p frame)
     State.WF s' := by
   have hio := H.instrOk (.recvPeek dest indexReg empty) hcode
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstr, stepInstrWith] at h
   split at h
   · rename_i i hi
     split at h
@@ -907,7 +947,7 @@ theorem recvDrop_preserves {s p frame} (H : StepInstrHyp s p frame)
     (h : stepInstr s p frame (.recvDrop indexReg) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstr, stepInstrWith] at h
   split at h
   · rename_i i hi
     split at h
@@ -927,15 +967,15 @@ theorem recvDrop_preserves {s p frame} (H : StepInstrHyp s p frame)
           (by simp [frame2, pMb, hframe]) (by simp [frame2, pMb, hframe])
   · exact nomatch h
 
-/-- `wait` case of `stepInstr_preserves`. -/
-theorem wait_preserves {s p frame} (H : StepInstrHyp s p frame)
-    (retry after : Label) (timeout : WaitTimeout) {s'}
+/-- `wait` case of `stepInstrWith_preserves`. -/
+theorem waitWith_preserves {s p frame} (H : StepInstrHyp s p frame)
+    (choice : State.ScheduleChoice) (retry after : Label) (timeout : WaitTimeout) {s'}
     (hcode : frame.function.code[frame.ip]! = .wait retry after timeout)
-    (h : stepInstr s p frame (.wait retry after timeout) = .ok s') :
+    (h : stepInstrWith choice s p frame (.wait retry after timeout) = .ok s') :
     State.WF s' := by
   have hio := H.instrOk (.wait retry after timeout) hcode
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstrWith] at h
   have hretry : retry < frame.function.code.size := by
     have := hio.2.1
     simp [Instr.jumpTargetOk] at this
@@ -974,7 +1014,7 @@ theorem wait_preserves {s p frame} (H : StepInstrHyp s p frame)
         let pW := { p with status := .waiting }
         have hpW : Process.WF s.module pW := process_waiting_WF _ p hp hres hstat
         have hsW : State.WF (s.setCurrentProcess pW) := setCurrentProcess_WF s pW hs hpW
-        exact scheduleNext_preserves _ _ hsW (by simpa [pW, hd] using h)
+        exact scheduleNextWith_preserves _ _ choice hsW (by simpa [pW, hd] using h)
     | none =>
       simp [hd] at h
       cases hr : resolveWaitTimeout frame timeout with
@@ -999,14 +1039,22 @@ theorem wait_preserves {s p frame} (H : StepInstrHyp s p frame)
             have hpW : Process.WF s.module pW :=
               process_set_waitDeadline_WF _ _ (some (s.clock + (n + 1))) hpW0
             have hsW := setCurrentProcess_WF s pW hs hpW
-            exact scheduleNext_preserves _ _ hsW (by simpa [pW] using h)
+            exact scheduleNextWith_preserves _ _ choice hsW (by simpa [pW] using h)
         | none =>
           simp [hto] at h
           let pW := State.clearWait { p with status := .waiting }
           have hpW0 := process_waiting_WF _ p hp hres hstat
           have hpW : Process.WF s.module pW := clearWait_WF _ _ hpW0
           have hsW := setCurrentProcess_WF s pW hs hpW
-          exact scheduleNext_preserves _ _ hsW (by simpa [pW, State.clearWait] using h)
+          exact scheduleNextWith_preserves _ _ choice hsW (by simpa [pW, State.clearWait] using h)
+
+/-- `wait` case of `stepInstr_preserves`. -/
+theorem wait_preserves {s p frame} (H : StepInstrHyp s p frame)
+    (retry after : Label) (timeout : WaitTimeout) {s'}
+    (hcode : frame.function.code[frame.ip]! = .wait retry after timeout)
+    (h : stepInstr s p frame (.wait retry after timeout) = .ok s') :
+    State.WF s' :=
+  waitWith_preserves H .roundRobin retry after timeout hcode (by simpa [stepInstr] using h)
 
 /-- `link` case of `stepInstr_preserves`. -/
 theorem link_preserves {s p frame} (H : StepInstrHyp s p frame)
@@ -1015,7 +1063,7 @@ theorem link_preserves {s p frame} (H : StepInstrHyp s p frame)
     (h : stepInstr s p frame (.link pidReg) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstr, stepInstrWith] at h
   split at h
   · rename_i other hpid
     have hnt : Instr.isTerminal (.link pidReg) = false := rfl
@@ -1035,7 +1083,7 @@ theorem monitor_preserves {s p frame} (H : StepInstrHyp s p frame)
     (h : stepInstr s p frame (.monitor dest pidReg) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstr, stepInstrWith] at h
   split at h
   · rename_i other hpid
     have hnt : Instr.isTerminal (.monitor dest pidReg) = false := rfl
@@ -1062,7 +1110,7 @@ theorem demonitor_preserves {s p frame} (H : StepInstrHyp s p frame)
     (h : stepInstr s p frame (.demonitor refReg) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstr, stepInstrWith] at h
   split at h
   · rename_i refId href
     have hnt : Instr.isTerminal (.demonitor refReg) = false := rfl
@@ -1082,7 +1130,7 @@ theorem makeFun_step_preserves {s p frame} (H : StepInstrHyp s p frame)
     (h : stepInstr s p frame (.makeFun dest funName capRegs) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h; cases h
+  simp [stepInstr, stepInstrWith] at h; cases h
   have hnt : Instr.isTerminal (.makeFun dest funName capRegs) = false := rfl
   have hip := ip_succ_lt_of_nonterminal hfwf.1 hfwf.2.2.1 hcode hnt
   exact makeFun_preserves _ _ _ _ _ _
@@ -1096,7 +1144,7 @@ theorem apply_preserves {s p frame} (H : StepInstrHyp s p frame)
     State.WF s' := by
   have hio := H.instrOk (.apply dest funReg argRegs) hcode
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstr, stepInstrWith] at h
   cases hreg : getReg! frame funReg with
   | ref r =>
     simp [hreg] at h
@@ -1176,7 +1224,7 @@ theorem loadFile_preserves {s p frame} (H : StepInstrHyp s p frame)
     (h : stepInstr s p frame (.loadFile dest pathReg) = .ok s') :
     State.WF s' := by
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstr, stepInstrWith] at h
   cases hpath : getReg! frame pathReg with
   | string _ =>
     simp [hpath] at h
@@ -1193,7 +1241,7 @@ theorem applyMfa_preserves {s p frame} (H : StepInstrHyp s p frame)
     State.WF s' := by
   have hio := H.instrOk (.applyMfa dest modReg funReg argRegs) hcode
   obtain ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩ := H
-  simp [stepInstr] at h
+  simp [stepInstr, stepInstrWith] at h
   cases hmod : getReg! frame modReg with
   | atom modName =>
     simp [hmod] at h
@@ -1311,6 +1359,78 @@ theorem stepInstr_preserves
   | loadFile dest pathReg => exact loadFile_preserves H dest pathReg hcode h
   | applyMfa dest modReg funReg argRegs =>
       exact applyMfa_preserves H dest modReg funReg argRegs hcode h
+
+/-- `stepInstrWith` preserves WF (park/exit honor `choice`). -/
+theorem stepInstrWith_preserves
+    (choice : State.ScheduleChoice)
+    (s : State) (p : Process) (frame : Frame) (instr : Instr) {s'}
+    (hs : State.WF s) (hp : Process.WF s.module p) (hfwf : Frame.WF s.module frame)
+    (hres : p.result = none) (hstat : p.status = .runnable)
+    (htop : p.stack.size > 0) (hframe : p.stack[p.stack.size - 1]! = frame)
+    (hcode : frame.function.code[frame.ip]! = instr)
+    (h : stepInstrWith choice s p frame instr = .ok s') :
+    State.WF s' := by
+  have H : StepInstrHyp s p frame := ⟨hs, hp, hfwf, hres, hstat, htop, hframe⟩
+  cases instr with
+  | loadLit reg lit =>
+      exact loadLit_step_preserves H reg lit hcode (by simpa [stepInstr, stepInstrWith] using h)
+  | move dest src =>
+      exact move_preserves H dest src hcode (by simpa [stepInstr, stepInstrWith] using h)
+  | call dest funName argRegs =>
+      exact callWith_preserves H choice dest funName argRegs hcode h
+  | return_ reg => exact returnWith_preserves H choice reg hcode h
+  | halt reg => exact haltWith_preserves H choice reg hcode h
+  | jump target =>
+      exact jump_preserves H target hcode (by simpa [stepInstr, stepInstrWith] using h)
+  | jumpIfEq target reg lit =>
+      exact jumpIfEq_preserves H target reg lit hcode (by simpa [stepInstr, stepInstrWith] using h)
+  | getTupleElem dest tupleReg index =>
+      exact getTupleElem_preserves H dest tupleReg index hcode
+        (by simpa [stepInstr, stepInstrWith] using h)
+  | isTag dest reg tag =>
+      exact isTag_preserves H dest reg tag hcode (by simpa [stepInstr, stepInstrWith] using h)
+  | spawn dest funName argRegs =>
+      exact spawn_preserves H dest funName argRegs hcode
+        (by simpa [stepInstr, stepInstrWith] using h)
+  | send pidReg msgReg =>
+      exact send_preserves H pidReg msgReg hcode (by simpa [stepInstr, stepInstrWith] using h)
+  | recv dest => exact recvWith_preserves H choice dest hcode h
+  | getListElem dest listReg index =>
+      exact getListElem_preserves H dest listReg index hcode
+        (by simpa [stepInstr, stepInstrWith] using h)
+  | getListRest dest listReg index =>
+      exact getListRest_step_preserves H dest listReg index hcode
+        (by simpa [stepInstr, stepInstrWith] using h)
+  | enterTry rescueIp excReg =>
+      exact enterTry_preserves H rescueIp excReg hcode
+        (by simpa [stepInstr, stepInstrWith] using h)
+  | leaveTry =>
+      exact leaveTry_preserves H hcode (by simpa [stepInstr, stepInstrWith] using h)
+  | raise reg => exact raiseWith_preserves H choice reg hcode h
+  | recvPeek dest indexReg empty =>
+      exact recvPeek_preserves H dest indexReg empty hcode
+        (by simpa [stepInstr, stepInstrWith] using h)
+  | recvDrop indexReg =>
+      exact recvDrop_preserves H indexReg hcode (by simpa [stepInstr, stepInstrWith] using h)
+  | wait retry after timeout =>
+      exact waitWith_preserves H choice retry after timeout hcode h
+  | link pidReg =>
+      exact link_preserves H pidReg hcode (by simpa [stepInstr, stepInstrWith] using h)
+  | monitor dest pidReg =>
+      exact monitor_preserves H dest pidReg hcode (by simpa [stepInstr, stepInstrWith] using h)
+  | demonitor refReg =>
+      exact demonitor_preserves H refReg hcode (by simpa [stepInstr, stepInstrWith] using h)
+  | makeFun dest funName capRegs =>
+      exact makeFun_step_preserves H dest funName capRegs hcode
+        (by simpa [stepInstr, stepInstrWith] using h)
+  | apply dest funReg argRegs =>
+      exact apply_preserves H dest funReg argRegs hcode
+        (by simpa [stepInstr, stepInstrWith] using h)
+  | loadFile dest pathReg =>
+      exact loadFile_preserves H dest pathReg hcode (by simpa [stepInstr, stepInstrWith] using h)
+  | applyMfa dest modReg funReg argRegs =>
+      exact applyMfa_preserves H dest modReg funReg argRegs hcode
+        (by simpa [stepInstr, stepInstrWith] using h)
 
 end Step
 end Autumn

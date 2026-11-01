@@ -1,0 +1,7 @@
+{
+  "extras": [
+    "stdlib/genserver.ex",
+    "stdlib/task.ex",
+    "stdlib/task_supervisor.ex"
+  ]
+}

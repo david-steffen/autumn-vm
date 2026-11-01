@@ -19,7 +19,7 @@ Elixir subset → IR JSON (`format: 1`) → Lean 4 VM. The Mix lowerer emits byt
 | `ROADMAP.md` | Short backlog (“what’s next”); history is git |
 | `vm/MEANING.md` | Verified-compiler sketch (purity layers); not a second IR encyclopedia |
 | `tests/fixtures/` | Sample `.ex` programs + `.expect` / optional `.smoke.json` (no committed `.bc.json`) |
-| `stdlib/` | Thin library modules (`genserver`, `supervisor`, `ets`, `agent`, `task`, `task_supervisor`, `registry`, `enum`); compile with `AutumnCompiler.compile_files/1` alongside app code |
+| `stdlib/` | Thin library modules (`genserver`, `supervisor`, `ets`, `agent`, `task`, `task_supervisor`, `dynamic_supervisor`, `registry`, `enum`); compile with `AutumnCompiler.compile_files/1` alongside app code |
 | `vm/Autumn/Ets.lean` | ETS table ops + match/select/guards/heir |
 | `vm/Autumn/{Meaning,Obs,OTP,Meta}/` | Meaning layers, observational schedule laws, OTP stubs, `#eval` exploration |
 

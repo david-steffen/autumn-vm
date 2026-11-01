@@ -20,7 +20,7 @@ theorem loadLit_error_not_structural
     (reg : Reg) (lit : Term) {e : StepError}
     (herr : stepInstr s p frame (.loadLit reg lit) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr; exact nomatch herr
+  simp [stepInstr, stepInstrWith] at herr; exact nomatch herr
 
 /-- `move` case of `stepInstr_error_not_structural`. -/
 theorem move_error_not_structural
@@ -28,7 +28,7 @@ theorem move_error_not_structural
     (dest src : Reg) {e : StepError}
     (herr : stepInstr s p frame (.move dest src) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr; exact nomatch herr
+  simp [stepInstr, stepInstrWith] at herr; exact nomatch herr
 
 /-- `call` case of `stepInstr_error_not_structural`. -/
 theorem call_error_not_structural
@@ -36,7 +36,7 @@ theorem call_error_not_structural
     (dest : Reg) (funName : FunName) (argRegs : Array Reg) {e : StepError}
     (herr : stepInstr s p frame (.call dest funName argRegs) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   by_cases hmp : funName = "map_put/3"
   · simp [hmp] at herr
     by_cases har : (readArgs! frame argRegs).size = 3
@@ -73,12 +73,12 @@ theorem call_error_not_structural
         by_cases hex : funName = "Process.exit/2"
         · simp [hex] at herr
           by_cases har : (readArgs! frame argRegs).size = 2
-          · simp only [har, ↓reduceIte, ite_false, processExit] at herr
+          · simp only [har, ↓reduceIte, ite_false, processExit, processExitWith] at herr
             split at herr
             · split at herr
-              · exact raiseValue_error_not_structural _ _ _ _ herr
-              · exact (scheduleNext_error_is_noRunnable _ _ herr) ▸ rfl
-            · exact raiseValue_error_not_structural _ _ _ _ herr
+              · exact raiseValueWith_error_not_structural _ _ _ _ _ herr
+              · exact (scheduleNextWith_error_is_noRunnable _ _ .roundRobin herr) ▸ rfl
+            · exact raiseValueWith_error_not_structural _ _ _ _ _ herr
           · simp only [har, ↓reduceIte, ite_true] at herr; cases herr; rfl
         · simp [hex] at herr
           by_cases hhib : funName = "Process.hibernate/0"
@@ -273,7 +273,7 @@ theorem return_error_not_structural
     (reg : Reg) {e : StepError}
     (herr : stepInstr s p frame (.return_ reg) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   by_cases hsz : p.stack.size = 1
   · simp [hsz] at herr
     exact (scheduleNext_error_is_noRunnable _ _ herr) ▸ rfl
@@ -288,7 +288,7 @@ theorem halt_error_not_structural
     (reg : Reg) {e : StepError}
     (herr : stepInstr s p frame (.halt reg) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   exact (scheduleNext_error_is_noRunnable _ _ herr) ▸ rfl
 
 /-- `jump` case of `stepInstr_error_not_structural`. -/
@@ -297,7 +297,7 @@ theorem jump_error_not_structural
     (target : Label) {e : StepError}
     (herr : stepInstr s p frame (.jump target) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr; exact nomatch herr
+  simp [stepInstr, stepInstrWith] at herr; exact nomatch herr
 
 /-- `jumpIfEq` case of `stepInstr_error_not_structural`. -/
 theorem jumpIfEq_error_not_structural
@@ -305,7 +305,7 @@ theorem jumpIfEq_error_not_structural
     (target : Label) (reg : Reg) (lit : Term) {e : StepError}
     (herr : stepInstr s p frame (.jumpIfEq target reg lit) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr; exact nomatch herr
+  simp [stepInstr, stepInstrWith] at herr; exact nomatch herr
 
 /-- `getTupleElem` case of `stepInstr_error_not_structural`. -/
 theorem getTupleElem_error_not_structural
@@ -313,7 +313,7 @@ theorem getTupleElem_error_not_structural
     (dest tupleReg : Reg) (index : Nat) {e : StepError}
     (herr : stepInstr s p frame (.getTupleElem dest tupleReg index) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   split at herr
   all_goals (
     try split at herr
@@ -333,7 +333,7 @@ theorem isTag_error_not_structural
     (dest reg : Reg) (tag : Tag) {e : StepError}
     (herr : stepInstr s p frame (.isTag dest reg tag) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr; exact nomatch herr
+  simp [stepInstr, stepInstrWith] at herr; exact nomatch herr
 
 /-- `spawn` case of `stepInstr_error_not_structural`. -/
 theorem spawn_error_not_structural
@@ -341,7 +341,7 @@ theorem spawn_error_not_structural
     (dest : Reg) (funName : FunName) (argRegs : Array Reg) {e : StepError}
     (herr : stepInstr s p frame (.spawn dest funName argRegs) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   split at herr
   all_goals (
     try split at herr
@@ -358,7 +358,7 @@ theorem send_error_not_structural
     (pidReg msgReg : Reg) {e : StepError}
     (herr : stepInstr s p frame (.send pidReg msgReg) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   split at herr
   all_goals (
     try split at herr
@@ -375,7 +375,7 @@ theorem recv_error_not_structural
     (dest : Reg) {e : StepError}
     (herr : stepInstr s p frame (.recv dest) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   split at herr
   · exact nomatch herr
   · simp [scheduleNext_error_is_noRunnable _ _ herr, isStructuralError]
@@ -386,7 +386,7 @@ theorem getListElem_error_not_structural
     (dest listReg : Reg) (index : Nat) {e : StepError}
     (herr : stepInstr s p frame (.getListElem dest listReg index) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   split at herr
   all_goals (
     try split at herr
@@ -406,7 +406,7 @@ theorem getListRest_error_not_structural
     (dest listReg : Reg) (index : Nat) {e : StepError}
     (herr : stepInstr s p frame (.getListRest dest listReg index) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   split at herr
   all_goals (
     try split at herr
@@ -426,7 +426,7 @@ theorem enterTry_error_not_structural
     (rescueIp : Label) (excReg : Reg) {e : StepError}
     (herr : stepInstr s p frame (.enterTry rescueIp excReg) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr; exact nomatch herr
+  simp [stepInstr, stepInstrWith] at herr; exact nomatch herr
 
 /-- `leaveTry` case of `stepInstr_error_not_structural`. -/
 theorem leaveTry_error_not_structural
@@ -434,7 +434,7 @@ theorem leaveTry_error_not_structural
     {e : StepError}
     (herr : stepInstr s p frame (.leaveTry) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   split at herr
   · injection herr with heq; subst heq; rfl
   · exact nomatch herr
@@ -445,7 +445,7 @@ theorem raise_error_not_structural
     (reg : Reg) {e : StepError}
     (herr : stepInstr s p frame (.raise reg) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   exact raiseValue_error_not_structural _ _ _ _ herr
 
 /-- `recvPeek` case of `stepInstr_error_not_structural`. -/
@@ -454,7 +454,7 @@ theorem recvPeek_error_not_structural
     (dest indexReg : Reg) (empty : Label) {e : StepError}
     (herr : stepInstr s p frame (.recvPeek dest indexReg empty) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   split at herr
   all_goals (
     try split at herr
@@ -474,7 +474,7 @@ theorem recvDrop_error_not_structural
     (indexReg : Reg) {e : StepError}
     (herr : stepInstr s p frame (.recvDrop indexReg) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   split at herr
   all_goals (
     try split at herr
@@ -494,7 +494,7 @@ theorem wait_error_not_structural
     (retry after : Label) (timeout : WaitTimeout) {e : StepError}
     (herr : stepInstr s p frame (.wait retry after timeout) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   by_cases hmb : 0 < p.mailbox.size
   · simp [hmb] at herr; exact nomatch herr
   · simp [hmb] at herr
@@ -545,7 +545,7 @@ theorem link_error_not_structural
     (pidReg : Reg) {e : StepError}
     (herr : stepInstr s p frame (.link pidReg) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   split at herr
   · exact linkWith_error_not_structural _ _ herr
   · cases herr; rfl
@@ -556,7 +556,7 @@ theorem monitor_error_not_structural
     (dest pidReg : Reg) {e : StepError}
     (herr : stepInstr s p frame (.monitor dest pidReg) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   split at herr
   · exact monitorWith_error_not_structural _ _ _ herr
   · cases herr; rfl
@@ -567,7 +567,7 @@ theorem demonitor_error_not_structural
     (refReg : Reg) {e : StepError}
     (herr : stepInstr s p frame (.demonitor refReg) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   split at herr
   · exact demonitorWith_error_not_structural _ _ herr
   · cases herr; rfl
@@ -578,7 +578,7 @@ theorem makeFun_error_not_structural
     (dest : Reg) (funName : FunName) (capRegs : Array Reg) {e : StepError}
     (herr : stepInstr s p frame (.makeFun dest funName capRegs) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr; exact nomatch herr
+  simp [stepInstr, stepInstrWith] at herr; exact nomatch herr
 
 /-- `apply` case of `stepInstr_error_not_structural`. -/
 theorem apply_error_not_structural
@@ -586,7 +586,7 @@ theorem apply_error_not_structural
     (dest funReg : Reg) (argRegs : Array Reg) {e : StepError}
     (herr : stepInstr s p frame (.apply dest funReg argRegs) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   cases hreg : getReg! frame funReg with
   | ref r =>
     simp [hreg] at herr
@@ -616,7 +616,7 @@ theorem loadFile_error_not_structural
     (dest pathReg : Reg) {e : StepError}
     (herr : stepInstr s p frame (.loadFile dest pathReg) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   split at herr
   · exact raiseValue_error_not_structural _ _ _ _ herr
   · exact raiseValue_error_not_structural _ _ _ _ herr
@@ -627,7 +627,7 @@ theorem applyMfa_error_not_structural
     (dest modReg funReg : Reg) (argRegs : Array Reg) {e : StepError}
     (herr : stepInstr s p frame (.applyMfa dest modReg funReg argRegs) = .error e) :
     isStructuralError e = false := by
-  simp [stepInstr] at herr
+  simp [stepInstr, stepInstrWith] at herr
   cases hmod : getReg! frame modReg with
   | atom modName =>
     simp [hmod] at herr
