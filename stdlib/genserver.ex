@@ -21,6 +21,8 @@ defmodule GenServer do
   #
   # `use GenServer` options: restart:, shutdown:, significant:, type: → child_spec keys.
  # Client: call/2, cast/2, reply/3. Dispatch uses apply_mfa.
+  # Optional name: `{:via, "Registry", {reg, key}}` (see `Registry.via/2`)
+  # on start/3 / start_link/3; call/cast resolve via `whereis/1`.
 
   def child_spec({mod, arg}) do
     m = map_put(%{}, :id, mod)
@@ -31,8 +33,36 @@ defmodule GenServer do
     spawn(GenServer, :server, [mod, init_arg])
   end
 
+  def start(mod, init_arg, via) do
+    pid = spawn(GenServer, :server, [mod, init_arg])
+    _ = register_name(pid, via)
+    pid
+  end
+
   def start_link(mod, init_arg) do
     spawn_link(GenServer, :server, [mod, init_arg])
+  end
+
+  def start_link(mod, init_arg, via) do
+    pid = spawn_link(GenServer, :server, [mod, init_arg])
+    _ = register_name(pid, via)
+    pid
+  end
+
+  # via tuple carries module as string atom `"Registry"` (alias in heads unsupported).
+  def register_name(pid, {:via, _mod, {reg, key}}) do
+    Registry.register(reg, key, pid)
+  end
+
+  def whereis({:via, _mod, {reg, key}}) do
+    case Registry.lookup(reg, key) do
+      [pid] -> pid
+      _ -> 0
+    end
+  end
+
+  def whereis(pid) do
+    pid
   end
 
   def server(mod, init_arg) do
@@ -163,7 +193,8 @@ defmodule GenServer do
     end
   end
 
-  def call(pid, req) do
+  def call(server, req) do
+    pid = whereis(server)
     me = self()
     ref = make_ref()
     mref = monitor(pid)
@@ -183,7 +214,8 @@ defmodule GenServer do
     end
   end
 
-  def cast(pid, msg) do
+  def cast(server, msg) do
+    pid = whereis(server)
     _ = send(pid, {:cast, msg})
     :ok
   end

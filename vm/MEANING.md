@@ -26,6 +26,12 @@ bodies in external proofs — use the named lemma API (`AGENTS.md`).
 
 ## OTP lemma namespaces
 
-Placeholders under `Autumn.OTP.*` document intended properties next to stdlib.
-Fill only when an observational fact (like `Obs.Schedule`) fits cleanly; full
-GenServer refinement stays Later.
+`Autumn.OTP.GenServer` / `Supervisor` hold observational call/EXIT laws
+(`counterCall_observes_seven`, `trap_exit_delivers_mailbox`) next to stdlib.
+Full GenServer refinement stays out of scope.
+
+## IR induction
+
+`Meaning.instr_induction` (Prop case split on every opcode) plus
+`wf_instr_regsOk` / `wf_instr_jumpOk` / `wf_code_terminal` lift `Function.WF`
+to per-opcode facts. Program-level example: `Meaning.addMain_observes_three`.

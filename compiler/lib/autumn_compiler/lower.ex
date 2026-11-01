@@ -2589,12 +2589,17 @@ defmodule AutumnCompiler.Lower do
   defp emit_bitstring_match_test(parsed, scr, env, next, code) do
     fixed_bits =
       parsed
-      |> Enum.reject(&match?({:rest, _}, &1))
+      |> Enum.reject(&(match?({:rest, _}, &1) or match?({:var_dyn, _, _}, &1)))
       |> Enum.map(fn
         {:lit, _, size} -> size
         {:var, _, size} -> size
       end)
       |> Enum.sum()
+
+    dyn_sizes =
+      parsed
+      |> Enum.filter(&match?({:var_dyn, _, _}, &1))
+      |> Enum.map(fn {:var_dyn, _, size_name} -> size_name end)
 
     has_rest = Enum.any?(parsed, &match?({:rest, _}, &1))
 
@@ -2636,7 +2641,7 @@ defmodule AutumnCompiler.Lower do
           %{"op" => "jump", "target" => fail_idx}
         ]
 
-    # bit_size checks
+    # bit_size checks (static fixed bits + runtime ::size(var) widths)
     size_reg = next
     next = next + 1
     need_reg = next
@@ -2651,6 +2656,61 @@ defmodule AutumnCompiler.Lower do
           %{"op" => "load_lit", "reg" => need_reg, "lit" => %{"int" => fixed_bits}}
         ]
 
+    with {:ok, code, next, need_reg} <- emit_add_dyn_sizes(dyn_sizes, need_reg, env, next, code) do
+      emit_bitstring_size_cmp(
+        has_rest,
+        size_reg,
+        need_reg,
+        cmp_reg,
+        fail_idx,
+        parsed,
+        scr,
+        env,
+        next,
+        code
+      )
+    end
+  end
+
+  defp emit_add_dyn_sizes(dyn_sizes, need_reg, env, next, code) do
+    Enum.reduce_while(dyn_sizes, {:ok, code, next, need_reg}, fn
+      size_name, {:ok, code, next, need_reg} ->
+        case Map.fetch(env, size_name) do
+          {:ok, size_src} ->
+            sum_reg = next
+            next = next + 1
+
+            code =
+              code ++
+                [
+                  %{
+                    "op" => "call",
+                    "dest" => sum_reg,
+                    "fun" => "+/2",
+                    "args" => [need_reg, size_src]
+                  }
+                ]
+
+            {:cont, {:ok, code, next, sum_reg}}
+
+          :error ->
+            {:halt, {:error, "unbound size variable #{size_name} in bitstring pattern"}}
+        end
+    end)
+  end
+
+  defp emit_bitstring_size_cmp(
+         has_rest,
+         size_reg,
+         need_reg,
+         cmp_reg,
+         fail_idx,
+         parsed,
+         scr,
+         env,
+         next,
+         code
+       ) do
     {code, next, cmp_reg} =
       if has_rest do
         # size >= fixed_bits
@@ -2792,6 +2852,30 @@ defmodule AutumnCompiler.Lower do
     {:ok, code, env, next, drop_reg}
   end
 
+  defp emit_bitstring_seg_test({:var_dyn, _name, size_name}, cur, _fail_idx, env, next, code) do
+    case Map.fetch(env, size_name) do
+      {:ok, size_src} ->
+        drop_reg = next
+        next = next + 1
+
+        code =
+          code ++
+            [
+              %{
+                "op" => "call",
+                "dest" => drop_reg,
+                "fun" => "bs_drop/2",
+                "args" => [cur, size_src]
+              }
+            ]
+
+        {:ok, code, env, next, drop_reg}
+
+      :error ->
+        {:error, "unbound size variable #{size_name} in bitstring pattern"}
+    end
+  end
+
   defp emit_bitstring_pattern_binds(segs, scr, env, next, code) do
     case classify_bitstring_pattern(segs) do
       {:exact, _} ->
@@ -2867,6 +2951,63 @@ defmodule AutumnCompiler.Lower do
     {:ok, code, next, val_reg, drop_reg} = emit_bs_get_chunked(cur, size, next, code)
     env = Map.put(env, name, val_reg)
     {:ok, code, env, next, drop_reg}
+  end
+
+  defp emit_bitstring_seg_bind({:var_dyn, :_, size_name}, cur, env, next, code) do
+    case Map.fetch(env, size_name) do
+      {:ok, size_src} ->
+        drop_reg = next
+        next = next + 1
+
+        code =
+          code ++
+            [
+              %{
+                "op" => "call",
+                "dest" => drop_reg,
+                "fun" => "bs_drop/2",
+                "args" => [cur, size_src]
+              }
+            ]
+
+        {:ok, code, env, next, drop_reg}
+
+      :error ->
+        {:error, "unbound size variable #{size_name} in bitstring pattern"}
+    end
+  end
+
+  defp emit_bitstring_seg_bind({:var_dyn, name, size_name}, cur, env, next, code) do
+    case Map.fetch(env, size_name) do
+      {:ok, size_src} ->
+        val_reg = next
+        next = next + 1
+        drop_reg = next
+        next = next + 1
+
+        code =
+          code ++
+            [
+              %{
+                "op" => "call",
+                "dest" => val_reg,
+                "fun" => "bs_get_integer/2",
+                "args" => [cur, size_src]
+              },
+              %{
+                "op" => "call",
+                "dest" => drop_reg,
+                "fun" => "bs_drop/2",
+                "args" => [cur, size_src]
+              }
+            ]
+
+        env = Map.put(env, name, val_reg)
+        {:ok, code, env, next, drop_reg}
+
+      :error ->
+        {:error, "unbound size variable #{size_name} in bitstring pattern"}
+    end
   end
 
   # Match sizes 1…32: emit repeated 1…8-bit `bs_get_integer` + combine (MSB-first).
@@ -3009,6 +3150,19 @@ defmodule AutumnCompiler.Lower do
           {:ok, {:rest, name}}
         end
 
+      utf8_type_spec?(spec) ->
+        {:error, "unsupported bitstring pattern ::utf8 (construct-only teaching subset)"}
+
+      match?({:size, _, [{size_name, _, sctx}]}
+            when is_atom(size_name) and (is_atom(sctx) or is_nil(sctx)), spec) ->
+        {:size, _, [{size_name, _, _}]} = spec
+
+        if name == :_ do
+          {:ok, {:var_dyn, :_, size_name}}
+        else
+          {:ok, {:var_dyn, name, size_name}}
+        end
+
       true ->
         case segment_size(spec) do
           {:ok, size} when size >= 1 and size <= 32 ->
@@ -3039,6 +3193,10 @@ defmodule AutumnCompiler.Lower do
   defp binary_type_spec?(:binary), do: true
   defp binary_type_spec?({:binary, _, _}), do: true
   defp binary_type_spec?(_), do: false
+
+  defp utf8_type_spec?(:utf8), do: true
+  defp utf8_type_spec?({:utf8, _, _}), do: true
+  defp utf8_type_spec?(_), do: false
 
   defp emit_map_pattern_test(pairs, scr, env, next, code) do
     tag_reg = next
@@ -3342,29 +3500,27 @@ defmodule AutumnCompiler.Lower do
   end
 
   defp pack_bitstring_segments(segs) do
-    case Enum.reduce_while(segs, {:ok, [], :aligned}, fn seg, {:ok, bits, _align} ->
+    # Integer segments of size 1…8 may appear mid-construct (`<<1::3, 2::5>>`).
+    # Byte/string segments still require bit alignment (cannot follow a partial).
+    case Enum.reduce_while(segs, {:ok, []}, fn seg, {:ok, bits} ->
            case bitstring_segment_bits(seg) do
              {:ok, seg_bits, :bytes} ->
                if rem(length(bits), 8) != 0 do
                  {:halt,
                   {:error,
-                   "partial bitstring segment must be last in <<…>> (cannot follow with bytes)"}}
+                   "byte segment cannot follow a partial bitstring segment in <<…>>"}}
                else
-                 {:cont, {:ok, bits ++ seg_bits, :aligned}}
+                 {:cont, {:ok, bits ++ seg_bits}}
                end
 
              {:ok, seg_bits, :partial} ->
-               if rem(length(bits), 8) != 0 do
-                 {:halt, {:error, "only one trailing partial segment allowed in <<…>>"}}
-               else
-                 {:cont, {:ok, bits ++ seg_bits, :partial}}
-               end
+               {:cont, {:ok, bits ++ seg_bits}}
 
              {:error, _} = err ->
                {:halt, err}
            end
          end) do
-      {:ok, bits, _} ->
+      {:ok, bits} ->
         pack_bits_to_bytes(bits)
 
       {:error, _} = err ->
@@ -3406,36 +3562,58 @@ defmodule AutumnCompiler.Lower do
     do: {:ok, int_to_bits(n, 8), :bytes}
 
   defp bitstring_segment_bits({:"::", _, [n, spec]}) when is_integer(n) do
-    case segment_size(spec) do
-      {:ok, size} when size >= 1 and size <= 8 ->
-        max = Bitwise.bsl(1, size)
-
-        if n < 0 or n >= max do
-          {:error, "integer #{n} does not fit in ::#{size} in <<…>>"}
+    cond do
+      utf8_type_spec?(spec) ->
+        if n < 0 or n > 0x10FFFF do
+          {:error, "invalid unicode codepoint #{n} in ::utf8"}
         else
-          kind = if size == 8, do: :bytes, else: :partial
-          {:ok, int_to_bits(n, size), kind}
+          case :unicode.characters_to_binary([n]) do
+            bin when is_binary(bin) ->
+              bitstring_segment_bits(bin)
+
+            _ ->
+              {:error, "invalid unicode codepoint #{n} in ::utf8"}
+          end
         end
 
-      {:ok, size} ->
-        {:error, "unsupported bitstring size #{size} in <<…>> (teaching subset: 1..8)"}
+      true ->
+        case segment_size(spec) do
+          {:ok, size} when size >= 1 and size <= 8 ->
+            max = Bitwise.bsl(1, size)
 
-      :error ->
-        {:error, "unsupported bitstring segment specifier in <<…>>"}
+            if n < 0 or n >= max do
+              {:error, "integer #{n} does not fit in ::#{size} in <<…>>"}
+            else
+              kind = if size == 8, do: :bytes, else: :partial
+              {:ok, int_to_bits(n, size), kind}
+            end
+
+          {:ok, size} ->
+            {:error, "unsupported bitstring size #{size} in <<…>> (teaching subset: 1..8)"}
+
+          :error ->
+            {:error, "unsupported bitstring segment specifier in <<…>>"}
+        end
     end
   end
 
   defp bitstring_segment_bits({:"::", _, [bin, spec]}) when is_binary(bin) do
-    case segment_size(spec) do
-      {:ok, 8} ->
+    cond do
+      utf8_type_spec?(spec) ->
         bitstring_segment_bits(bin)
 
-      {:ok, _} ->
-        {:error, "string/binary chunks in <<…>> must be byte-sized (::8)"}
+      true ->
+        case segment_size(spec) do
+          {:ok, 8} ->
+            bitstring_segment_bits(bin)
 
-      :error ->
-        # Bare `::binary` / unknown — reject
-        {:error, "unsupported bitstring segment specifier on string in <<…>>"}
+          {:ok, _} ->
+            {:error, "string/binary chunks in <<…>> must be byte-sized (::8)"}
+
+          :error ->
+            # Bare `::binary` / unknown — reject
+            {:error, "unsupported bitstring segment specifier on string in <<…>>"}
+        end
     end
   end
 

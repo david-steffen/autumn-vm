@@ -35,6 +35,8 @@ def scheduleLemmaHints : List String :=
   , "runScheduled_progress"
   , "runScheduled_nil_eq_run"
   , "Obs.Schedule.drainSiblings_tapes_observe_zero"
+  , "OTP.GenServer.counterCall_observes_seven"
+  , "Meaning.addMain_observes_three"
   ]
 
 /-- `#eval` demo: drain-siblings under prefer tape. -/

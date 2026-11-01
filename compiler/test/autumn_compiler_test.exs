@@ -6,12 +6,10 @@ defmodule AutumnCompilerTest do
   defp all_funs(%{"modules" => mods}), do: Enum.flat_map(mods, & &1["functions"])
   defp all_code(module), do: Enum.flat_map(all_funs(module), & &1["code"])
 
-
   test "lowers add_main fixture" do
     path = Path.join(@fixtures, "add_main.ex")
 
     assert {:ok, _module} = AutumnCompiler.compile_file(path)
-
   end
 
   test "lowers mul_main with block binding and */-" do
@@ -380,7 +378,6 @@ defmodule AutumnCompilerTest do
       path = Path.join(@fixtures, "#{stem}.ex")
       assert {:ok, _module} = AutumnCompiler.compile_files(extras ++ [path])
     end
-
   end
 
   test "lowers ets_basic" do
@@ -499,7 +496,7 @@ defmodule AutumnCompilerTest do
     assert gets >= 3
   end
 
-  test "rejects unsupported bitstring match forms" do
+  test "rejects ::utf8 in bitstring match (construct-only)" do
     src = """
     defmodule Main do
       def main do
@@ -510,20 +507,19 @@ defmodule AutumnCompilerTest do
     """
 
     assert {:error, msg} = AutumnCompiler.Lower.lower(Code.string_to_quoted!(src))
-    assert msg =~ "unsupported"
+    assert msg =~ "utf8"
+  end
 
-    src2 = """
-    defmodule Main do
-      def main do
-        n = 8
-        <<x::size(n)>> = <<1>>
-        x
-      end
-    end
-    """
+  test "lowers dynamic ::size(var) bitstring match" do
+    path = Path.join(@fixtures, "bitstring_dyn_size.ex")
+    assert {:ok, module} = AutumnCompiler.compile_file(path)
+    code = all_code(module)
+    assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "bs_get_integer/2"))
+  end
 
-    assert {:error, msg2} = AutumnCompiler.Lower.lower(Code.string_to_quoted!(src2))
-    assert msg2 =~ "unsupported"
+  test "lowers mid-construct partials and ::utf8 construct" do
+    assert {:ok, _} = AutumnCompiler.compile_file(Path.join(@fixtures, "bitstring_mid.ex"))
+    assert {:ok, _} = AutumnCompiler.compile_file(Path.join(@fixtures, "binary_utf8.ex"))
   end
 
   test "lowers if_else / cond_main" do

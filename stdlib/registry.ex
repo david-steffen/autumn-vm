@@ -1,13 +1,18 @@
 defmodule Registry do
   # Teaching unique Registry on GenServer + ETS :set.
   # register/lookup/unregister; auto-drop on DOWN (pid from message).
-  # Skip: :via, partitions, :duplicate, named tables.
+  # via/2 builds `{:via, "Registry", {reg, key}}` for GenServer.start/3 + call/cast.
+  # Skip: partitions, :duplicate, named tables.
 
   @behaviour GenServer
   use GenServer
 
   def start_link(keys) do
     GenServer.start_link(Registry, keys)
+  end
+
+  def via(reg, key) do
+    {:via, "Registry", {reg, key}}
   end
 
   def register(reg, key, pid) do

@@ -161,7 +161,9 @@ Teaching subset (no new Instr — builtins only):
 - `bs_get_integer/2` — `(bitstring, nbits)` MSB-first integer prefix; short / wrong type / negative `nbits` → `:badarg`.
 - `bs_drop/2` — `(bitstring, nbits)` → remaining bitstring (`Valid`); short / wrong type → `:badarg`.
 - Mix: `<<x::N, rest::binary>>` (literal `N ∈ 1…32`), exact lit `<<1,2>>`, and exact-size `<<x::N>>` in `case` / `=` / heads; miss → `:match_error`. Sizes **9…32** lower as repeated 1…8-bit `bs_get_integer` chunks combined MSB-first (construct side stays **N ∈ 1…8**). Patterns apply to raw bitstrings only (exclude `string` via `is_tag`).
-- Out of scope: comprehensions, `::utf8` match, dynamic sizes, `<>/2` of partials, full BEAM binary syntax.
+- Construct: mid-partial integer segments (`<<1::3, 2::5>>`) when bits concatenate; byte/string segments still require alignment. `<<cp::utf8>>` packs a literal codepoint to UTF-8 bytes.
+- Match: `<<x::size(n)>>` when `n` is a bound variable (runtime `bs_get_integer` / `bs_drop` with that register).
+- Out of scope: comprehensions, `::utf8` **match**, `<>/2` of partials, full BEAM binary syntax.
 
 ### Closures
 
@@ -191,7 +193,7 @@ Teaching subset (no new Instr — builtins only):
 - `{"op":"apply_mfa","dest":D,"mod":M,"fun":F,"args":[…]}` — `M` and `F` must be **atoms**; arity = `len(args)`. Looks up MFA `"#{mod}.#{fun}/#{arity}"` across `modules[]` and pushes a frame like `call`.
 - Catchable failures (`raiseValue`): non-atom mod/fun or arity mismatch → `:badarg`; missing MFA → `:undef`.
 - Mix: bare module alias `Counter` → atom `"Counter"`; `apply(mod, :init, [arg])` with a literal arg list → `apply_mfa`. Used by stdlib `GenServer` / `Supervisor` for OTP-shaped callback dispatch.
-- **Stdlib-only OTP** (no new opcodes): `Agent` (GenServer + closure messages), `Task` (`spawn` MFA trampoline + monitor/`await`; not `spawn_link` because Autumn link signals on normal exit), `Registry` unique keys (GenServer + ETS + `DOWN` cleanup). Compile with `stdlib/*.ex` via smoke `extras` / `compile_files`.
+- **Stdlib-only OTP** (no new opcodes): `Agent` (GenServer + closure messages), `Task` (`spawn` MFA trampoline + monitor/`await`; not `spawn_link` because Autumn link signals on normal exit), `Registry` unique keys (GenServer + ETS + `DOWN` cleanup), `Registry.via/2` → `{:via, "Registry", {reg, key}}` for `GenServer.start/3` + `call`/`cast` via `whereis/1`, thin `Task.Supervisor` (`async/2` → `Task.async`). Compile with `stdlib/*.ex` via smoke `extras` / `compile_files`.
 
 ### ETS
 
