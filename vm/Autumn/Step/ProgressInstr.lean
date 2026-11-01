@@ -245,27 +245,39 @@ theorem call_error_not_structural
                                       · exact nomatch herr
                                       · cases herr; rfl
                                     · simp [hmref] at herr
-                                      by_cases htu : isMakeTupleName funName = true
-                                      · simp [htu] at herr; exact nomatch herr
-                                      · simp [htu] at herr
-                                        by_cases hbi : isBuiltinName funName = true
-                                        · simp [hbi] at herr
-                                          cases hb : builtin p.heap p.pid funName
-                                              (readArgs! frame argRegs) with
-                                          | ok v => simp [hb] at herr; exact nomatch herr
-                                          | badarg =>
-                                            simp [hb] at herr
-                                            exact raiseValue_error_not_structural _ _ _ _ herr
-                                          | error e' =>
-                                            simp [hb] at herr
-                                            cases herr
-                                            exact builtin_error_not_structural hb
-                                        · simp [hbi] at herr
+                                      by_cases hutf : funName = "bs_get_utf8/1"
+                                      · simp [hutf] at herr
+                                        by_cases har : (readArgs! frame argRegs).size = 1
+                                        · simp only [har, ↓reduceIte, ite_false] at herr
+                                          simp [bsGetUtf8] at herr
                                           split at herr
                                           · split at herr
                                             · exact nomatch herr
+                                            · exact nomatch herr
+                                          · exact raiseValue_error_not_structural _ _ _ _ herr
+                                        · simp only [har, ↓reduceIte, ite_true] at herr; cases herr; rfl
+                                      · simp [hutf] at herr
+                                        by_cases htu : isMakeTupleName funName = true
+                                        · simp [htu] at herr; exact nomatch herr
+                                        · simp [htu] at herr
+                                          by_cases hbi : isBuiltinName funName = true
+                                          · simp [hbi] at herr
+                                            cases hb : builtin p.heap p.pid funName
+                                                (readArgs! frame argRegs) with
+                                            | ok v => simp [hb] at herr; exact nomatch herr
+                                            | badarg =>
+                                              simp [hb] at herr
+                                              exact raiseValue_error_not_structural _ _ _ _ herr
+                                            | error e' =>
+                                              simp [hb] at herr
+                                              cases herr
+                                              exact builtin_error_not_structural hb
+                                          · simp [hbi] at herr
+                                            split at herr
+                                            · split at herr
+                                              · exact nomatch herr
+                                              · cases herr; rfl
                                             · cases herr; rfl
-                                          · cases herr; rfl
 
 /-- `return_` case of `stepInstr_error_not_structural`. -/
 theorem return_error_not_structural
@@ -698,6 +710,159 @@ theorem stepInstr_error_not_structural
       exact loadFile_error_not_structural s p frame dest pathReg herr
   | applyMfa dest modReg funReg argRegs =>
       exact applyMfa_error_not_structural s p frame dest modReg funReg argRegs herr
+
+/-- `stepInstrWith` errors are never structural (prefer only affects schedule). -/
+theorem stepInstrWith_error_not_structural
+    (choice : State.ScheduleChoice)
+    (s : State) (p : Process) (frame : Frame) (instr : Instr) {e : StepError}
+    (herr : stepInstrWith choice s p frame instr = .error e) :
+    isStructuralError e = false := by
+  cases choice with
+  | roundRobin =>
+    exact stepInstr_error_not_structural s p frame instr (by simpa [stepInstr] using herr)
+  | prefer idx =>
+    cases instr with
+    | return_ reg =>
+      simp [stepInstrWith] at herr
+      by_cases hsz : p.stack.size = 1
+      · simp [hsz] at herr
+        exact (scheduleNextWith_error_is_noRunnable _ _ (.prefer idx) herr) ▸ rfl
+      · simp [hsz] at herr
+        split at herr
+        · cases herr; rfl
+        · exact nomatch herr
+    | halt reg =>
+      simp [stepInstrWith] at herr
+      exact (scheduleNextWith_error_is_noRunnable _ _ (.prefer idx) herr) ▸ rfl
+    | recv dest =>
+      simp [stepInstrWith] at herr
+      split at herr
+      · exact nomatch herr
+      · exact (scheduleNextWith_error_is_noRunnable _ _ (.prefer idx) herr) ▸ rfl
+    | wait retry after timeout =>
+      simp [stepInstrWith] at herr
+      by_cases hmb : 0 < p.mailbox.size
+      · simp [hmb] at herr; exact nomatch herr
+      · simp [hmb] at herr
+        cases hd : p.waitDeadline with
+        | some d =>
+          simp [hd] at herr
+          by_cases hle : d ≤ s.clock
+          · simp [hle] at herr; exact nomatch herr
+          · simp [hle] at herr
+            exact (scheduleNextWith_error_is_noRunnable _ _ (.prefer idx) herr) ▸ rfl
+        | none =>
+          simp [hd] at herr
+          cases hr : resolveWaitTimeout frame timeout with
+          | error e' =>
+            simp [hr, Bind.bind, Except.bind] at herr; cases herr
+            have hrt := hr
+            unfold resolveWaitTimeout at hrt
+            cases timeout with
+            | infinity => cases hrt
+            | lit _ => cases hrt
+            | reg r =>
+              cases hv : getReg! frame r with
+              | int n =>
+                simp [hv] at hrt
+                split at hrt
+                · cases hrt; rfl
+                · cases hrt
+              | _ =>
+                simp [hv] at hrt; cases hrt; rfl
+          | ok ticks? =>
+            simp [hr, Bind.bind, Except.bind] at herr
+            cases hto : ticks? with
+            | some n =>
+              cases n with
+              | zero =>
+                simp [hto] at herr; exact nomatch herr
+              | succ n =>
+                simp [hto] at herr
+                exact (scheduleNextWith_error_is_noRunnable _ _ (.prefer idx) herr) ▸ rfl
+            | none =>
+              simp [hto] at herr
+              exact (scheduleNextWith_error_is_noRunnable _ _ (.prefer idx) herr) ▸ rfl
+    | raise reg =>
+      simp [stepInstrWith] at herr
+      exact raiseValueWith_error_not_structural (.prefer idx) _ _ _ _ herr
+    | call dest funName argRegs =>
+      -- Only `Process.exit/2` sees prefer; other call paths match round-robin.
+      by_cases hex : funName = "Process.exit/2"
+      · simp [stepInstrWith, hex] at herr
+        by_cases har : (readArgs! frame argRegs).size = 2
+        · simp only [har, ↓reduceIte, ite_false, processExitWith] at herr
+          split at herr
+          · split at herr
+            · exact raiseValueWith_error_not_structural _ _ _ _ _ herr
+            · exact (scheduleNextWith_error_is_noRunnable _ _ (.prefer idx) herr) ▸ rfl
+          · exact raiseValueWith_error_not_structural _ _ _ _ _ herr
+        · simp only [har, ↓reduceIte, ite_true] at herr; cases herr; rfl
+      · exact call_error_not_structural s p frame dest funName argRegs
+          (by simpa [stepInstr, stepInstrWith, hex] using herr)
+    | loadLit reg lit =>
+      exact loadLit_error_not_structural s p frame reg lit
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | move dest src =>
+      exact move_error_not_structural s p frame dest src
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | jump target =>
+      exact jump_error_not_structural s p frame target
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | jumpIfEq target reg lit =>
+      exact jumpIfEq_error_not_structural s p frame target reg lit
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | getTupleElem dest tupleReg index =>
+      exact getTupleElem_error_not_structural s p frame dest tupleReg index
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | isTag dest reg tag =>
+      exact isTag_error_not_structural s p frame dest reg tag
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | spawn dest funName argRegs =>
+      exact spawn_error_not_structural s p frame dest funName argRegs
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | send pidReg msgReg =>
+      exact send_error_not_structural s p frame pidReg msgReg
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | getListElem dest listReg index =>
+      exact getListElem_error_not_structural s p frame dest listReg index
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | getListRest dest listReg index =>
+      exact getListRest_error_not_structural s p frame dest listReg index
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | enterTry rescueIp excReg =>
+      exact enterTry_error_not_structural s p frame rescueIp excReg
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | leaveTry =>
+      exact leaveTry_error_not_structural s p frame
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | recvPeek dest indexReg empty =>
+      exact recvPeek_error_not_structural s p frame dest indexReg empty
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | recvDrop indexReg =>
+      exact recvDrop_error_not_structural s p frame indexReg
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | link pidReg =>
+      exact link_error_not_structural s p frame pidReg
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | monitor dest pidReg =>
+      exact monitor_error_not_structural s p frame dest pidReg
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | demonitor refReg =>
+      exact demonitor_error_not_structural s p frame refReg
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | makeFun dest funName capRegs =>
+      exact makeFun_error_not_structural s p frame dest funName capRegs
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | apply dest funReg argRegs =>
+      exact apply_error_not_structural s p frame dest funReg argRegs
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | loadFile dest pathReg =>
+      exact loadFile_error_not_structural s p frame dest pathReg
+        (by simpa [stepInstr, stepInstrWith] using herr)
+    | applyMfa dest modReg funReg argRegs =>
+      exact applyMfa_error_not_structural s p frame dest modReg funReg argRegs
+        (by simpa [stepInstr, stepInstrWith] using herr)
 
 /-- Progress: well-formed running states never fail structurally. -/
 theorem step_progress (s : State) (hs : State.WF s) (hr : s.result = none) :

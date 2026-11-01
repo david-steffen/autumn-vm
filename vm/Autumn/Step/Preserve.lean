@@ -1462,5 +1462,26 @@ theorem interpretLoadFile_preserves
     simp [interpretLoadFile] at h
     exact raiseLoadAtCurrent_preserves s "enoent" hs hstat0 hres0 h
 
+/-- Successful `bs_get_utf8/1` preserves WF (tuple alloc or soft-fail `nil`). -/
+theorem bsGetUtf8_preserves
+    (s : State) (p : Process) (frame : Frame) (dest : Reg) (v : Value) {s'}
+    (hs : State.WF s) (hp : Process.WF s.module p) (hfwf : Frame.WF s.module frame)
+    (hres : p.result = none) (hstat : p.status = .runnable)
+    (htop : p.stack.size > 0) (hframe : p.stack[p.stack.size - 1]! = frame)
+    (hip : frame.ip + 1 < frame.function.code.size)
+    (h : bsGetUtf8 s p frame dest v = .ok s') :
+    State.WF s' := by
+  unfold bsGetUtf8 at h
+  split at h
+  · split at h
+    · exact finishWithTerm_preserves s p frame dest _ hs hp hfwf hres hstat htop hframe hip h
+    · cases h
+      exact apply_top_frame_preserves s p
+        { setReg! frame dest .nil with ip := (setReg! frame dest .nil).ip + 1 }
+        hs hp hres hstat htop
+        (bumpIp_frame _ _ (setReg!_WF _ _ _ _ hfwf) (by simpa [setReg!] using hip))
+        (by simp [setReg!, hframe]) (by simp [setReg!, hframe])
+  · exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+
 end Step
 end Autumn

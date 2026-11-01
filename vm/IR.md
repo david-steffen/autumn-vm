@@ -149,21 +149,22 @@ Teaching rule: anything that should be handled in Elixir-shaped code goes throug
 
 - `Term.bitstring` / `Value.bitstring` are **immediates** (`Autumn.Term.Bitstring`: `bytes` + `trailingBits`). `trailingBits = 0` is an aligned **binary**; `1…7` is a partial bitstring with unused low bits cleared (`Valid`).
 - JSON: aligned `{"binary": [0–255, …]}`; partial `{"bitstring": {"bytes": […], "trailing_bits": k}}`.
-- Mix: `<<1, 2, "ab">>` (integer bytes + UTF-8 chunks) → `binary` lit. Integer segments with `::N` / `::size(N)` for **N ∈ 1…8** (default 8); a trailing partial (**N ∈ 1…7**) packs MSB-first into `{"bitstring":{"bytes":[…],"trailing_bits":k}}` with unused low bits cleared. Mid-construct partials, sizes outside 1…8, and `::binary` are rejected.
-- `<>/2` also concatenates two **aligned** bitstrings → bitstring (`trailingBits ≠ 0` → `:badarg`). String↔binary mix → `:badarg`.
+- Mix: `<<1, 2, "ab">>` (integer bytes + UTF-8 chunks) → `binary` lit. Integer segments with `::N` / `::size(N)` for **N ∈ 1…8** (default 8); a trailing partial (**N ∈ 1…7**) packs MSB-first into `{"bitstring":{"bytes":[…],"trailing_bits":k}}` with unused low bits cleared. Mid-construct partials concatenate at bit granularity; sizes outside 1…8 and `::binary` construct are rejected.
+- `<>/2` concatenates two bitstrings at bit granularity (aligned or partial); pack failure → `:badarg`. String↔binary mix → `:badarg`.
 - `is_binary/1` → `is_tag` `"binary"`: true for UTF-8 `string` **or** aligned bitstring (Elixir-like). `is_bitstring/1` → `"bitstring"`: true for `string` or any bitstring.
 
 ### Binary matching
 
-Teaching subset (no new Instr — builtins only):
+Teaching subset (no new Instr — builtins / call-specials):
 
 - `bit_size/1` — `Term.bitstring` → int bit count; else catchable `:badarg` (UTF-8 `string` is **not** accepted).
 - `bs_get_integer/2` — `(bitstring, nbits)` MSB-first integer prefix; short / wrong type / negative `nbits` → `:badarg`.
 - `bs_drop/2` — `(bitstring, nbits)` → remaining bitstring (`Valid`); short / wrong type → `:badarg`.
-- Mix: `<<x::N, rest::binary>>` (literal `N ∈ 1…32`), exact lit `<<1,2>>`, and exact-size `<<x::N>>` in `case` / `=` / heads; miss → `:match_error`. Sizes **9…32** lower as repeated 1…8-bit `bs_get_integer` chunks combined MSB-first (construct side stays **N ∈ 1…8**). Patterns apply to raw bitstrings only (exclude `string` via `is_tag`).
+- `bs_get_utf8/1` — call-special: bitstring → `{cp, rest}` tuple; short/invalid/unaligned → `nil` (match soft-fail); wrong type → `:badarg`.
+- Mix: `<<x::N, rest::binary>>` (literal `N ∈ 1…32`), exact lit `<<1,2>>`, exact-size `<<x::N>>`, and `<<x::utf8>>` / `<<cp::utf8, rest::binary>>` in `case` / `=` / heads; miss → `:match_error`. Sizes **9…32** lower as repeated 1…8-bit `bs_get_integer` chunks combined MSB-first (construct side stays **N ∈ 1…8**). Patterns apply to raw bitstrings only (exclude `string` via `is_tag`).
 - Construct: mid-partial integer segments (`<<1::3, 2::5>>`) when bits concatenate; byte/string segments still require alignment. `<<cp::utf8>>` packs a literal codepoint to UTF-8 bytes.
 - Match: `<<x::size(n)>>` when `n` is a bound variable (runtime `bs_get_integer` / `bs_drop` with that register).
-- Out of scope: comprehensions, `::utf8` **match**, `<>/2` of partials, full BEAM binary syntax.
+- Out of scope: comprehensions, full BEAM binary syntax.
 
 ### Closures
 

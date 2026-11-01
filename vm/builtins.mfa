@@ -21,6 +21,7 @@ make_ref/0
 bit_size/1
 bs_get_integer/2
 bs_drop/2
+bs_get_utf8/1
 cons/2
 Process.flag/2
 Process.exit/2

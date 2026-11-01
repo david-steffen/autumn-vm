@@ -158,5 +158,62 @@ def drop? (b : Bitstring) (n : Nat) : Option Bitstring :=
   if n > bitSize b then none
   else ofBits? ((toBits b).extract n (bitSize b))
 
+/-- Append bitstrings at bit granularity (teaching `<>/2` of partials). -/
+def append (a b : Bitstring) : Option Bitstring :=
+  ofBits? (toBits a ++ toBits b)
+
+/-- Decode one UTF-8 codepoint from a **byte-aligned** bitstring.
+Returns `(codepoint, rest)`. `none` if unaligned, empty, or invalid UTF-8. -/
+def getUtf8? (b : Bitstring) : Option (Nat × Bitstring) :=
+  if b.trailingBits ≠ 0 then none
+  else if b.bytes.size = 0 then none
+  else
+    let b0 := (b.bytes.get! 0).toNat
+    if b0 < 0x80 then
+      match drop? b 8 with
+      | some rest => some (b0, rest)
+      | none => none
+    else if b0 < 0xC0 then none
+    else if b0 < 0xE0 then
+      if b.bytes.size < 2 then none
+      else
+        let b1 := (b.bytes.get! 1).toNat
+        if b1 &&& 0xC0 ≠ 0x80 then none
+        else
+          let cp := ((b0 &&& 0x1F) <<< 6) ||| (b1 &&& 0x3F)
+          if cp < 0x80 then none
+          else match drop? b 16 with
+            | some rest => some (cp, rest)
+            | none => none
+    else if b0 < 0xF0 then
+      if b.bytes.size < 3 then none
+      else
+        let b1 := (b.bytes.get! 1).toNat
+        let b2 := (b.bytes.get! 2).toNat
+        if b1 &&& 0xC0 ≠ 0x80 || b2 &&& 0xC0 ≠ 0x80 then none
+        else
+          let cp :=
+            ((b0 &&& 0x0F) <<< 12) ||| ((b1 &&& 0x3F) <<< 6) ||| (b2 &&& 0x3F)
+          if cp < 0x800 then none
+          else match drop? b 24 with
+            | some rest => some (cp, rest)
+            | none => none
+    else if b0 < 0xF8 then
+      if b.bytes.size < 4 then none
+      else
+        let b1 := (b.bytes.get! 1).toNat
+        let b2 := (b.bytes.get! 2).toNat
+        let b3 := (b.bytes.get! 3).toNat
+        if b1 &&& 0xC0 ≠ 0x80 || b2 &&& 0xC0 ≠ 0x80 || b3 &&& 0xC0 ≠ 0x80 then none
+        else
+          let cp :=
+            ((b0 &&& 0x07) <<< 18) ||| ((b1 &&& 0x3F) <<< 12) |||
+              ((b2 &&& 0x3F) <<< 6) ||| (b3 &&& 0x3F)
+          if cp < 0x10000 || cp > 0x10FFFF then none
+          else match drop? b 32 with
+            | some rest => some (cp, rest)
+            | none => none
+    else none
+
 end Bitstring
 end Autumn.Term

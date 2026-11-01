@@ -496,18 +496,11 @@ defmodule AutumnCompilerTest do
     assert gets >= 3
   end
 
-  test "rejects ::utf8 in bitstring match (construct-only)" do
-    src = """
-    defmodule Main do
-      def main do
-        <<x::utf8>> = <<1>>
-        x
-      end
-    end
-    """
-
-    assert {:error, msg} = AutumnCompiler.Lower.lower(Code.string_to_quoted!(src))
-    assert msg =~ "utf8"
+  test "lowers ::utf8 bitstring match" do
+    path = Path.join(@fixtures, "binary_utf8_match.ex")
+    assert {:ok, module} = AutumnCompiler.compile_file(path)
+    code = all_code(module)
+    assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "bs_get_utf8/1"))
   end
 
   test "lowers dynamic ::size(var) bitstring match" do

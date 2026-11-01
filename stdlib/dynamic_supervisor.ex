@@ -1,60 +1,104 @@
 defmodule DynamicSupervisor do
-  # Teaching DynamicSupervisor: GenServer that starts temporary children via MFA.
-  # API: start_link/0, start_child/2 → pid | :error.
-  # Children are temporary (no restart). Skip: strategies, intensity, shutdown.
+  # Teaching DynamicSupervisor: start_child + restart + stop shutdown.
+  # start_link/0 → temporary; start_link/1 → :temporary | :permanent | :transient.
+  # Kids: [{pid, mod, arg}]; on DOWN restart per policy (Supervisor.should_restart).
+  # stop/1 exits children with :shutdown then stops the supervisor.
+  # Skip: intensity windows, nested strategies, significant.
 
   @behaviour GenServer
   use GenServer
 
   def start_link do
-    GenServer.start_link(DynamicSupervisor, [])
+    start_link(:temporary)
+  end
+
+  def start_link(restart) do
+    GenServer.start_link(DynamicSupervisor, restart)
   end
 
   def start_child(sup, {mod, arg}) do
     GenServer.call(sup, {:start_child, mod, arg})
   end
 
-  @impl true
-  def init(_) do
-    {:ok, []}
+  def stop(sup) do
+    GenServer.call(sup, :stop)
   end
 
   @impl true
-  def handle_call({:start_child, mod, arg}, _from, kids) do
+  def init(restart) do
+    {:ok, {restart, []}}
+  end
+
+  @impl true
+  def handle_call({:start_child, mod, arg}, _from, {restart, kids}) do
     pid = spawn(GenServer, :server, [mod, arg])
     _mref = monitor(pid)
-    {:reply, pid, [pid | kids]}
+    {:reply, pid, {restart, [{pid, mod, arg} | kids]}}
+  end
+
+  def handle_call(:stop, _from, {_restart, kids}) do
+    _ = shutdown_all(kids)
+    {:stop, :normal, :ok, {:temporary, []}}
   end
 
   @impl true
-  def handle_cast(_msg, kids) do
-    {:noreply, kids}
+  def handle_cast(_msg, state) do
+    {:noreply, state}
   end
 
   @impl true
-  def handle_continue(_cont, kids) do
-    {:noreply, kids}
+  def handle_continue(_cont, state) do
+    {:noreply, state}
   end
 
-  def handle_info({:DOWN, _mref, :process, pid, _reason}, kids) do
-    {:noreply, drop_pid(kids, pid)}
+  def handle_info({:DOWN, _mref, :process, pid, reason}, {restart, kids}) do
+    case take_kid(kids, pid) do
+      {:ok, {mod, arg}, rest} ->
+        if Supervisor.should_restart(restart, reason) do
+          new_pid = spawn(GenServer, :server, [mod, arg])
+          _ = monitor(new_pid)
+          {:noreply, {restart, [{new_pid, mod, arg} | rest]}}
+        else
+          {:noreply, {restart, rest}}
+        end
+
+      :none ->
+        {:noreply, {restart, kids}}
+    end
   end
 
-  def handle_info(_info, kids) do
-    {:noreply, kids}
+  def handle_info(_info, state) do
+    {:noreply, state}
   end
 
-  def drop_pid(kids, pid) do
+  def take_kid(kids, pid) do
     case kids do
       [] ->
-        []
+        :none
 
-      [h | t] ->
-        if h == pid do
-          t
+      [{p, mod, arg} | t] ->
+        if p == pid do
+          {:ok, {mod, arg}, t}
         else
-          [h | drop_pid(t, pid)]
+          case take_kid(t, pid) do
+            {:ok, found, rest} ->
+              {:ok, found, [{p, mod, arg} | rest]}
+
+            :none ->
+              :none
+          end
         end
+    end
+  end
+
+  def shutdown_all(kids) do
+    case kids do
+      [] ->
+        :ok
+
+      [{pid, _m, _a} | t] ->
+        _ = Process.exit(pid, :shutdown)
+        shutdown_all(t)
     end
   end
 end

@@ -130,6 +130,7 @@ def isBuiltinName (name : FunName) : Bool :=
   name == "map_size/1" || name == "map_get/2" || name == "map_put/3" ||
   name == "self/0" || name == "make_ref/0" || name == "<>/2" ||
   name == "bit_size/1" || name == "bs_get_integer/2" || name == "bs_drop/2" ||
+  name == "bs_get_utf8/1" ||
   name == "cons/2" || name == "Process.flag/2" || name == "Process.exit/2" ||
   name == "Process.hibernate/0" ||
   name == "ets_new/0" || name == "ets_new/2" || name == "ets_insert/3" ||

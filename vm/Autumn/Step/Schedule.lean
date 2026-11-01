@@ -6,16 +6,11 @@ namespace Step
 
 /-! # Schedule-quantified runners
 
-`State.ScheduleChoice` / `scheduleNextWith` live on `State`. This module provides
-runners that consume a choice tape at **top-level** schedule points (`step`
-deschedule + `afterInstr` preemption).
+`State.ScheduleChoice` / `scheduleNextWith` live on `State`. Runners consume a
+choice tape at deschedule, park/exit inside `stepInstrWith`, and `afterInstr`
+preemption (one popped choice shared by instr + yield).
 
-Park/exit inside instructions honor a choice via `stepInstrWith` (used by
-observational laws / prefer-at-park demos). The multi-step `stepScheduled` tape
-still runs `stepInstr` (round-robin park/exit) so preserve/progress stay on the
-existing RR tower; full tape-through-park remains a thin follow-up.
-
-Default `run` / smoke paths are unchanged.
+Default `run` / smoke paths use round-robin via `stepInstr` / `afterInstr`.
 
 Public schedule lemmas: `covers_*`, `afterInstrWith_preserves`,
 `stepScheduled_deschedule_roundRobin` (see also `stepScheduled_preserves` in
@@ -34,7 +29,8 @@ def afterInstrWith (choice : ScheduleChoice) (s : State) : Except StepError Stat
   else
     .ok { s with reductions := s.reductions - 1 }
 
-/-- One machine step; schedule points consume from `choices` (empty ⇒ round-robin). -/
+/-- One machine step; schedule points consume from `choices` (empty ⇒ round-robin).
+Park/exit inside the instruction and post-instr yield share the same popped choice. -/
 def stepScheduled (choices : List ScheduleChoice) (s : State) :
     Except StepError (State × List ScheduleChoice) :=
   if s.result.isSome then
@@ -54,10 +50,10 @@ def stepScheduled (choices : List ScheduleChoice) (s : State) :
       if frame.ip ≥ code.size then
         .error (.badIp frame.ip code.size)
       else
-        match stepInstr s p frame code[frame.ip]! with
+        let (c, rest) := popChoice choices
+        match stepInstrWith c s p frame code[frame.ip]! with
         | .error e => .error e
         | .ok s1 =>
-          let (c, rest) := popChoice choices
           match afterInstrWith c s1 with
           | .error e => .error e
           | .ok s2 => .ok (s2, rest)

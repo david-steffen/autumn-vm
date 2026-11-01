@@ -140,17 +140,17 @@ theorem stepScheduled_preserves (choices : List State.ScheduleChoice) (s : State
               (s.processes[s.current]).stack.size - 1]!).ip) := by
         have := hfwf.2.2.1; omega
       simp [hipok] at h
-      split at h
-      · cases h
-      · rename_i s1 hsi
-        have hs1 : State.WF s1 :=
-          stepInstr_preserves s (s.processes[s.current])
-            ((s.processes[s.current]).stack[(s.processes[s.current]).stack.size - 1]!)
-            _
-            hs hp hfwf hnone hrun hsz rfl rfl hsi
-        cases hpop : State.popChoice choices with
-        | mk c rest0 =>
-          simp only [hpop] at h
+      cases hpop : State.popChoice choices with
+      | mk c rest0 =>
+        simp only [hpop] at h
+        split at h
+        · cases h
+        · rename_i s1 hsi
+          have hs1 : State.WF s1 :=
+            stepInstrWith_preserves c s (s.processes[s.current])
+              ((s.processes[s.current]).stack[(s.processes[s.current]).stack.size - 1]!)
+              _
+              hs hp hfwf hnone hrun hsz rfl rfl hsi
           split at h
           · cases h
           · rename_i s2 hai
@@ -263,14 +263,14 @@ theorem stepScheduled_progress (choices : List State.ScheduleChoice) (s : State)
             (s.processes[s.current]).stack.size - 1]!).ip) := by
       have := hfwf.2.2.1; omega
     simp [hipok] at h
-    split at h
-    · rename_i e' hsi
-      cases h
-      exact stepInstr_error_not_structural _ _ _ _ hsi
-    · rename_i s1 hsi
-      cases hpop : State.popChoice choices with
-      | mk c rest0 =>
-        simp only [hpop] at h
+    cases hpop : State.popChoice choices with
+    | mk c rest0 =>
+      simp only [hpop] at h
+      split at h
+      · rename_i e' hsi
+        cases h
+        exact stepInstrWith_error_not_structural c _ _ _ _ hsi
+      · rename_i s1 hsi
         split at h
         · rename_i e' hai
           cases h
@@ -368,9 +368,9 @@ theorem stepScheduled_nil_eq_step (s : State) :
                     (s.processes[s.current]).stack.size - 1]!).function.code.size ≤
                   ((s.processes[s.current]).stack[
                     (s.processes[s.current]).stack.size - 1]!).ip) := hip
-            simp [hip']
+            simp [hip', State.popChoice]
             cases hsi :
-                stepInstr s (s.processes[s.current])
+                stepInstrWith .roundRobin s (s.processes[s.current])
                   ((s.processes[s.current]).stack[
                     (s.processes[s.current]).stack.size - 1]!)
                   (((s.processes[s.current]).stack[
@@ -378,9 +378,9 @@ theorem stepScheduled_nil_eq_step (s : State) :
                     ((s.processes[s.current]).stack[
                       (s.processes[s.current]).stack.size - 1]!).ip]!) with
             | error e =>
-              simp [hsi]
+              simp [hsi, stepInstr]
             | ok s1 =>
-              simp [hsi, State.popChoice, afterInstrWith_roundRobin]
+              simp [hsi, stepInstr, afterInstrWith_roundRobin]
               cases hai : afterInstr s1 with
               | error e => simp [hai]
               | ok s2 => simp [hai]
@@ -555,6 +555,21 @@ theorem finishWithTerm_result_is_toTerm
     ∃ (heap : Heap) (val : Value), t = Heap.toTerm heap val := by
   simp [finishWithTerm] at h; cases h
   simp [setCurrentProcess_result, hsr] at ht
+
+theorem bsGetUtf8_result_is_toTerm
+    (s : State) (p : Process) (frame : Frame) (dest : Reg) (v : Value)
+    {s' : State} {t : Term}
+    (hsr : s.result = none)
+    (h : bsGetUtf8 s p frame dest v = .ok s')
+    (ht : s'.result = some t) :
+    ∃ (heap : Heap) (val : Value), t = Heap.toTerm heap val := by
+  simp [bsGetUtf8] at h
+  split at h
+  · split at h
+    · exact finishWithTerm_result_is_toTerm s p frame dest _ hsr h ht
+    · cases h
+      simp [setCurrentProcess_result, hsr] at ht
+  · exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
 
 theorem etsNew2_result_is_toTerm
     (s : State) (p : Process) (frame : Frame) (dest : Reg)
@@ -1073,32 +1088,40 @@ theorem call_result_is_toTerm
                                         simp [setCurrentProcess_result, nextRef_result, hsr] at ht
                                       · exact nomatch h
                                     · simp [hmref] at h
-                                      by_cases htu : isMakeTupleName funName = true
-                                      · simp [htu] at h; cases h
-                                        simp [makeTuple_result, hsr] at ht
-                                      · simp [htu] at h
-                                        by_cases hbi : isBuiltinName funName = true
-                                        · simp [hbi] at h
-                                          cases hb : builtin p.heap p.pid funName
-                                              (readArgs! frame argRegs) with
-                                          | error _ => simp [hb] at h
-                                          | badarg =>
-                                            simp [hb] at h
-                                            exact raiseValue_result_is_toTerm s p frame
-                                              (.atom "badarg") hsr h ht
-                                          | ok v =>
-                                            simp [hb] at h; cases h
-                                            simp [setCurrentProcess_result, hsr] at ht
-                                        · simp [hbi] at h
-                                          cases hff : s.module.findFunction funName with
-                                          | none => simp [hff] at h
-                                          | some callee =>
-                                            simp [hff] at h
-                                            by_cases har :
-                                                callee.arity = (readArgs! frame argRegs).size
-                                            · simp [har] at h; cases h
+                                      by_cases hutf : funName = "bs_get_utf8/1"
+                                      · simp [hutf] at h
+                                        by_cases har : (readArgs! frame argRegs).size = 1
+                                        · simp only [har, ↓reduceIte, ite_false] at h
+                                          exact bsGetUtf8_result_is_toTerm s p frame dest
+                                            (readArgs! frame argRegs)[0]! hsr h ht
+                                        · simp only [har, ↓reduceIte, ite_true] at h; exact nomatch h
+                                      · simp [hutf] at h
+                                        by_cases htu : isMakeTupleName funName = true
+                                        · simp [htu] at h; cases h
+                                          simp [makeTuple_result, hsr] at ht
+                                        · simp [htu] at h
+                                          by_cases hbi : isBuiltinName funName = true
+                                          · simp [hbi] at h
+                                            cases hb : builtin p.heap p.pid funName
+                                                (readArgs! frame argRegs) with
+                                            | error _ => simp [hb] at h
+                                            | badarg =>
+                                              simp [hb] at h
+                                              exact raiseValue_result_is_toTerm s p frame
+                                                (.atom "badarg") hsr h ht
+                                            | ok v =>
+                                              simp [hb] at h; cases h
                                               simp [setCurrentProcess_result, hsr] at ht
-                                            · simp [har] at h; exact nomatch h
+                                          · simp [hbi] at h
+                                            cases hff : s.module.findFunction funName with
+                                            | none => simp [hff] at h
+                                            | some callee =>
+                                              simp [hff] at h
+                                              by_cases har :
+                                                  callee.arity = (readArgs! frame argRegs).size
+                                              · simp [har] at h; cases h
+                                                simp [setCurrentProcess_result, hsr] at ht
+                                              · simp [har] at h; exact nomatch h
 
 /-- `stepInstr` publishes machine result only via `scheduleNext` (as `toTerm`). -/
 theorem stepInstr_result_is_toTerm

@@ -84,7 +84,7 @@ def builtin (h : Heap) (selfPid : Nat) (name : FunName) (args : Array Value) :
     else match args[0]!, args[1]! with
       | .string a, .string b => .ok (.string (a ++ b))
       | .bitstring a, .bitstring b =>
-        match Term.Bitstring.appendAligned a b with
+        match Term.Bitstring.append a b with
         | some c => .ok (.bitstring c)
         | none => .badarg
       | _, _ => .badarg
@@ -507,6 +507,22 @@ def makeTuple (s : State) (p : Process) (frame : Frame) (dest : Reg)
   let frame := { frame with ip := frame.ip + 1 }
   s.setCurrentProcess (State.setCurrentFrame p frame)
 
+/-- `bs_get_utf8/1` — decode one UTF-8 codepoint from a bitstring.
+Success → `{cp, rest}` tuple; short/invalid/unaligned → `nil` (match soft-fail);
+wrong type → `:badarg`. -/
+def bsGetUtf8 (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (v : Value) : Except StepError State :=
+  match v with
+  | .bitstring b =>
+    match Term.Bitstring.getUtf8? b with
+    | some (cp, rest) =>
+      finishWithTerm s p frame dest (.tuple #[.int (Int.ofNat cp), .bitstring rest])
+    | none =>
+      let frame := setReg! frame dest .nil
+      let frame := { frame with ip := frame.ip + 1 }
+      pure (s.setCurrentProcess (State.setCurrentFrame p frame))
+  | _ => raiseValue s p frame (.atom "badarg")
+
 /-- `make_fun` allocates a closure heap node (GC-safe). -/
 def makeFun (s : State) (p : Process) (frame : Frame) (dest : Reg)
     (funName : FunName) (caps : Array Value) : State :=
@@ -656,6 +672,11 @@ def stepInstrWith (choice : State.ScheduleChoice) (s : State) (p : Process)
           s.setCurrentProcess (State.setCurrentFrame p frame) with
           nextRef := s.nextRef + 1
         }
+    else if funName == "bs_get_utf8/1" then
+      if args.size != 1 then
+        throw (.badArity funName 1 args.size)
+      else
+        bsGetUtf8 s p frame dest args[0]!
     else if isMakeTupleName funName then
       pure (makeTuple s p frame dest args)
     else if isBuiltinName funName then

@@ -22,6 +22,7 @@ defmodule AutumnCompiler.Lower do
     {:bit_size, 1} => "bit_size/1",
     {:bs_get_integer, 2} => "bs_get_integer/2",
     {:bs_drop, 2} => "bs_drop/2",
+    {:bs_get_utf8, 1} => "bs_get_utf8/1",
     {:cons, 2} => "cons/2",
     {:ets_new, 0} => "ets_new/0",
     {:ets_new, 2} => "ets_new/2",
@@ -2589,12 +2590,18 @@ defmodule AutumnCompiler.Lower do
   defp emit_bitstring_match_test(parsed, scr, env, next, code) do
     fixed_bits =
       parsed
-      |> Enum.reject(&(match?({:rest, _}, &1) or match?({:var_dyn, _, _}, &1)))
+      |> Enum.reject(
+        &(match?({:rest, _}, &1) or match?({:var_dyn, _, _}, &1) or
+            match?({:var_utf8, _}, &1) or match?({:lit_utf8, _}, &1))
+      )
       |> Enum.map(fn
         {:lit, _, size} -> size
         {:var, _, size} -> size
       end)
       |> Enum.sum()
+
+    utf8_count =
+      Enum.count(parsed, &(match?({:var_utf8, _}, &1) or match?({:lit_utf8, _}, &1)))
 
     dyn_sizes =
       parsed
@@ -2602,6 +2609,9 @@ defmodule AutumnCompiler.Lower do
       |> Enum.map(fn {:var_dyn, _, size_name} -> size_name end)
 
     has_rest = Enum.any?(parsed, &match?({:rest, _}, &1))
+    has_utf8 = utf8_count > 0
+    # Each ::utf8 needs at least 8 bits; exact leftover emptiness checked after walk.
+    need_bits = fixed_bits + utf8_count * 8
 
     # Exclude UTF-8 string (is_tag bitstring is true for string).
     str_reg = next
@@ -2653,12 +2663,13 @@ defmodule AutumnCompiler.Lower do
       code ++
         [
           %{"op" => "call", "dest" => size_reg, "fun" => "bit_size/1", "args" => [scr]},
-          %{"op" => "load_lit", "reg" => need_reg, "lit" => %{"int" => fixed_bits}}
+          %{"op" => "load_lit", "reg" => need_reg, "lit" => %{"int" => need_bits}}
         ]
 
     with {:ok, code, next, need_reg} <- emit_add_dyn_sizes(dyn_sizes, need_reg, env, next, code) do
       emit_bitstring_size_cmp(
-        has_rest,
+        has_rest or has_utf8,
+        has_utf8 and not has_rest,
         size_reg,
         need_reg,
         cmp_reg,
@@ -2700,7 +2711,8 @@ defmodule AutumnCompiler.Lower do
   end
 
   defp emit_bitstring_size_cmp(
-         has_rest,
+         use_ge?,
+         check_empty_tail?,
          size_reg,
          need_reg,
          cmp_reg,
@@ -2712,8 +2724,8 @@ defmodule AutumnCompiler.Lower do
          code
        ) do
     {code, next, cmp_reg} =
-      if has_rest do
-        # size >= fixed_bits
+      if use_ge? do
+        # size >= need (rest and/or ::utf8 variable width)
         code =
           code ++
             [
@@ -2741,7 +2753,7 @@ defmodule AutumnCompiler.Lower do
 
         {code, next, cmp_reg}
       else
-        # size == fixed_bits
+        # size == need
         code =
           code ++
             [
@@ -2780,8 +2792,47 @@ defmodule AutumnCompiler.Lower do
                {:error, _} = err -> {:halt, err}
              end
          end) do
-      {:ok, code, env, next, _cur} ->
-        {:ok, code, env, next, fail_idx}
+      {:ok, code, env, next, cur} ->
+        if check_empty_tail? do
+          # Exact ::utf8 patterns: remaining bit_size must be 0.
+          rem_reg = next
+          next = next + 1
+          zero_reg = next
+          next = next + 1
+          eq_reg = next
+          next = next + 1
+
+          code =
+            code ++
+              [
+                %{"op" => "call", "dest" => rem_reg, "fun" => "bit_size/1", "args" => [cur]},
+                %{"op" => "load_lit", "reg" => zero_reg, "lit" => %{"int" => 0}},
+                %{
+                  "op" => "call",
+                  "dest" => eq_reg,
+                  "fun" => "==/2",
+                  "args" => [rem_reg, zero_reg]
+                }
+              ]
+
+          ok = length(code) + 2
+
+          code =
+            code ++
+              [
+                %{
+                  "op" => "jump_if_eq",
+                  "target" => ok,
+                  "reg" => eq_reg,
+                  "lit" => %{"bool" => true}
+                },
+                %{"op" => "jump", "target" => fail_idx}
+              ]
+
+          {:ok, code, env, next, fail_idx}
+        else
+          {:ok, code, env, next, fail_idx}
+        end
 
       {:error, _} = err ->
         err
@@ -2874,6 +2925,94 @@ defmodule AutumnCompiler.Lower do
       :error ->
         {:error, "unbound size variable #{size_name} in bitstring pattern"}
     end
+  end
+
+  defp emit_bitstring_seg_test({:var_utf8, _name}, cur, fail_idx, env, next, code) do
+    emit_bs_utf8_advance(cur, fail_idx, env, next, code, nil)
+  end
+
+  defp emit_bitstring_seg_test({:lit_utf8, value}, cur, fail_idx, env, next, code) do
+    emit_bs_utf8_advance(cur, fail_idx, env, next, code, value)
+  end
+
+  # Soft-fail utf8 decode: nil → fail; optional lit check on codepoint; return rest cursor.
+  defp emit_bs_utf8_advance(cur, fail_idx, env, next, code, lit_cp) do
+    pair_reg = next
+    next = next + 1
+    tag_reg = next
+    next = next + 1
+
+    code =
+      code ++
+        [
+          %{"op" => "call", "dest" => pair_reg, "fun" => "bs_get_utf8/1", "args" => [cur]},
+          %{"op" => "is_tag", "dest" => tag_reg, "reg" => pair_reg, "tag" => "tuple"}
+        ]
+
+    ok_tag = length(code) + 2
+
+    code =
+      code ++
+        [
+          %{
+            "op" => "jump_if_eq",
+            "target" => ok_tag,
+            "reg" => tag_reg,
+            "lit" => %{"bool" => true}
+          },
+          %{"op" => "jump", "target" => fail_idx}
+        ]
+
+    {code, next} =
+      if is_integer(lit_cp) do
+        cp_reg = next
+        next = next + 1
+
+        code =
+          code ++
+            [
+              %{
+                "op" => "get_tuple_elem",
+                "dest" => cp_reg,
+                "tuple" => pair_reg,
+                "index" => 0
+              }
+            ]
+
+        ok_lit = length(code) + 2
+
+        code =
+          code ++
+            [
+              %{
+                "op" => "jump_if_eq",
+                "target" => ok_lit,
+                "reg" => cp_reg,
+                "lit" => %{"int" => lit_cp}
+              },
+              %{"op" => "jump", "target" => fail_idx}
+            ]
+
+        {code, next}
+      else
+        {code, next}
+      end
+
+    rest_reg = next
+    next = next + 1
+
+    code =
+      code ++
+        [
+          %{
+            "op" => "get_tuple_elem",
+            "dest" => rest_reg,
+            "tuple" => pair_reg,
+            "index" => 1
+          }
+        ]
+
+    {:ok, code, env, next, rest_reg}
   end
 
   defp emit_bitstring_pattern_binds(segs, scr, env, next, code) do
@@ -3010,6 +3149,62 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
+  defp emit_bitstring_seg_bind({:lit_utf8, _value}, cur, env, next, code) do
+    emit_bs_utf8_bind(cur, env, next, code, :_)
+  end
+
+  defp emit_bitstring_seg_bind({:var_utf8, name}, cur, env, next, code) do
+    emit_bs_utf8_bind(cur, env, next, code, name)
+  end
+
+  defp emit_bs_utf8_bind(cur, env, next, code, name) do
+    pair_reg = next
+    next = next + 1
+
+    code =
+      code ++
+        [
+          %{"op" => "call", "dest" => pair_reg, "fun" => "bs_get_utf8/1", "args" => [cur]}
+        ]
+
+    {code, env, next} =
+      if name != :_ do
+        cp_reg = next
+        next = next + 1
+
+        code =
+          code ++
+            [
+              %{
+                "op" => "get_tuple_elem",
+                "dest" => cp_reg,
+                "tuple" => pair_reg,
+                "index" => 0
+              }
+            ]
+
+        {code, Map.put(env, name, cp_reg), next}
+      else
+        {code, env, next}
+      end
+
+    rest_reg = next
+    next = next + 1
+
+    code =
+      code ++
+        [
+          %{
+            "op" => "get_tuple_elem",
+            "dest" => rest_reg,
+            "tuple" => pair_reg,
+            "index" => 1
+          }
+        ]
+
+    {:ok, code, env, next, rest_reg}
+  end
+
   # Match sizes 1…32: emit repeated 1…8-bit `bs_get_integer` + combine (MSB-first).
   defp match_bit_chunks(size) when size >= 1 and size <= 32 do
     rem = rem(size, 8)
@@ -3122,21 +3317,31 @@ defmodule AutumnCompiler.Lower do
        do: {:ok, {:lit, n, 8}}
 
   defp classify_bitstring_match_seg({:"::", _, [n, spec]}) when is_integer(n) do
-    case segment_size(spec) do
-      {:ok, size} when size >= 1 and size <= 32 ->
-        max = Bitwise.bsl(1, size)
-
-        if n < 0 or n >= max do
-          {:error, "integer #{n} does not fit in ::#{size} in bitstring pattern"}
+    cond do
+      utf8_type_spec?(spec) ->
+        if n < 0 or n > 0x10FFFF do
+          {:error, "invalid unicode codepoint #{n} in ::utf8 pattern"}
         else
-          {:ok, {:lit, n, size}}
+          {:ok, {:lit_utf8, n}}
         end
 
-      {:ok, size} ->
-        {:error, "unsupported bitstring pattern size #{size} (teaching subset: 1..32)"}
+      true ->
+        case segment_size(spec) do
+          {:ok, size} when size >= 1 and size <= 32 ->
+            max = Bitwise.bsl(1, size)
 
-      :error ->
-        {:error, "unsupported bitstring pattern segment specifier"}
+            if n < 0 or n >= max do
+              {:error, "integer #{n} does not fit in ::#{size} in bitstring pattern"}
+            else
+              {:ok, {:lit, n, size}}
+            end
+
+          {:ok, size} ->
+            {:error, "unsupported bitstring pattern size #{size} (teaching subset: 1..32)"}
+
+          :error ->
+            {:error, "unsupported bitstring pattern segment specifier"}
+        end
     end
   end
 
@@ -3151,10 +3356,13 @@ defmodule AutumnCompiler.Lower do
         end
 
       utf8_type_spec?(spec) ->
-        {:error, "unsupported bitstring pattern ::utf8 (construct-only teaching subset)"}
+        {:ok, {:var_utf8, name}}
 
-      match?({:size, _, [{size_name, _, sctx}]}
-            when is_atom(size_name) and (is_atom(sctx) or is_nil(sctx)), spec) ->
+      match?(
+        {:size, _, [{size_name, _, sctx}]}
+        when is_atom(size_name) and (is_atom(sctx) or is_nil(sctx)),
+        spec
+      ) ->
         {:size, _, [{size_name, _, _}]} = spec
 
         if name == :_ do
@@ -3188,7 +3396,9 @@ defmodule AutumnCompiler.Lower do
   end
 
   defp classify_bitstring_match_seg(_),
-    do: {:error, "unsupported bitstring pattern segment (teaching: lit ints / var::N / rest::binary)"}
+    do:
+      {:error,
+       "unsupported bitstring pattern segment (teaching: lit ints / var::N / rest::binary)"}
 
   defp binary_type_spec?(:binary), do: true
   defp binary_type_spec?({:binary, _, _}), do: true
@@ -3507,8 +3717,7 @@ defmodule AutumnCompiler.Lower do
              {:ok, seg_bits, :bytes} ->
                if rem(length(bits), 8) != 0 do
                  {:halt,
-                  {:error,
-                   "byte segment cannot follow a partial bitstring segment in <<…>>"}}
+                  {:error, "byte segment cannot follow a partial bitstring segment in <<…>>"}}
                else
                  {:cont, {:ok, bits ++ seg_bits}}
                end
