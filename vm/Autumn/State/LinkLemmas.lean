@@ -2,7 +2,11 @@ import Autumn.State.ProcessLemmas
 
 namespace Autumn
 
-/-! # Links / EXIT propagation -/
+/-! # Links / EXIT propagation (public proof surface)
+
+Prefer these over unfolding `signalLink` / monitor delivery. Part of the
+`State/Lemmas` barrel. See `AGENTS.md` (“Public proof surface”).
+-/
 
 theorem process_set_links_WF (m : Module) (p : Process) (links : Array Nat)
     (hp : Process.WF m p) :
@@ -11,6 +15,10 @@ theorem process_set_links_WF (m : Module) (p : Process) (links : Array Nat)
 theorem process_set_monitors_WF (m : Module) (p : Process)
     (monitors monitoredBy : Array (Nat × Nat)) (hp : Process.WF m p) :
     Process.WF m { p with monitors := monitors, monitoredBy := monitoredBy } := hp
+
+theorem process_set_mailbox_WF (m : Module) (p : Process)
+    (mailbox : Array Value) (hp : Process.WF m p) :
+    Process.WF m { p with mailbox } := hp
 
 theorem process_set_waitDeadline_WF (m : Module) (p : Process) (d : Option Nat)
     (hp : Process.WF m p) :
@@ -373,14 +381,29 @@ theorem demonitorWith_preserves (s : State) (refId : Nat) {s' : State}
   have hcurNeg : ¬¬(s.current < s.processes.size) := not_not_intro hcur
   simp [State.demonitorWith, hcurNeg] at h
   split at h
-  · cases h; exact hs
   · cases h
     let cur0 := s.processes[s.current]!
     have hcur0 : Process.WF s.module cur0 := by
       simpa [cur0, getElem!_pos s.processes s.current hcur] using
         hs.2.2.2 s.current hcur
-    let cur := { cur0 with monitors := State.dropByRef cur0.monitors refId }
-    have hcurL : Process.WF s.module cur := process_set_monitors_WF _ _ _ _ hcur0
+    let mailbox := State.flushDownRef cur0.heap cur0.mailbox refId
+    let cur := { cur0 with mailbox }
+    exact setCurrentProcess_WF s cur hs (process_set_mailbox_WF _ _ _ hcur0)
+  · cases h
+    let cur0 := s.processes[s.current]!
+    have hcur0 : Process.WF s.module cur0 := by
+      simpa [cur0, getElem!_pos s.processes s.current hcur] using
+        hs.2.2.2 s.current hcur
+    let mailbox := State.flushDownRef cur0.heap cur0.mailbox refId
+    let cur := {
+      cur0 with
+      monitors := State.dropByRef cur0.monitors refId
+      mailbox
+    }
+    have hcurL : Process.WF s.module cur := by
+      have h1 := process_set_monitors_WF _ _ (State.dropByRef cur0.monitors refId)
+        cur0.monitoredBy hcur0
+      exact process_set_mailbox_WF _ _ mailbox h1
     exact clearTargetMonitor_preserves _ _ _ _
       (setCurrentProcess_WF s cur hs hcurL)
 
@@ -627,7 +650,8 @@ theorem demonitorWith_result (s : State) (refId : Nat) {s' : State}
   split at h
   · exact nomatch h
   · split at h
-    · cases h; rfl
+    · cases h
+      rw [setCurrentProcess_result]
     · cases h
       rw [clearTargetMonitor_result, setCurrentProcess_result]
 

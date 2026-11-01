@@ -2,7 +2,7 @@
 
 Versioned bytecode exchanged as JSON between the Mix lowerer and the Lean VM.
 
-Supported `version` values: `1` (literals/calls), `2` (lists, case ops, processes), `3` (`get_list_elem`, `list_size/1`), `4` (`get_list_rest` / cons patterns), `5` (maps), `6` (exceptions: `enter_try` / `leave_try` / `raise`), `7` (selective receive: `recv_peek` / `recv_drop` / `wait`), `8` (process links: `link`; exit signals), `9` (unique refs + process monitors: `monitor` / `demonitor`; DOWN signals), `10` (floats + strings as immediates), `11` (closures: `make_fun` / `apply`), `12` (first-class `modules[]`), `13` (`load_file` / dynamic install), `14` (`Process.flag/2` / `Process.exit/2`; durable drain + OTP-shaped `trap_exit`), and `15` (dynamic MFA `apply_mfa` for OTP-shaped behaviours).
+Supported `version` values: `1` (literals/calls), `2` (lists, case ops, processes), `3` (`get_list_elem`, `list_size/1`), `4` (`get_list_rest` / cons patterns), `5` (maps), `6` (exceptions: `enter_try` / `leave_try` / `raise`), `7` (selective receive: `recv_peek` / `recv_drop` / `wait`), `8` (process links: `link`; exit signals), `9` (unique refs + process monitors: `monitor` / `demonitor`; DOWN signals), `10` (floats + strings as immediates), `11` (closures: `make_fun` / `apply`), `12` (first-class `modules[]`), `13` (`load_file` / dynamic install), `14` (`Process.flag/2` / `Process.exit/2`; durable drain + OTP-shaped `trap_exit`), `15` (dynamic MFA `apply_mfa` for OTP-shaped behaviours), `16` (aligned binaries / bitstrings), and `17` (richer ETS: kinds, named tables, match/select).
 
 ## Module
 
@@ -68,7 +68,9 @@ Registers: dense `r0 .. r(locals-1)`. Params occupy `r0 .. r(arity-1)`.
 | `{"pid": 0}` | process id (v2, usually runtime-only) |
 | `{"ref": 0}` | unique reference id (v9, usually runtime-only; distinct from heap pointers) |
 | `{"float": 1.5}` | floating-point number (v10) |
-| `{"string": "hi"}` | UTF-8 string / teaching binary (v10) |
+| `{"string": "hi"}` | UTF-8 string immediate (v10) |
+| `{"binary": [1, 2]}` | aligned bitstring / binary (v16) |
+| `{"bitstring": {"bytes": [1], "trailing_bits": 3}}` | partial bitstring (v16) |
 
 ## Instructions
 
@@ -85,7 +87,7 @@ Registers: dense `r0 .. r(locals-1)`. Params occupy `r0 .. r(arity-1)`.
 - `{"op":"jump","target":12}` — absolute instruction index
 - `{"op":"jump_if_eq","target":12,"reg":0,"lit":...}` — jump if reg equals lit
 - `{"op":"get_tuple_elem","dest":1,"tuple":0,"index":0}`
-- `{"op":"is_tag","dest":1,"reg":0,"tag":"tuple"}` — tag ∈ nil\|bool\|int\|atom\|tuple\|list\|map\|pid\|ref\|float\|string\|fun
+- `{"op":"is_tag","dest":1,"reg":0,"tag":"tuple"}` — tag ∈ nil\|bool\|int\|atom\|tuple\|list\|map\|pid\|ref\|float\|string\|binary\|bitstring\|fun
 
 ### v2 processes
 
@@ -152,17 +154,28 @@ When a process **exits** (uncaught `raise`, root `return`, or `halt`), linked pe
 
 - Unique refs are immediates (JSON `{"ref": N}` / tag `ref`), distinct from heap pointers. Machine counter `nextRef` allocates ids.
 - `{"op":"monitor","dest":0,"pid":1}` — dest ← new ref; current process monitors the pid. Unidirectional. Monitoring an exited pid still returns a ref and **immediately** delivers `{:DOWN, ref, :process, pid, reason}` (reason = that process’s exit value, or `nil` if unknown). Self-monitor is allowed and delivers DOWN only when this process exits (to its own mailbox if somehow still alive — teaching: prefer not to self-monitor).
-- `{"op":"demonitor","ref":0}` — drop the monitor for that ref if present (no-op if unknown / already fired). Does not flush a pending DOWN from the mailbox.
+- `{"op":"demonitor","ref":0}` — drop the monitor for that ref if present (no-op if unknown / already fired) and **flush** any pending `{:DOWN, ref, …}` from the current mailbox (Autumn always flushes — OTP `demonitor(Ref, [:flush])`).
 - Builtin `make_ref/0` — allocate a fresh ref without monitoring.
 
 When a process **exits**, each monitorer in its inbound monitor list receives `{:DOWN, ref, :process, from_pid, reason}` (copied into their heap) and is woken if waiting; monitor entries are cleared both ways. Outbound monitors from the exiting process are dropped from targets (no DOWN for those). Monitors never auto-exit peers.
 
 ### v10 floats + strings
 
-- Floats and strings are **immediates** (not heap nodes). Teaching subset: no binaries/bitstrings beyond UTF-8 strings; no float↔int coercion.
-- `+/2` `-/2` `*/2` accept either two ints or two floats (mixed → catchable `:badarg`, IR v14).
-- `</2` `>/2` `<=/2` `>=/2` likewise on two ints or two floats.
-- `<>/2` concatenates two strings → string (mismatch → `:badarg`).
+- Floats and strings are **immediates** (not heap nodes). No float↔int coercion.
+- Runtime float is finite IEEE binary64 (`Autumn.Term.FiniteFloat`: `neg` / biased `exp < 2047` / 52-bit `frac`). Inf/NaN are unrepresentable.
+- JSON lit: Mix may emit `{"float": <number>}` (decoded via scientific rounding); Lean encode uses exact fields `{"float": {"neg": bool, "exp": nat, "frac": nat}}` for bit-identical roundtrip.
+- `+/2` `-/2` `*/2` accept either two ints or two floats (mixed → catchable `:badarg`, IR v14). Float overflow / non-finite IEEE result → catchable `:badarg`.
+- `</2` `>/2` `<=/2` `>=/2` likewise on two ints or two floats (IEEE order; `==/2` treats `+0` and `-0` as equal).
+- `<>/2` concatenates two strings → string (mismatch → `:badarg`). UTF-8 `string` remains a separate immediate from raw binaries (v16).
+
+### v16 binaries / bitstrings
+
+- `Term.bitstring` / `Value.bitstring` are **immediates** (`Autumn.Term.Bitstring`: `bytes` + `trailingBits`). `trailingBits = 0` is an aligned **binary**; `1…7` is a partial bitstring with unused low bits cleared (`Valid`).
+- JSON: aligned `{"binary": [0–255, …]}`; partial `{"bitstring": {"bytes": […], "trailing_bits": k}}`.
+- Mix: `<<1, 2, "ab">>` (integer bytes + UTF-8 chunks) → `binary` lit; bumps image to v16. Partial segment construct/match is Lean-side / JSON for now.
+- `<>/2` also concatenates two **aligned** bitstrings → bitstring (`trailingBits ≠ 0` → `:badarg`). String↔binary mix → `:badarg`.
+- `is_binary/1` → `is_tag` `"binary"`: true for UTF-8 `string` **or** aligned bitstring (Elixir-like). `is_bitstring/1` → `"bitstring"`: true for `string` or any bitstring.
+- Tags: `binary` / `bitstring` added to `is_tag` (alongside `string`).
 
 ### v11 closures
 
@@ -193,6 +206,17 @@ When a process **exits**, each monitorer in its inbound monitor list receives `{
 - Catchable failures (`raiseValue`): non-atom mod/fun or arity mismatch → `:badarg`; missing MFA → `:undef`.
 - Mix: bare module alias `Counter` → atom `"Counter"`; `apply(mod, :init, [arg])` with a literal arg list → `apply_mfa`. Used by stdlib `GenServer` / `Supervisor` for OTP-shaped callback dispatch.
 
+### v17 richer ETS
+
+Teaching subset (not full OTP). Tables live in `State.etsTables`; tid = array index. Objects are `{key, val}` 2-tuples.
+
+- **Kinds:** `:set` (one value per key; insert overwrites), `:bag` (multi-value; exact `{key,val}` dup ignored), `:duplicate_bag` (always append).
+- **Named tables:** `ets_new/2` with an atom name; subsequent ops accept tid **int** or that **atom**. Anonymous name is `nil`. Duplicate name → `:badarg`.
+- **`ets_lookup/2`:** returns a **list of values** for the key (empty list if none) — OTP-shaped vs Phase 24 thin value-or-`nil`.
+- **`ets_match_object/2`:** pattern-match objects; wildcards atoms `:_` and `:"$1"`…`:"$9"`; returns list of `{key,val}`.
+- **`ets_select/2`:** match-spec = list of `{Head, Guards, Body}`. Teaching subset: **Guards must be `[]`**; Body is a one-element list whose construct may use `:'$_'` (whole object), `:'$$'` (ordered bindings list), `:'$N'`, or nested lit/tuple/list of those. Non-empty guards or malformed spec → `:badarg`.
+- Mix/`stdlib/ets.ex` bump image to v17 when any richer ETS MFA is used (`ets_new/2`, `ets_match_object/2`, `ets_select/2`). Plain `ets_new/0` / insert / lookup / delete stay available on older images.
+
 ## Builtins
 
 | MFA | Meaning |
@@ -200,7 +224,7 @@ When a process **exits**, each monitorer in its inbound monitor list receives `{
 | `+/2` `-/2` `*/2` | integer or float arithmetic (homogeneous; mismatch → `:badarg`) |
 | `==/2` | structural equality → bool |
 | `</2` `>/2` `<=/2` `>=/2` | int or float compare → bool (homogeneous; mismatch → `:badarg`) |
-| `<>/2` | string concatenation (v10; mismatch → `:badarg`) |
+| `<>/2` | string++string or aligned binary++binary (v10/v16; mismatch → `:badarg`) |
 | `tuple_size/1` | tuple length → int (bad tag → `:badarg`) |
 | `list_size/1` | list length → int (v3; bad tag → `:badarg`) |
 | `elem/2` | `(tuple, index)` → element (0-based; bad args / OOB → `:badarg`) |
@@ -213,8 +237,15 @@ When a process **exits**, each monitorer in its inbound monitor list receives `{
 | `make_tuple/N` | `N` args → new tuple (may GC; lowered for non-literal `{…}`) |
 | `Process.flag/2` | `(:trap_exit, bool)` → previous flag (v14; else `:badarg`) |
 | `Process.exit/2` | force-exit other / raise self (v14) |
+| `ets_new/0` | allocate anonymous `:set` table → tid (`int`) |
+| `ets_new/2` | `(name \| nil, :set\|:bag\|:duplicate_bag)` → tid (v17; dup name / bad type → `:badarg`) |
+| `ets_insert/3` | `(tab, key, val)` → `:true` (tab = tid or name atom; kind rules; unknown → `:badarg`) |
+| `ets_lookup/2` | `(tab, key)` → **list of values** (empty if none; v17 shape) |
+| `ets_delete/2` | `(tab, key)` → `:true` (drop all entries with key) |
+| `ets_match_object/2` | `(tab, pattern)` → list of matching `{key,val}` (v17) |
+| `ets_select/2` | `(tab, match_spec)` → list of results (v17 teaching match-spec; bad spec → `:badarg`) |
 
-Guard helpers `is_integer/1`, `is_float/1`, `is_atom/1`, `is_list/1`, `is_tuple/1`, `is_map/1`, `is_boolean/1`, `is_pid/1`, `is_nil/1`, `is_reference/1`, `is_binary/1` (string tag), `is_function/1` (fun tag) lower to `is_tag` (not separate MFAs). Map patterns `%{lit_key => pat}` lower via `map_get/2` + value tests. Handler-stack bounds (`handlersWF`) are part of runnable/waiting `Process.WF`.
+Guard helpers `is_integer/1`, `is_float/1`, `is_atom/1`, `is_list/1`, `is_tuple/1`, `is_map/1`, `is_boolean/1`, `is_pid/1`, `is_nil/1`, `is_reference/1`, `is_binary/1` (string **or** aligned binary), `is_bitstring/1` (string or any bitstring), `is_function/1` (fun tag) lower to `is_tag` (not separate MFAs). Map patterns `%{lit_key => pat}` lower via `map_get/2` + value tests. Handler-stack bounds (`handlersWF`) are part of runnable/waiting `Process.WF`.
 
 ## Scheduling
 
@@ -222,7 +253,7 @@ Reduction-preemptive (Erlang-style): each process runs a fixed **reduction budge
 
 ## Runtime heap (Lean VM)
 
-Compound terms (`tuple` / `list` / `map` / `closure`) are **heap-allocated** at runtime; immediates (`nil` / `bool` / `int` / `float` / `atom` / `string` / `pid` / unique `ref`) stay unboxed in registers.
+Compound terms (`tuple` / `list` / `map` / `closure`) are **heap-allocated** at runtime; immediates (`nil` / `bool` / `int` / `float` / `atom` / `string` / `bitstring` / `pid` / unique `ref`) stay unboxed in registers.
 
 - Each process owns a **generational heap**: a single `nodes` array laid out `old ++ young`. Refs `< oldSize` are old; the rest are the young **nursery**. Allocation bump-fills young only, up to `youngCapacity` (and total `capacity`).
 - **Minor GC** (nursery full): evacuate only young objects reachable from the process roots (stack registers, mailbox, result) and **promote every survivor into old** (no aging; one minor survived ⇒ old). Old refs are leaves and the old prefix is kept verbatim, so old refs stay valid. Young is empty afterwards (`minorCount += 1`).

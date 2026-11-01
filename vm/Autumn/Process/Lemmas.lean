@@ -7,6 +7,12 @@ namespace Autumn
 
 namespace Process
 
+/-! # Process GC / alloc lemmas (public proof surface)
+
+Prefer these theorems for process heap/alloc WF. See `AGENTS.md`
+(“Public proof surface”).
+-/
+
 theorem process_set_heap_WF (m : Module) (p : Process) (h' : Heap)
     (hp : Process.WF m p) (hh : Heap.WF h') :
     Process.WF m { p with heap := h' } := by
@@ -1170,6 +1176,7 @@ mutual
       | reference _ => simpa [allocTermFuel] using hp
       | float _ => simpa [allocTermFuel] using hp
       | string _ => simpa [allocTermFuel] using hp
+      | bitstring _ => simpa [allocTermFuel] using hp
       | tuple elems =>
         have hp' := allocTermArrayFuel_preserves_WF m fuel p elems 0 #[] hp
         simpa [allocTermFuel] using allocCompound_preserves_WF m _ Node.tuple _ hp'
@@ -1249,7 +1256,7 @@ mutual
     | 0 => simp [allocTermFuel, hres]
     | fuel + 1 =>
       cases t with
-      | nil | bool _ | int _ | float _ | atom _ | string _ | pid _ | reference _ => simp [allocTermFuel, hres]
+      | nil | bool _ | int _ | float _ | atom _ | string _ | bitstring _ | pid _ | reference _ => simp [allocTermFuel, hres]
       | tuple elems =>
         have ha := allocTermArrayFuel_meta fuel p elems 0 #[] hres
         have hc := allocCompound_meta (allocTermArrayFuel fuel p elems 0 #[]).1
@@ -1478,7 +1485,7 @@ mutual
     | 0 => simp only [allocTermFuel]; exact TopMeta.refl _
     | fuel + 1 =>
       cases t with
-      | nil | bool _ | int _ | float _ | atom _ | string _ | pid _ | reference _ =>
+      | nil | bool _ | int _ | float _ | atom _ | string _ | bitstring _ | pid _ | reference _ =>
         simp only [allocTermFuel]; exact TopMeta.refl _
       | tuple elems =>
         have ha := allocTermArrayFuel_top_frame_meta fuel p elems 0 #[] hres hsz

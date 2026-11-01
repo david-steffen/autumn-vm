@@ -17,9 +17,14 @@ Elixir subset → versioned IR JSON → Lean 4 VM. The Mix lowerer emits bytecod
 | `vm/Autumn/Repl.lean` | Durable `autumn --repl` line protocol |
 | `ROADMAP.md` | Ordered backlog (“what’s next”) |
 | `tests/fixtures/` | Sample Elixir programs for lowering |
-| `stdlib/` | Thin library modules (`genserver.ex`, `supervisor.ex`); compile with `AutumnCompiler.compile_files/1` alongside app code |
+| `stdlib/` | Thin library modules (`genserver.ex`, `supervisor.ex`, `ets.ex`); compile with `AutumnCompiler.compile_files/1` alongside app code |
+| `vm/Autumn/Ets.lean` | ETS table ops + teaching match/select (IR v17) |
 
-**Module atoms + `apply_mfa` (IR v15):** a bare alias like `Counter` lowers to atom `"Counter"` (no `Elixir.` prefix). `apply(mod, :init, [arg])` with a literal arg list emits `apply_mfa`, which looks up `"#{mod}.#{fun}/#{arity}"` in the loaded image. Stdlib `GenServer.start(Counter, 0)` spawns `GenServer.server/2` and dispatches `init` / `handle_*` this way; missing MFA → catchable `:undef`.
+**Module atoms + `apply_mfa` (IR v15):** a bare alias like `Counter` lowers to atom `"Counter"` (no `Elixir.` prefix). `apply(mod, :init, [arg])` with a literal arg list emits `apply_mfa`, which looks up `"#{mod}.#{fun}/#{arity}"` in the loaded image. Stdlib `GenServer` dispatches `init` / `handle_call` / `handle_cast` / optional `handle_info` this way; missing `handle_info/2` → catchable `:undef` rescued as `{:noreply, state}`. Other missing MFA → catchable `:undef`. `Supervisor.start_link(children)` / `start_link(children, max_restarts)` is one_for_one with a quiet-period intensity window (period fixed at 100 logical ticks).
+
+**Binaries (IR v16):** `Term.bitstring` immediate (`bytes` + `trailingBits`; `0` ⇒ aligned binary). Mix `<<1, 2, "ab">>` → `{"binary":[…]}`. UTF-8 `string` stays separate; `is_binary/1` matches string **or** aligned bitstring; `is_bitstring/1` matches string or any bitstring; `<>/2` appends aligned bitstrings. See `vm/IR.md` v16.
+
+**ETS (IR v17):** kinds `:set` / `:bag` / `:duplicate_bag`; `ets_new/2` named or anonymous (`nil`); tab id is tid **or** name atom; `lookup` → list of values; `match_object` / `select` with `:_` / `:"$N"` and empty-guard match-specs. See `vm/IR.md` v17; `stdlib/ets.ex`.
 
 ## Build & run
 
@@ -76,6 +81,20 @@ Expressions lower as `Repl.main/0` so a loaded `Main` is not overwritten. Mix re
 - Keep changes scoped: no drive-by refactors or unrelated file churn.
 - Proof-only material for a type goes in `*Lemmas` next to that type, not in grab-bag utils.
 - For Lean: before writing a helper function, check `List`, `Array`, and `String` namespaces. Functions like `filterMap`, `find?`, `any`, and `all` are often built-in.
+
+## Public proof surface (Phase 26)
+
+External / multi-step proofs should use the **named lemma API**, not unfold private stepper bodies:
+
+| Concern | Prefer | Avoid unfolding |
+| --- | --- | --- |
+| One-step WF | `step_preserves` / `stepInstr_preserves` / per-opcode `*_preserves` in `Step/PreserveInstr` (+ helpers in `Step/Preserve`) | `stepInstr` / `afterInstr` case towers |
+| One-step progress | `step_progress` / `stepInstr_error_not_structural` / per-opcode `*_error_not_structural` in `Step/ProgressInstr` | `builtin` / `raiseValue` internals (use `builtin_error_not_structural`, `floatBinop_ne_error`, …) |
+| Heap / GC | `Heap/Lemmas` | ad-hoc `Heap` field surgery |
+| Scheduler / links / EXIT | `State/Lemmas` barrel (`ProcessLemmas`, `SchedLemmas`, `LinkLemmas`) | raw `scheduleNext` / `signalLink` unfolds |
+| JSON ↔ IR | `Json/Lemmas` (`decode*_encode*`) | `JsonNumber.fromFloat?` / hand-rolled lit parsers |
+
+**Rule:** when adding an opcode or call-special builtin, land a matching preserve + progress lemma in the same PR (or a follow-up that blocks merge). The `stepInstr_*` dispatchers must case on every `Instr` constructor. Call-specials (`map_put/3`, `cons/2`, `Process.*`, `ets_*` including v17 `ets_new/2` / `ets_match_object/2` / `ets_select/2`, `make_ref/0`) keep helpers in `Step/Preserve` and are reached via `call_preserves` / `call_error_not_structural`.
 
 ## Skills
 

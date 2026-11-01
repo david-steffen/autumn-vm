@@ -1,20 +1,25 @@
+import Autumn.Term.FiniteFloat
+import Autumn.Term.Bitstring
+
 namespace Autumn
 
-/-- Runtime terms (IR v1–v11). Unique `reference` is distinct from heap pointers. -/
+/-- Runtime terms (IR v1–v16). Unique `reference` is distinct from heap pointers.
+UTF-8 `string` stays a separate immediate; raw bytes use `bitstring` (aligned ⇒ binary). -/
 inductive Term where
   | nil
   | bool (b : Bool)
   | int (n : Int)
-  | float (f : Float)
+  | float (f : Term.FiniteFloat)
   | atom (s : String)
   | string (s : String)
+  | bitstring (b : Term.Bitstring)
   | tuple (elems : Array Term)
   | list (elems : Array Term)
   | map (entries : Array (Term × Term))
   | pid (id : Nat)
   | reference (id : Nat)
   | closure (funName : String) (env : Array Term)
-  deriving Repr, BEq, Inhabited
+  deriving Repr, Inhabited
 
 namespace Term
 
@@ -22,9 +27,10 @@ partial def toString : Term → String
   | .nil => "nil"
   | .bool b => if b then "true" else "false"
   | .int n => s!"{n}"
-  | .float f => s!"{f}"
+  | .float f => FiniteFloat.toString f
   | .atom s => s!":{s}"
   | .string s => s!"\"{s}\""
+  | .bitstring b => Bitstring.toString b
   | .tuple elems =>
     let inner := (elems.map Term.toString).toList |> String.intercalate ", "
     s!"\{{inner}}"
@@ -45,7 +51,8 @@ partial def toString : Term → String
 instance : ToString Term where
   toString := Term.toString
 
-/-- Tag ordinal: nil < bool < int < float < atom < string < pid < reference < tuple < list < map < closure. -/
+/-- Tag ordinal: nil < bool < int < float < atom < string < bitstring < pid < reference <
+tuple < list < map < closure. -/
 def tagOrd : Term → Nat
   | .nil => 0
   | .bool _ => 1
@@ -53,12 +60,13 @@ def tagOrd : Term → Nat
   | .float _ => 3
   | .atom _ => 4
   | .string _ => 5
-  | .pid _ => 6
-  | .reference _ => 7
-  | .tuple _ => 8
-  | .list _ => 9
-  | .map _ => 10
-  | .closure _ _ => 11
+  | .bitstring _ => 6
+  | .pid _ => 7
+  | .reference _ => 8
+  | .tuple _ => 9
+  | .list _ => 10
+  | .map _ => 11
+  | .closure _ _ => 12
 
 mutual
   /-- Total order for stable map key sorting (tag order, then structure). -/
@@ -72,9 +80,10 @@ mutual
         | .nil, .nil => false
         | .bool x, .bool y => decide (!x && y)
         | .int x, .int y => decide (x < y)
-        | .float x, .float y => Float.lt x y
+        | .float x, .float y => FiniteFloat.lt x y
         | .atom x, .atom y => decide (x < y)
         | .string x, .string y => decide (x < y)
+        | .bitstring x, .bitstring y => Bitstring.lt x y
         | .pid x, .pid y => decide (x < y)
         | .reference x, .reference y => decide (x < y)
         | .tuple x, .tuple y => ltArray x y 0
@@ -105,9 +114,10 @@ mutual
     | .nil, .nil => true
     | .bool a, .bool b => a == b
     | .int a, .int b => a == b
-    | .float a, .float b => a == b
+    | .float a, .float b => FiniteFloat.beq a b
     | .atom a, .atom b => a == b
     | .string a, .string b => a == b
+    | .bitstring a, .bitstring b => Bitstring.beq a b
     | .tuple a, .tuple b => a.size == b.size && beqArray a b 0
     | .list a, .list b => a.size == b.size && beqArray a b 0
     | .map a, .map b => a.size == b.size && beqEntries a b 0
@@ -130,6 +140,9 @@ mutual
     else
       true
 end
+
+instance : BEq Term where
+  beq := Term.beq
 
 def sortMapEntries (entries : Array (Term × Term)) : Array (Term × Term) :=
   entries.qsort fun (k1, _) (k2, _) => lt k1 k2

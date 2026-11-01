@@ -5,7 +5,11 @@ import Autumn.State
 
 namespace Autumn
 
-/-! # Process / frame helpers and mutators -/
+/-! # Process / frame helpers and mutators (public proof surface)
+
+Prefer these over unfolding process field updates. Part of the `State/Lemmas`
+barrel. See `AGENTS.md` (“Public proof surface”).
+-/
 
 theorem runnable_WF_parts {m p} (hp : Process.WF m p)
     (hstat : p.status = .runnable ∨ p.status = .waiting) (hres : p.result = none) :

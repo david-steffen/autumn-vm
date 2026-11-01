@@ -172,11 +172,77 @@ OTP-shaped runtime dispatch: module is a runtime atom; callbacks look up `"#{mod
 2. [x] Mix: bare alias → atom; `apply/3` with literal arg list → `apply_mfa`; `spawn(Mod, :fun, […])`
 3. [x] `stdlib/genserver.ex`: `start` / `start_link` / `server` + `init` / `handle_call` / `handle_cast` via `apply_mfa`
 4. [x] `stdlib/supervisor.ex`: thin `one_for_one` (`start_link` / monitor / restart)
-5. [x] Fixtures `genserver_behaviour` → `8`, `supervisor_one_for_one` → `3`; Mix goldens + smoke
+5. [x] Fixtures `genserver_behaviour` → `8`, `supervisor_one_for_one` → `6`; Mix goldens + smoke
+6. [x] `GenServer.call` `after` budget 50→500 (client timeout under supervisor restart load) + demonitor on timeout
+
+## Phase 23 — `handle_info` + supervisor intensity
+
+Stdlib-first (no new IR). `receive after` timeouts stay literal (period fixed at 100 ticks).
+
+1. [x] `GenServer`: optional `handle_info/2` via `apply_mfa`; missing MFA → rescue `:undef` as `{:noreply, state}`
+2. [x] Non-`{:call,:cast}` mailbox messages → `handle_info` catch-all in `loop/2`
+3. [x] Supervisor intensity: `start_link(children, max_restarts)` (default 3); period = 100 ticks quiet reset; exceed → exit `:shutdown`
+4. [x] Fixtures `genserver_info` → `3`, `supervisor_intensity` → `1`; Mix goldens + smoke
+5. [x] Out of scope (Phase 23): `rest_for_one` / `one_for_all`, `continue`, child_spec maps, `use GenServer`, variable `after` timeout
+
+## Phase 24 — Supervisor strategies + demonitor flush + thin ETS
+
+1. [x] `Supervisor`: `rest_for_one` / `one_for_all` (`start_link(children, strategy, max_restarts)`); fixtures → `8` / `5`
+2. [x] `demonitor` always flushes pending `{:DOWN, ref, …}` (OTP `[:flush]`); IR.md + Lean preserve/progress
+3. [x] Thin ETS: `ets_new/0` `ets_insert/3` `ets_lookup/2` `ets_delete/2` (State tables; lookup → value or `nil`); `stdlib/ets.ex`; fixture/smoke → `42`
+
+## Lynx-inspired work (license)
+
+Intended project license: **MIT** (simple VM). [Lynx](https://github.com/josevalim/lynx) is **Apache-2.0** — adapted Lynx source cannot be re-licensed as MIT; it would stay Apache-2.0 with NOTICE/headers inside an otherwise MIT tree.
+
+Default for FiniteFloat / Bitstring: **clean-room** from IEEE / Erlang semantics (same shape, no Lynx text) so the tree stays MIT-only. Phases 26–27 and Later are design inspiration only.
+
+## Phase 25 — FiniteFloat (IR unchanged)
+
+Finite IEEE binary64 so float proofs no longer dodge Lean `Float` / `JsonNumber.fromFloat?`. Clean-room (MIT); do not copy Lynx Lean.
+
+1. [x] Add root MIT `LICENSE` if not already present
+2. [x] `Autumn.Term.FiniteFloat` (`sign` / `exp < 2047` / `frac`) + `add`/`sub`/`mul`/`div`/`ofScientific`/`toRat` (fail on inf/NaN)
+3. [x] `Term.float` / heap immediates use `FiniteFloat`; Step arith/compare via FiniteFloat (mixed int/float still `:badarg`)
+4. [x] JSON lit encode/decode via exact fields or scientific mantissa/exp; `Term.FloatFree` now allows floats
+5. [x] Bit-identical float encode/decode (`decodeLit_encodeLit_float`); fixture + Mix golden + smoke
+
+## Phase 26 — Public proof surface
+
+Make opcode/builtin lemmas the stable API (Lynx-style expose / public-lemma discipline). No new IR; Autumn-authored.
+
+1. [x] Document “proofs use Preserve/Progress helpers, not private `stepInstr` unfolds” in `AGENTS.md` / lemma module headers
+2. [x] Audit `Step/PreserveInstr` + `ProgressInstr` + key State/Heap lemmas — every `Instr` has preserve + progress; call-specials + `builtin_error_not_structural` documented in `PreserveInstr` header
+3. [ ] Optional (deferred): Lean test snapshot of exported proof names once the surface stabilizes further
+
+## Phase 27 — Schedule-quantified observational specs
+
+Dual of today’s deterministic `scheduleNext`: quantify over fair scheduler choices. Prefer a thin choice list over baking nondeterminism into `State`. Autumn-authored; Lynx is the prior art for the idea.
+
+1. [x] Define `ScheduleChoice` / `scheduleNextWith` / `popChoice` on `State`; `Step.Schedule` runners (`stepScheduled` / `runScheduled` / `afterInstrWith`) consume a choice tape at top-level schedule points (park paths inside `stepInstr` stay deterministic)
+2. [x] Observational lemmas: `exists_schedule_prefer`, `forall_includes_roundRobin`, `covers`, `scheduleNextWith_prefer_runnable` (+ WF preserve); OTP-fixture schedule laws can grow on this API
+3. [x] Default `run` / smoke path unchanged (deterministic `scheduleNext`)
+
+## Phase 28 — Binaries / bitstrings
+
+Teaching subset grows past UTF-8 `string`-as-binary. Clean-room from Erlang binary semantics (MIT); no Lynx Bitstring text. Bump IR when terms/opcodes land.
+
+1. [x] Aligned binaries: `Term.Bitstring` / `Term.bitstring` immediate; Mix `<<…>>` → `{"binary":[…]}`; `<>/2` aligned append; `is_binary` / `is_bitstring`; UTF-8 `string` stays separate (documented in `IR.md` v16)
+2. [x] Partial bitstrings + `Valid` (`trailingBits` 1…7, unused low bits cleared via `ofBytesTrailing?`); JSON `bitstring` lit; Mix segment construct for partial sizes deferred (aligned-only `<<…>>`)
+3. [x] WF/preserve/progress + fixture/smoke `binary_basic`; string remains separate immediate
+
+## Phase 29 — Richer ETS (IR v17)
+
+Teaching subset (not full OTP). Objects are `{key, val}`.
+
+1. [x] `EtsKind` + named tables; `Autumn/Ets.lean` (resolve, kind insert, match/select)
+2. [x] Builtins: `ets_new/2`, list `ets_lookup/2`, `ets_match_object/2`, `ets_select/2` (empty guards; `:_` / `:"$N"` / `:'$_'` / `:'$$'`); tab = tid or name atom
+3. [x] Preserve/progress (+ `result_is_toTerm`); IR.md v17; Mix `needs_v17?`
+4. [x] `stdlib/ets.ex`; fixtures `ets_basic` (list lookup) / `ets_bag` → `2` / `ets_named` → `7` / `ets_select` → `5`; Mix goldens + smoke
+5. [x] Out of scope: `ordered_set`, non-empty guards, continuations, `delete_object`, ownership/heir
 
 ## Later (deprioritized)
 
-- ETS
-- Full `use GenServer` / `@behaviour`, `handle_info`, intensity windows, `rest_for_one` / `one_for_all`
-- Verified compiler
-- Bit-identical float identity (`n.toFloat = f`) when `fromFloat?` succeeds
+- Full `use GenServer` / `@behaviour`, `continue`, child_spec maps
+- Verified compiler — when started, design purity layers (`Except` / dispatcher / effectful result + law levels pure→concurrent) for compiled-program meaning; OTP-shaped Lean namespaces (`GenServer` / `Supervisor` lemmas) alongside stdlib (inspiration only)
+- Induction principles over IR functions if program-level laws appear

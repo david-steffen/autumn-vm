@@ -6,11 +6,13 @@ import Autumn.Json.Lemmas
 namespace Autumn
 namespace Step
 
-/-! # Step safety: progress + preservation barrel
+/-! # Step safety: progress + preservation barrel (public proof surface)
 
-Larger Mix goldens (`counter_server`, `monitored_call`, `monitored_down`, …) stay on
-disk under `tests/fixtures/*.bc.json` and are exercised by Mix + `lake exe autumn`,
-not embedded here (avoids a multi-kLoC dual source of truth).
+Imports `ProgressInstr` + `PreserveInstr`. Prefer `step_preserves` /
+`step_progress` / `run_*` here over unfolding `step` / `stepInstr`.
+
+Larger Mix goldens stay on disk under `tests/fixtures/*.bc.json` (Mix +
+`lake exe autumn`), not embedded here. See `AGENTS.md` (“Public proof surface”).
 -/
 
 /-- Preservation: successful steps stay well-formed. -/
@@ -249,6 +251,210 @@ theorem processFlag_result (s : State) (p : Process) (frame : Frame) (dest : Reg
   · cases h; simp [setCurrentProcess_result, hsr] at ht
   · exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
 
+theorem etsTables_result (s : State) (tables : Array EtsTable) :
+    ({ s with etsTables := tables } : State).result = s.result := rfl
+
+theorem etsNew_result_is_toTerm
+    (s : State) (p : Process) (frame : Frame) (dest : Reg) {s' : State} {t : Term}
+    (hsr : s.result = none)
+    (h : etsNew s p frame dest = .ok s')
+    (ht : s'.result = some t) :
+    ∃ (heap : Heap) (val : Value), t = Heap.toTerm heap val := by
+  simp [etsNew, State.etsNew] at h; cases h
+  simp [setCurrentProcess_result, hsr] at ht
+
+theorem finishWithTerm_result_is_toTerm
+    (s : State) (p : Process) (frame : Frame) (dest : Reg) (lit : Term)
+    {s' : State} {t : Term}
+    (hsr : s.result = none)
+    (h : finishWithTerm s p frame dest lit = .ok s')
+    (ht : s'.result = some t) :
+    ∃ (heap : Heap) (val : Value), t = Heap.toTerm heap val := by
+  simp [finishWithTerm] at h; cases h
+  simp [setCurrentProcess_result, hsr] at ht
+
+theorem etsNew2_result_is_toTerm
+    (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (nameV typeV : Value) {s' : State} {t : Term}
+    (hsr : s.result = none)
+    (h : etsNew2 s p frame dest nameV typeV = .ok s')
+    (ht : s'.result = some t) :
+    ∃ (heap : Heap) (val : Value), t = Heap.toTerm heap val := by
+  simp [etsNew2] at h
+  cases hty : Heap.toTerm p.heap typeV with
+  | atom ty =>
+    simp [hty] at h
+    cases hk : Ets.kindOfAtom ty with
+    | none =>
+      simp [hk] at h
+      exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+    | some kind =>
+      simp [hk] at h
+      cases hn : Heap.toTerm p.heap nameV with
+      | nil =>
+        simp [hn] at h
+        cases hnew : State.etsNewNamed s none kind with
+        | none =>
+          simp [hnew] at h
+          exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+        | some st =>
+          simp [hnew] at h; cases h
+          have hs1r : st.1.result = none := by
+            unfold State.etsNewNamed at hnew
+            split at hnew
+            · split at hnew
+              · exact nomatch hnew
+              · cases hnew; simpa [etsTables_result] using hsr
+            · cases hnew; simpa [etsTables_result] using hsr
+          simp [setCurrentProcess_result, hs1r] at ht
+      | atom n =>
+        simp [hn] at h
+        cases hnew : State.etsNewNamed s (some n) kind with
+        | none =>
+          simp [hnew] at h
+          exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+        | some st =>
+          simp [hnew] at h; cases h
+          have hs1r : st.1.result = none := by
+            unfold State.etsNewNamed at hnew
+            split at hnew
+            · split at hnew
+              · exact nomatch hnew
+              · cases hnew; simpa [etsTables_result] using hsr
+            · cases hnew; simpa [etsTables_result] using hsr
+          simp [setCurrentProcess_result, hs1r] at ht
+      | _ =>
+        simp [hn] at h
+        exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+  | _ =>
+    simp [hty] at h
+    exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+
+theorem etsInsert_result_is_toTerm
+    (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV keyV valV : Value) {s' : State} {t : Term}
+    (hsr : s.result = none)
+    (h : etsInsert s p frame dest tabV keyV valV = .ok s')
+    (ht : s'.result = some t) :
+    ∃ (heap : Heap) (val : Value), t = Heap.toTerm heap val := by
+  simp [etsInsert] at h
+  cases hr : State.etsResolve s (Heap.toTerm p.heap tabV) with
+  | none =>
+    simp [hr] at h
+    exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+  | some tid =>
+    simp [hr] at h
+    cases hins : State.etsInsert s tid (Heap.toTerm p.heap keyV)
+        (Heap.toTerm p.heap valV) with
+    | none =>
+      simp [hins] at h
+      exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+    | some s1 =>
+      simp [hins] at h; cases h
+      have hs1r : s1.result = none := by
+        unfold State.etsInsert at hins
+        split at hins
+        · cases hins; simpa [etsTables_result] using hsr
+        · exact nomatch hins
+      simp [setCurrentProcess_result, hs1r] at ht
+
+theorem etsLookup_result_is_toTerm
+    (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV keyV : Value) {s' : State} {t : Term}
+    (hsr : s.result = none)
+    (h : etsLookup s p frame dest tabV keyV = .ok s')
+    (ht : s'.result = some t) :
+    ∃ (heap : Heap) (val : Value), t = Heap.toTerm heap val := by
+  simp [etsLookup] at h
+  cases hr : State.etsResolve s (Heap.toTerm p.heap tabV) with
+  | none =>
+    simp [hr] at h
+    exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+  | some tid =>
+    simp [hr] at h
+    cases hl : State.etsLookup s tid (Heap.toTerm p.heap keyV) with
+    | none =>
+      simp [hl] at h
+      exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+    | some vals =>
+      simp [hl] at h
+      exact finishWithTerm_result_is_toTerm s p frame dest (.list vals) hsr h ht
+
+theorem etsDelete_result_is_toTerm
+    (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV keyV : Value) {s' : State} {t : Term}
+    (hsr : s.result = none)
+    (h : etsDelete s p frame dest tabV keyV = .ok s')
+    (ht : s'.result = some t) :
+    ∃ (heap : Heap) (val : Value), t = Heap.toTerm heap val := by
+  simp [etsDelete] at h
+  cases hr : State.etsResolve s (Heap.toTerm p.heap tabV) with
+  | none =>
+    simp [hr] at h
+    exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+  | some tid =>
+    simp [hr] at h
+    cases hd : State.etsDelete s tid (Heap.toTerm p.heap keyV) with
+    | none =>
+      simp [hd] at h
+      exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+    | some s1 =>
+      simp [hd] at h; cases h
+      have hs1r : s1.result = none := by
+        unfold State.etsDelete at hd
+        split at hd
+        · cases hd; simpa [etsTables_result] using hsr
+        · exact nomatch hd
+      simp [setCurrentProcess_result, hs1r] at ht
+
+theorem etsMatchObject_result_is_toTerm
+    (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV patV : Value) {s' : State} {t : Term}
+    (hsr : s.result = none)
+    (h : etsMatchObject s p frame dest tabV patV = .ok s')
+    (ht : s'.result = some t) :
+    ∃ (heap : Heap) (val : Value), t = Heap.toTerm heap val := by
+  simp [etsMatchObject] at h
+  cases hr : State.etsResolve s (Heap.toTerm p.heap tabV) with
+  | none =>
+    simp [hr] at h
+    exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+  | some tid =>
+    simp [hr] at h
+    cases hl : State.etsMatchObject s tid (Heap.toTerm p.heap patV) with
+    | none =>
+      simp [hl] at h
+      exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+    | some objs =>
+      simp [hl] at h
+      exact finishWithTerm_result_is_toTerm s p frame dest (.list objs) hsr h ht
+
+theorem etsSelect_result_is_toTerm
+    (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV specV : Value) {s' : State} {t : Term}
+    (hsr : s.result = none)
+    (h : etsSelect s p frame dest tabV specV = .ok s')
+    (ht : s'.result = some t) :
+    ∃ (heap : Heap) (val : Value), t = Heap.toTerm heap val := by
+  simp [etsSelect] at h
+  cases hr : State.etsResolve s (Heap.toTerm p.heap tabV) with
+  | none =>
+    simp [hr] at h
+    exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+  | some tid =>
+    simp [hr] at h
+    cases hl : State.etsSelect s tid (Heap.toTerm p.heap specV) with
+    | none =>
+      simp [hl] at h
+      exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+    | some r =>
+      simp [hl] at h
+      match r with
+      | .error () =>
+        exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
+      | .ok vals =>
+        exact finishWithTerm_result_is_toTerm s p frame dest (.list vals) hsr h ht
+
 /-- `call` case of `stepInstr_result_is_toTerm`. -/
 theorem call_result_is_toTerm
     (s : State) (p : Process) (frame : Frame) (dest : Reg) (funName : FunName)
@@ -302,36 +508,99 @@ theorem call_result_is_toTerm
             exact processExit_result_is_toTerm s p frame dest _ _ hsr h ht
           · simp only [har, ↓reduceIte, ite_true] at h; exact nomatch h
         · simp [hex] at h
-          by_cases hmref : funName = "make_ref/0"
-          · simp [hmref] at h
+          by_cases hetsn : funName = "ets_new/0"
+          · simp [hetsn] at h
             split at h
-            · cases h
-              simp [setCurrentProcess_result, nextRef_result, hsr] at ht
+            · exact etsNew_result_is_toTerm s p frame dest hsr h ht
             · exact nomatch h
-          · simp [hmref] at h
-            by_cases htu : isMakeTupleName funName = true
-            · simp [htu] at h; cases h
-              simp [makeTuple_result, hsr] at ht
-            · simp [htu] at h
-              by_cases hbi : isBuiltinName funName = true
-              · simp [hbi] at h
-                cases hb : builtin p.heap p.pid funName (readArgs! frame argRegs) with
-                | error _ => simp [hb] at h
-                | badarg =>
-                  simp [hb] at h
-                  exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
-                | ok v =>
-                  simp [hb] at h; cases h
-                  simp [setCurrentProcess_result, hsr] at ht
-              · simp [hbi] at h
-                cases hff : s.module.findFunction funName with
-                | none => simp [hff] at h
-                | some callee =>
-                  simp [hff] at h
-                  by_cases har : callee.arity = (readArgs! frame argRegs).size
-                  · simp [har] at h; cases h
-                    simp [setCurrentProcess_result, hsr] at ht
-                  · simp [har] at h; exact nomatch h
+          · simp [hetsn] at h
+            by_cases hetsn2 : funName = "ets_new/2"
+            · simp [hetsn2] at h
+              by_cases har : (readArgs! frame argRegs).size = 2
+              · simp only [har, ↓reduceIte, ite_false] at h
+                exact etsNew2_result_is_toTerm s p frame dest
+                  (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
+                  hsr h ht
+              · simp only [har, ↓reduceIte, ite_true] at h; exact nomatch h
+            · simp [hetsn2] at h
+              by_cases hetsi : funName = "ets_insert/3"
+              · simp [hetsi] at h
+                by_cases har : (readArgs! frame argRegs).size = 3
+                · simp only [har, ↓reduceIte, ite_false] at h
+                  exact etsInsert_result_is_toTerm s p frame dest
+                    (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
+                    (readArgs! frame argRegs)[2]! hsr h ht
+                · simp only [har, ↓reduceIte, ite_true] at h; exact nomatch h
+              · simp [hetsi] at h
+                by_cases hetsl : funName = "ets_lookup/2"
+                · simp [hetsl] at h
+                  by_cases har : (readArgs! frame argRegs).size = 2
+                  · simp only [har, ↓reduceIte, ite_false] at h
+                    exact etsLookup_result_is_toTerm s p frame dest
+                      (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
+                      hsr h ht
+                  · simp only [har, ↓reduceIte, ite_true] at h; exact nomatch h
+                · simp [hetsl] at h
+                  by_cases hetsd : funName = "ets_delete/2"
+                  · simp [hetsd] at h
+                    by_cases har : (readArgs! frame argRegs).size = 2
+                    · simp only [har, ↓reduceIte, ite_false] at h
+                      exact etsDelete_result_is_toTerm s p frame dest
+                        (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
+                        hsr h ht
+                    · simp only [har, ↓reduceIte, ite_true] at h; exact nomatch h
+                  · simp [hetsd] at h
+                    by_cases hetsm : funName = "ets_match_object/2"
+                    · simp [hetsm] at h
+                      by_cases har : (readArgs! frame argRegs).size = 2
+                      · simp only [har, ↓reduceIte, ite_false] at h
+                        exact etsMatchObject_result_is_toTerm s p frame dest
+                          (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
+                          hsr h ht
+                      · simp only [har, ↓reduceIte, ite_true] at h; exact nomatch h
+                    · simp [hetsm] at h
+                      by_cases hetss : funName = "ets_select/2"
+                      · simp [hetss] at h
+                        by_cases har : (readArgs! frame argRegs).size = 2
+                        · simp only [har, ↓reduceIte, ite_false] at h
+                          exact etsSelect_result_is_toTerm s p frame dest
+                            (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
+                            hsr h ht
+                        · simp only [har, ↓reduceIte, ite_true] at h; exact nomatch h
+                      · simp [hetss] at h
+                        by_cases hmref : funName = "make_ref/0"
+                        · simp [hmref] at h
+                          split at h
+                          · cases h
+                            simp [setCurrentProcess_result, nextRef_result, hsr] at ht
+                          · exact nomatch h
+                        · simp [hmref] at h
+                          by_cases htu : isMakeTupleName funName = true
+                          · simp [htu] at h; cases h
+                            simp [makeTuple_result, hsr] at ht
+                          · simp [htu] at h
+                            by_cases hbi : isBuiltinName funName = true
+                            · simp [hbi] at h
+                              cases hb : builtin p.heap p.pid funName
+                                  (readArgs! frame argRegs) with
+                              | error _ => simp [hb] at h
+                              | badarg =>
+                                simp [hb] at h
+                                exact raiseValue_result_is_toTerm s p frame
+                                  (.atom "badarg") hsr h ht
+                              | ok v =>
+                                simp [hb] at h; cases h
+                                simp [setCurrentProcess_result, hsr] at ht
+                            · simp [hbi] at h
+                              cases hff : s.module.findFunction funName with
+                              | none => simp [hff] at h
+                              | some callee =>
+                                simp [hff] at h
+                                by_cases har :
+                                    callee.arity = (readArgs! frame argRegs).size
+                                · simp [har] at h; cases h
+                                  simp [setCurrentProcess_result, hsr] at ht
+                                · simp [har] at h; exact nomatch h
 
 /-- `stepInstr` publishes machine result only via `scheduleNext` (as `toTerm`). -/
 theorem stepInstr_result_is_toTerm
@@ -536,10 +805,10 @@ theorem stepInstr_result_is_toTerm
           split at h
           · cases h; simp [setCurrentProcess_result, hsr] at ht
           · exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
-      | nil | bool _ | int _ | float _ | string _ | pid _ | reference _ | ref _ =>
+      | nil | bool _ | int _ | float _ | string _ | bitstring _ | pid _ | reference _ | ref _ =>
         simp [hfun] at h
         exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
-    | nil | bool _ | int _ | float _ | string _ | pid _ | reference _ | ref _ =>
+    | nil | bool _ | int _ | float _ | string _ | bitstring _ | pid _ | reference _ | ref _ =>
       simp [hmod] at h
       exact raiseValue_result_is_toTerm s p frame (.atom "badarg") hsr h ht
 

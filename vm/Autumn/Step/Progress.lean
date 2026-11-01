@@ -4,7 +4,12 @@ import Autumn.Step
 namespace Autumn
 namespace Step
 
-/-! # Progress helpers (per-opcode cases in `Step.ProgressInstr`) -/
+/-! # Progress helpers (public proof surface)
+
+Shared by `Step.ProgressInstr`. Prefer `builtin_error_not_structural`,
+`raiseValue_error_not_structural`, and frame/IP helpers over unfolding
+`builtin` / `raiseValue`. See `AGENTS.md` (“Public proof surface”).
+-/
 
 theorem setReg!_WF (f : Frame) (r : Reg) (v : Value) (m : Module)
     (hwf : Frame.WF m f) : Frame.WF m (setReg! f r v) := by
@@ -71,9 +76,11 @@ theorem builtin_error_not_structural {heap : Heap} {selfPid : Nat} {name : FunNa
             all_goals (
               try split at herr
               all_goals (
-                try { injection herr with heq; subst heq; rfl }
-                try { cases herr }
-                try { exact nomatch herr }
+                first
+                | injection herr with heq; subst heq; rfl
+                | exact False.elim (floatBinop_ne_error _ _ _ e herr)
+                | cases herr
+                | exact nomatch herr
               )
             )
           )

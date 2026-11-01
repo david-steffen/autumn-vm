@@ -239,7 +239,7 @@
             },
             {
               "dest": 3,
-              "empty": 104,
+              "empty": 133,
               "index": 2,
               "op": "recv_peek"
             },
@@ -626,7 +626,7 @@
             },
             {
               "op": "jump",
-              "target": 106
+              "target": 135
             },
             {
               "dest": 37,
@@ -833,35 +833,201 @@
             },
             {
               "op": "jump",
+              "target": 135
+            },
+            {
+              "op": "jump",
+              "target": 102
+            },
+            {
+              "op": "jump",
+              "target": 129
+            },
+            {
+              "index": 2,
+              "op": "recv_drop"
+            },
+            {
+              "args": [
+                0,
+                3,
+                1
+              ],
+              "dest": 53,
+              "fun": "GenServer.do_info/3",
+              "op": "call"
+            },
+            {
+              "dest": 55,
+              "op": "is_tag",
+              "reg": 53,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 55,
+              "target": 107
+            },
+            {
+              "op": "jump",
+              "target": 114
+            },
+            {
+              "dest": 56,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 53
+            },
+            {
+              "lit": {
+                "atom": "noreply"
+              },
+              "op": "jump_if_eq",
+              "reg": 56,
+              "target": 110
+            },
+            {
+              "op": "jump",
               "target": 106
+            },
+            {
+              "dest": 57,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 53
+            },
+            {
+              "args": [
+                0,
+                57
+              ],
+              "dest": 58,
+              "fun": "GenServer.loop/2",
+              "op": "call"
+            },
+            {
+              "dest": 54,
+              "op": "move",
+              "src": 58
+            },
+            {
+              "op": "jump",
+              "target": 127
+            },
+            {
+              "dest": 59,
+              "op": "is_tag",
+              "reg": 53,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 59,
+              "target": 117
+            },
+            {
+              "op": "jump",
+              "target": 125
+            },
+            {
+              "dest": 60,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 53
+            },
+            {
+              "lit": {
+                "atom": "stop"
+              },
+              "op": "jump_if_eq",
+              "reg": 60,
+              "target": 120
+            },
+            {
+              "op": "jump",
+              "target": 116
+            },
+            {
+              "dest": 61,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 53
+            },
+            {
+              "dest": 62,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 53
+            },
+            {
+              "lit": {
+                "atom": "ok"
+              },
+              "op": "load_lit",
+              "reg": 63
+            },
+            {
+              "dest": 54,
+              "op": "move",
+              "src": 63
+            },
+            {
+              "op": "jump",
+              "target": 127
+            },
+            {
+              "lit": {
+                "atom": "match_error"
+              },
+              "op": "load_lit",
+              "reg": 64
+            },
+            {
+              "op": "raise",
+              "reg": 64
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 54
+            },
+            {
+              "op": "jump",
+              "target": 135
             },
             {
               "lit": {
                 "int": 1
               },
               "op": "load_lit",
-              "reg": 53
+              "reg": 65
             },
             {
               "args": [
                 2,
-                53
+                65
               ],
-              "dest": 54,
+              "dest": 66,
               "fun": "+/2",
               "op": "call"
             },
             {
               "dest": 2,
               "op": "move",
-              "src": 54
+              "src": 66
             },
             {
               "op": "jump",
               "target": 1
             },
             {
-              "after": 105,
+              "after": 134,
               "op": "wait",
               "retry": 1,
               "timeout": null
@@ -876,8 +1042,94 @@
               "reg": 4
             }
           ],
-          "locals": 55,
+          "locals": 67,
           "name": "GenServer.loop/2"
+        },
+        {
+          "arity": 3,
+          "code": [
+            {
+              "exc": 4,
+              "op": "enter_try",
+              "rescue": 6
+            },
+            {
+              "lit": {
+                "atom": "handle_info"
+              },
+              "op": "load_lit",
+              "reg": 5
+            },
+            {
+              "args": [
+                1,
+                2
+              ],
+              "dest": 6,
+              "fun": 5,
+              "mod": 0,
+              "op": "apply_mfa"
+            },
+            {
+              "dest": 3,
+              "op": "move",
+              "src": 6
+            },
+            {
+              "op": "leave_try"
+            },
+            {
+              "op": "jump",
+              "target": 13
+            },
+            {
+              "lit": {
+                "atom": "undef"
+              },
+              "op": "jump_if_eq",
+              "reg": 4,
+              "target": 8
+            },
+            {
+              "op": "jump",
+              "target": 12
+            },
+            {
+              "lit": {
+                "atom": "noreply"
+              },
+              "op": "load_lit",
+              "reg": 7
+            },
+            {
+              "args": [
+                7,
+                2
+              ],
+              "dest": 8,
+              "fun": "make_tuple/2",
+              "op": "call"
+            },
+            {
+              "dest": 3,
+              "op": "move",
+              "src": 8
+            },
+            {
+              "op": "jump",
+              "target": 13
+            },
+            {
+              "op": "raise",
+              "reg": 4
+            },
+            {
+              "op": "return",
+              "reg": 3
+            }
+          ],
+          "locals": 9,
+          "name": "GenServer.do_info/3"
         },
         {
           "arity": 2,
@@ -1019,7 +1271,7 @@
             },
             {
               "op": "jump",
-              "target": 49
+              "target": 50
             },
             {
               "dest": 15,
@@ -1132,7 +1384,7 @@
             },
             {
               "op": "jump",
-              "target": 49
+              "target": 50
             },
             {
               "lit": {
@@ -1163,7 +1415,11 @@
               "after": 47,
               "op": "wait",
               "retry": 7,
-              "timeout": 50
+              "timeout": 500
+            },
+            {
+              "op": "demonitor",
+              "ref": 4
             },
             {
               "lit": {

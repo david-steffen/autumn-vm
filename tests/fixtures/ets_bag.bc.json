@@ -1,0 +1,282 @@
+{
+  "entry": "Main.main/0",
+  "modules": [
+    {
+      "functions": [
+        {
+          "arity": 0,
+          "code": [
+            {
+              "args": [],
+              "dest": 0,
+              "fun": "ets_new/0",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 0
+            }
+          ],
+          "locals": 1,
+          "name": "Ets.new/0"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "ets_new/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "Ets.new/2"
+        },
+        {
+          "arity": 3,
+          "code": [
+            {
+              "args": [
+                0,
+                1,
+                2
+              ],
+              "dest": 3,
+              "fun": "ets_insert/3",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 3
+            }
+          ],
+          "locals": 4,
+          "name": "Ets.insert/3"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "ets_lookup/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "Ets.lookup/2"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "ets_delete/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "Ets.delete/2"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "ets_match_object/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "Ets.match_object/2"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "ets_select/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "Ets.select/2"
+        }
+      ],
+      "name": "Ets"
+    },
+    {
+      "functions": [
+        {
+          "arity": 0,
+          "code": [
+            {
+              "lit": null,
+              "op": "load_lit",
+              "reg": 0
+            },
+            {
+              "lit": {
+                "atom": "bag"
+              },
+              "op": "load_lit",
+              "reg": 1
+            },
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "Ets.new/2",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "atom": "k"
+              },
+              "op": "load_lit",
+              "reg": 3
+            },
+            {
+              "lit": {
+                "int": 1
+              },
+              "op": "load_lit",
+              "reg": 4
+            },
+            {
+              "args": [
+                2,
+                3,
+                4
+              ],
+              "dest": 5,
+              "fun": "Ets.insert/3",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "atom": "k"
+              },
+              "op": "load_lit",
+              "reg": 6
+            },
+            {
+              "lit": {
+                "int": 2
+              },
+              "op": "load_lit",
+              "reg": 7
+            },
+            {
+              "args": [
+                2,
+                6,
+                7
+              ],
+              "dest": 8,
+              "fun": "Ets.insert/3",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "atom": "k"
+              },
+              "op": "load_lit",
+              "reg": 9
+            },
+            {
+              "lit": {
+                "int": 1
+              },
+              "op": "load_lit",
+              "reg": 10
+            },
+            {
+              "args": [
+                2,
+                9,
+                10
+              ],
+              "dest": 11,
+              "fun": "Ets.insert/3",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "atom": "k"
+              },
+              "op": "load_lit",
+              "reg": 12
+            },
+            {
+              "args": [
+                2,
+                12
+              ],
+              "dest": 13,
+              "fun": "Ets.lookup/2",
+              "op": "call"
+            },
+            {
+              "args": [
+                13
+              ],
+              "dest": 14,
+              "fun": "list_size/1",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 14
+            }
+          ],
+          "locals": 15,
+          "name": "Main.main/0"
+        }
+      ],
+      "name": "Main"
+    }
+  ],
+  "version": 17
+}

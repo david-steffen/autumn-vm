@@ -4,7 +4,12 @@ import Autumn.State
 namespace Autumn
 namespace Heap
 
-/-! # Heap / GC lemmas -/
+/-! # Heap / GC lemmas (public proof surface)
+
+Prefer these theorems for value/node bound, sanitize, and GC facts. Avoid
+ad-hoc surgery on `Heap` fields in external proofs. See `AGENTS.md`
+(“Public proof surface”).
+-/
 
 theorem sanitizeValue_valueBound (bound : Nat) (v : Value) :
     valueBound bound (sanitizeValue bound v) := by
@@ -18,6 +23,7 @@ theorem sanitizeValue_valueBound (bound : Nat) (v : Value) :
   | reference _ => trivial
   | float _ => trivial
   | string _ => trivial
+  | bitstring _ => trivial
 
 theorem sanitizeNode_nodeBound (bound : Nat) (n : Node) :
     nodeBound bound (sanitizeNode bound n) := by
@@ -122,6 +128,7 @@ theorem valueWF_of_valueBound (h : Heap) (hwf : Heap.WF h) (v : Value)
   | reference _ => exact ⟨hb, trivial⟩
   | float _ => exact ⟨hb, trivial⟩
   | string _ => exact ⟨hb, trivial⟩
+  | bitstring _ => exact ⟨hb, trivial⟩
 
 theorem sanitizeValue_eq_of_not_ref (bound : Nat) (v : Value)
     (hne : ¬ ∃ r, v = .ref r) : sanitizeValue bound v = v := by
@@ -135,6 +142,7 @@ theorem sanitizeValue_eq_of_not_ref (bound : Nat) (v : Value)
   | reference _ => rfl
   | float _ => rfl
   | string _ => rfl
+  | bitstring _ => rfl
 
 /-- Evacuating an immediate leaves it unchanged (any fuel, any to-space). -/
 theorem evacuateValue_of_not_ref (fuel : Nat) (old : Heap) (fwd : Fwd)
@@ -152,6 +160,7 @@ theorem evacuateValue_of_not_ref (fuel : Nat) (old : Heap) (fwd : Fwd)
     | reference _ => simp [evacuateValue]
     | float _ => simp [evacuateValue]
     | string _ => simp [evacuateValue]
+    | bitstring _ => simp [evacuateValue]
   | succ fuel =>
     cases v with
     | ref r => exact False.elim (hne ⟨r, rfl⟩)
@@ -163,6 +172,7 @@ theorem evacuateValue_of_not_ref (fuel : Nat) (old : Heap) (fwd : Fwd)
     | reference _ => simp [evacuateValue]
     | float _ => simp [evacuateValue]
     | string _ => simp [evacuateValue]
+    | bitstring _ => simp [evacuateValue]
 
 /-- Evacuating an immediate (minor GC) leaves it unchanged. -/
 theorem evacuateYoungValue_of_not_ref (fuel : Nat) (old : Heap) (fwd : Fwd)
@@ -180,6 +190,7 @@ theorem evacuateYoungValue_of_not_ref (fuel : Nat) (old : Heap) (fwd : Fwd)
     | reference _ => simp [evacuateYoungValue]
     | float _ => simp [evacuateYoungValue]
     | string _ => simp [evacuateYoungValue]
+    | bitstring _ => simp [evacuateYoungValue]
   | succ fuel =>
     cases v with
     | ref r => exact False.elim (hne ⟨r, rfl⟩)
@@ -191,6 +202,7 @@ theorem evacuateYoungValue_of_not_ref (fuel : Nat) (old : Heap) (fwd : Fwd)
     | reference _ => simp [evacuateYoungValue]
     | float _ => simp [evacuateYoungValue]
     | string _ => simp [evacuateYoungValue]
+    | bitstring _ => simp [evacuateYoungValue]
 
 theorem evacuateRoots_heap_WF (h : Heap) (roots : Array Value)
     (hy : 0 < h.youngCapacity) : WF (evacuateRoots h roots).1 := by
@@ -342,6 +354,7 @@ mutual
       | reference _ => simp [copyValueFuel]
       | float _ => simp [copyValueFuel]
       | string _ => simp [copyValueFuel]
+      | bitstring _ => simp [copyValueFuel]
       | ref r =>
         simp only [copyValueFuel]
         split
@@ -442,7 +455,7 @@ mutual
     | zero => simp [toTermFuel]
     | succ fuel =>
       cases v with
-      | nil | bool _ | int _ | float _ | atom _ | string _ | pid _ | reference _ => simp [toTermFuel]
+      | nil | bool _ | int _ | float _ | atom _ | string _ | bitstring _ | pid _ | reference _ => simp [toTermFuel]
       | ref r =>
         have hg : get? h₁ r = get? h₂ r := by simp [get?, hn]
         simp only [toTermFuel]
@@ -509,6 +522,7 @@ theorem toTermFuel_immediate_eq (fuel₁ fuel₂ : Nat) (h₁ h₂ : Heap) (v : 
   | reference id => simp [toTermFuel]
   | float f => simp [toTermFuel]
   | string s => simp [toTermFuel]
+  | bitstring _s => simp [toTermFuel]
 
 /-- Flat compound: a ref whose node children are all immediates. -/
 def flatCompound (h : Heap) (v : Value) : Prop :=

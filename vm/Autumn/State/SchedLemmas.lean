@@ -2,7 +2,11 @@ import Autumn.State.ProcessLemmas
 
 namespace Autumn
 
-/-! # Scheduler lemmas -/
+/-! # Scheduler lemmas (public proof surface)
+
+Prefer `findRunnable_*` / `scheduleNext_*` here over unfolding the scheduler.
+Part of the `State/Lemmas` barrel. See `AGENTS.md` (“Public proof surface”).
+-/
 
 theorem findRunnable_lt (procs : Array Process) (idx fuel : Nat) {j : Nat}
     (hne : 0 < procs.size) (h : State.findRunnable procs idx fuel = some j) :
@@ -144,5 +148,104 @@ theorem scheduleNext_result_is_toTerm
           exact ⟨ep.heap, v, ht'.symm⟩
         · exact nomatch h
       · exact nomatch h
+
+/-! ## ScheduleChoice / `scheduleNextWith` (Phase 27) -/
+
+@[simp] theorem scheduleNextWith_roundRobin (s : State) (fromIdx : Nat) :
+    State.scheduleNextWith s fromIdx .roundRobin = State.scheduleNext s fromIdx :=
+  rfl
+
+theorem wakeExpired_size (procs : Array Process) (clock : Nat) :
+    (State.wakeExpired procs clock).size = procs.size := by
+  simp [State.wakeExpired, Array.size_map]
+
+/-- `wakeExpired` does not demote an already-runnable process. -/
+theorem wakeExpired_preserves_runnable (procs : Array Process) (clock idx : Nat)
+    (hlt : idx < procs.size)
+    (hrun : State.processRunnable (procs[idx]) = true) :
+    State.processRunnable
+      ((State.wakeExpired procs clock)[idx]'(by simpa [wakeExpired_size] using hlt)) = true := by
+  revert hrun
+  cases hst : procs[idx].status with
+  | runnable =>
+    intro hrun
+    have heq :
+        (State.wakeExpired procs clock)[idx]'(by simpa [wakeExpired_size] using hlt) =
+          procs[idx] := by
+      simp only [State.wakeExpired, Array.getElem_map, hst]
+    simpa [heq] using hrun
+  | waiting =>
+    intro hrun
+    simp only [State.processRunnable, hst, Bool.and_eq_true] at hrun
+    have : (ProcStatus.waiting == .runnable) = false := rfl
+    rw [this] at hrun; cases hrun.1
+  | exited =>
+    intro hrun
+    simp only [State.processRunnable, hst, Bool.and_eq_true] at hrun
+    have : (ProcStatus.exited == .runnable) = false := rfl
+    rw [this] at hrun; cases hrun.1
+
+theorem scheduleNextWith_preserves (s : State) (fromIdx : Nat) (c : State.ScheduleChoice)
+    {s'} (hs : State.WF s) (h : State.scheduleNextWith s fromIdx c = .ok s') :
+    State.WF s' := by
+  cases c with
+  | roundRobin =>
+    exact scheduleNext_preserves s fromIdx hs (by simpa [State.scheduleNextWith] using h)
+  | prefer idx =>
+    simp only [State.scheduleNextWith] at h
+    by_cases hsz : s.processes.size = 0
+    · simp [hsz] at h
+    · rw [if_neg hsz] at h
+      have hszW := wakeExpired_size s.processes s.clock
+      have hprocs := wakeExpired_preserves_procs s.module s.processes s.clock hs.2.2.2
+      have hs1 : State.WF { s with processes := State.wakeExpired s.processes s.clock } := by
+        refine ⟨hs.1, by simpa [hszW] using hs.2.1, ?_, ?_⟩
+        · simpa [hszW] using hs.2.2.1
+        · intro i hi; simpa using hprocs i (by simpa [hszW] using hi)
+      by_cases hlt : idx < (State.wakeExpired s.processes s.clock).size
+      · rw [dif_pos hlt] at h
+        by_cases hrun :
+            State.processRunnable ((State.wakeExpired s.processes s.clock)[idx]'hlt) = true
+        · rw [if_pos hrun] at h
+          cases h
+          exact ⟨hs1.1, hs1.2.1, hlt, hs1.2.2.2⟩
+        · rw [if_neg hrun] at h
+          exact scheduleNext_preserves _ fromIdx hs1 h
+      · rw [dif_neg hlt] at h
+        exact scheduleNext_preserves _ fromIdx hs1 h
+
+/-- Preferring a runnable index selects it. -/
+theorem scheduleNextWith_prefer_runnable (s : State) (fromIdx idx : Nat)
+    (hne : 0 < s.processes.size) (hlt : idx < s.processes.size)
+    (hrun : State.processRunnable (s.processes[idx]) = true)
+    {s'} (h : State.scheduleNextWith s fromIdx (.prefer idx) = .ok s') :
+    s'.current = idx := by
+  have hlt' : idx < (State.wakeExpired s.processes s.clock).size := by
+    simpa [wakeExpired_size] using hlt
+  have hrun' := wakeExpired_preserves_runnable s.processes s.clock idx hlt hrun
+  simp only [State.scheduleNextWith] at h
+  rw [if_neg (Nat.ne_of_gt hne), dif_pos hlt', if_pos hrun'] at h
+  cases h; rfl
+
+/-- `.prefer j` schedules `j` when that process is runnable (∃ schedule). -/
+theorem exists_schedule_prefer (s : State) (fromIdx j : Nat)
+    (hne : 0 < s.processes.size) (hj : j < s.processes.size)
+    (hrj : State.processRunnable (s.processes[j]) = true) :
+    ∃ s', State.scheduleNextWith s fromIdx (.prefer j) = .ok s' ∧ s'.current = j := by
+  refine ⟨{ s with
+      processes := State.wakeExpired s.processes s.clock
+      current := j
+      reductions := State.reductionBudget }, ?_, rfl⟩
+  have hlt' : j < (State.wakeExpired s.processes s.clock).size := by
+    simpa [wakeExpired_size] using hj
+  have hrunj := wakeExpired_preserves_runnable s.processes s.clock j hj hrj
+  simp only [State.scheduleNextWith]
+  rw [if_neg (Nat.ne_of_gt hne), dif_pos hlt', if_pos hrunj]
+
+/-- Round-robin is always available as a schedule choice (∀ includes this strategy). -/
+theorem forall_includes_roundRobin (s : State) (fromIdx : Nat) {s'}
+    (h : State.scheduleNext s fromIdx = .ok s') :
+    State.scheduleNextWith s fromIdx .roundRobin = .ok s' := by
+  simpa using h
 
 end Autumn

@@ -1,5 +1,6 @@
 import Autumn.State
 import Autumn.Process
+import Autumn.Ets
 import Autumn.Json.Decode
 import Autumn.WellFormed
 
@@ -14,6 +15,19 @@ inductive BuiltinResult where
   | error (e : StepError)
   deriving Repr
 
+/-- FiniteFloat binop → builtin result (overflow / non-finite → `:badarg`). -/
+def floatBinop (op : Term.FiniteFloat → Term.FiniteFloat → Option Term.FiniteFloat)
+    (a b : Term.FiniteFloat) : BuiltinResult :=
+  match op a b with
+  | some c => .ok (.float c)
+  | none => .badarg
+
+theorem floatBinop_ne_error (op : Term.FiniteFloat → Term.FiniteFloat → Option Term.FiniteFloat)
+    (a b : Term.FiniteFloat) (e : StepError) :
+    floatBinop op a b ≠ .error e := by
+  simp [floatBinop]
+  split <;> intro h <;> exact nomatch h
+
 /-- Builtins operate on materialized views where needed; arithmetic uses immediates.
 `selfPid` is the calling process id (used by `self/0`).
 Language-shaped type mismatches yield `.badarg` (IR v14); IR corruption stays `.error`. -/
@@ -24,19 +38,19 @@ def builtin (h : Heap) (selfPid : Nat) (name : FunName) (args : Array Value) :
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
       | .int a, .int b => .ok (.int (a + b))
-      | .float a, .float b => .ok (.float (a + b))
+      | .float a, .float b => floatBinop Term.FiniteFloat.add a b
       | _, _ => .badarg
   | "-/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
       | .int a, .int b => .ok (.int (a - b))
-      | .float a, .float b => .ok (.float (a - b))
+      | .float a, .float b => floatBinop Term.FiniteFloat.sub a b
       | _, _ => .badarg
   | "*/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
       | .int a, .int b => .ok (.int (a * b))
-      | .float a, .float b => .ok (.float (a * b))
+      | .float a, .float b => floatBinop Term.FiniteFloat.mul a b
       | _, _ => .badarg
   | "==/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
@@ -45,30 +59,34 @@ def builtin (h : Heap) (selfPid : Nat) (name : FunName) (args : Array Value) :
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
       | .int a, .int b => .ok (.bool (decide (a < b)))
-      | .float a, .float b => .ok (.bool (Float.lt a b))
+      | .float a, .float b => .ok (.bool (Term.FiniteFloat.lt a b))
       | _, _ => .badarg
   | ">/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
       | .int a, .int b => .ok (.bool (decide (a > b)))
-      | .float a, .float b => .ok (.bool (Float.lt b a))
+      | .float a, .float b => .ok (.bool (Term.FiniteFloat.lt b a))
       | _, _ => .badarg
   | "<=/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
       | .int a, .int b => .ok (.bool (decide (a ≤ b)))
-      | .float a, .float b => .ok (.bool (!(Float.lt b a)))
+      | .float a, .float b => .ok (.bool (!(Term.FiniteFloat.lt b a)))
       | _, _ => .badarg
   | ">=/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
       | .int a, .int b => .ok (.bool (decide (a ≥ b)))
-      | .float a, .float b => .ok (.bool (!(Float.lt a b)))
+      | .float a, .float b => .ok (.bool (!(Term.FiniteFloat.lt a b)))
       | _, _ => .badarg
   | "<>/2" =>
     if args.size != 2 then .error (.badArity name 2 args.size)
     else match args[0]!, args[1]! with
       | .string a, .string b => .ok (.string (a ++ b))
+      | .bitstring a, .bitstring b =>
+        match Term.Bitstring.appendAligned a b with
+        | some c => .ok (.bitstring c)
+        | none => .badarg
       | _, _ => .badarg
   | "tuple_size/1" =>
     if args.size != 1 then .error (.badArity name 1 args.size)
@@ -232,6 +250,120 @@ def processExit (s : State) (p : Process) (frame : Frame) (dest : Reg)
       State.scheduleNext s s.current
   | _ => raiseValue s p frame (.atom "badarg")
 
+/-- Park `t` in `dest` and advance IP (may GC). -/
+def finishWithTerm (s : State) (p : Process) (frame : Frame) (dest : Reg) (t : Term) :
+    Except StepError State :=
+  let p := State.setCurrentFrame p frame
+  let (p, v) := Process.allocTerm p t
+  let frame := p.stack[p.stack.size - 1]!
+  let frame := setReg! frame dest v
+  let frame := { frame with ip := frame.ip + 1 }
+  .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
+
+/-- `ets_new/0` — allocate anonymous `:set`; returns tid as int. -/
+def etsNew (s : State) (p : Process) (frame : Frame) (dest : Reg) :
+    Except StepError State :=
+  let (s, tid) := State.etsNew s
+  let frame := setReg! frame dest (.int tid)
+  let frame := { frame with ip := frame.ip + 1 }
+  .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
+
+/-- `ets_new/2` — `(name|nil, type)` → tid. -/
+def etsNew2 (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (nameV typeV : Value) : Except StepError State :=
+  let nameT := Heap.toTerm p.heap nameV
+  let typeT := Heap.toTerm p.heap typeV
+  match typeT with
+  | .atom ty =>
+    match Ets.kindOfAtom ty with
+    | none => raiseValue s p frame (.atom "badarg")
+    | some kind =>
+      match nameT with
+      | .nil =>
+        match State.etsNewNamed s none kind with
+        | none => raiseValue s p frame (.atom "badarg")
+        | some (s, tid) =>
+          let frame := setReg! frame dest (.int tid)
+          let frame := { frame with ip := frame.ip + 1 }
+          .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
+      | .atom n =>
+        match State.etsNewNamed s (some n) kind with
+        | none => raiseValue s p frame (.atom "badarg")
+        | some (s, tid) =>
+          let frame := setReg! frame dest (.int tid)
+          let frame := { frame with ip := frame.ip + 1 }
+          .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
+      | _ => raiseValue s p frame (.atom "badarg")
+  | _ => raiseValue s p frame (.atom "badarg")
+
+/-- `ets_insert/3` — copy key/val; tab = tid or name atom. -/
+def etsInsert (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV keyV valV : Value) : Except StepError State :=
+  let tabT := Heap.toTerm p.heap tabV
+  match State.etsResolve s tabT with
+  | none => raiseValue s p frame (.atom "badarg")
+  | some tid =>
+    let keyT := Heap.toTerm p.heap keyV
+    let valT := Heap.toTerm p.heap valV
+    match State.etsInsert s tid keyT valT with
+    | none => raiseValue s p frame (.atom "badarg")
+    | some s =>
+      let frame := setReg! frame dest (.atom "true")
+      let frame := { frame with ip := frame.ip + 1 }
+      .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
+
+/-- `ets_lookup/2` — list of values for key (empty if none). -/
+def etsLookup (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV keyV : Value) : Except StepError State :=
+  let tabT := Heap.toTerm p.heap tabV
+  match State.etsResolve s tabT with
+  | none => raiseValue s p frame (.atom "badarg")
+  | some tid =>
+    let keyT := Heap.toTerm p.heap keyV
+    match State.etsLookup s tid keyT with
+    | none => raiseValue s p frame (.atom "badarg")
+    | some vals => finishWithTerm s p frame dest (.list vals)
+
+/-- `ets_delete/2` — drop entries with key. -/
+def etsDelete (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV keyV : Value) : Except StepError State :=
+  let tabT := Heap.toTerm p.heap tabV
+  match State.etsResolve s tabT with
+  | none => raiseValue s p frame (.atom "badarg")
+  | some tid =>
+    let keyT := Heap.toTerm p.heap keyV
+    match State.etsDelete s tid keyT with
+    | none => raiseValue s p frame (.atom "badarg")
+    | some s =>
+      let frame := setReg! frame dest (.atom "true")
+      let frame := { frame with ip := frame.ip + 1 }
+      .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
+
+/-- `ets_match_object/2` — list of matching `{key,val}` objects. -/
+def etsMatchObject (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV patV : Value) : Except StepError State :=
+  let tabT := Heap.toTerm p.heap tabV
+  match State.etsResolve s tabT with
+  | none => raiseValue s p frame (.atom "badarg")
+  | some tid =>
+    let patT := Heap.toTerm p.heap patV
+    match State.etsMatchObject s tid patT with
+    | none => raiseValue s p frame (.atom "badarg")
+    | some objs => finishWithTerm s p frame dest (.list objs)
+
+/-- `ets_select/2` — teaching match-spec → list of results. -/
+def etsSelect (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV specV : Value) : Except StepError State :=
+  let tabT := Heap.toTerm p.heap tabV
+  match State.etsResolve s tabT with
+  | none => raiseValue s p frame (.atom "badarg")
+  | some tid =>
+    let specT := Heap.toTerm p.heap specV
+    match State.etsSelect s tid specT with
+    | none => raiseValue s p frame (.atom "badarg")
+    | some (.error ()) => raiseValue s p frame (.atom "badarg")
+    | some (.ok vals) => finishWithTerm s p frame dest (.list vals)
+
 /-- `make_tuple/N` allocates a tuple from argument registers (GC-safe). -/
 def makeTuple (s : State) (p : Process) (frame : Frame) (dest : Reg)
     (elems : Array Value) : State :=
@@ -312,6 +444,41 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
         throw (.badArity funName 2 args.size)
       else
         processExit s p frame dest args[0]! args[1]!
+    else if funName == "ets_new/0" then
+      if args.size != 0 then
+        throw (.badArity funName 0 args.size)
+      else
+        etsNew s p frame dest
+    else if funName == "ets_new/2" then
+      if args.size != 2 then
+        throw (.badArity funName 2 args.size)
+      else
+        etsNew2 s p frame dest args[0]! args[1]!
+    else if funName == "ets_insert/3" then
+      if args.size != 3 then
+        throw (.badArity funName 3 args.size)
+      else
+        etsInsert s p frame dest args[0]! args[1]! args[2]!
+    else if funName == "ets_lookup/2" then
+      if args.size != 2 then
+        throw (.badArity funName 2 args.size)
+      else
+        etsLookup s p frame dest args[0]! args[1]!
+    else if funName == "ets_delete/2" then
+      if args.size != 2 then
+        throw (.badArity funName 2 args.size)
+      else
+        etsDelete s p frame dest args[0]! args[1]!
+    else if funName == "ets_match_object/2" then
+      if args.size != 2 then
+        throw (.badArity funName 2 args.size)
+      else
+        etsMatchObject s p frame dest args[0]! args[1]!
+    else if funName == "ets_select/2" then
+      if args.size != 2 then
+        throw (.badArity funName 2 args.size)
+      else
+        etsSelect s p frame dest args[0]! args[1]!
     else if funName == "make_ref/0" then
       if args.size != 0 then
         throw (.badArity funName 0 args.size)
@@ -438,7 +605,7 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
     | _ => throw (.typeError "get_list_rest expects a list")
   | .isTag dest reg tag =>
     let v := getReg! frame reg
-    let frame := setReg! frame dest (.bool (tagOf p.heap v == tag))
+    let frame := setReg! frame dest (.bool (Value.tagMatches p.heap v tag))
     let frame := { frame with ip := frame.ip + 1 }
     pure (s.setCurrentProcess (State.setCurrentFrame p frame))
   | .spawn dest funName argRegs =>

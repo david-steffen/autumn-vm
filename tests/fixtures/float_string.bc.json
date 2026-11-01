@@ -125,7 +125,7 @@
           "dest": 14,
           "op": "is_tag",
           "reg": 8,
-          "tag": "string"
+          "tag": "binary"
         },
         {
           "lit": {
@@ -393,5 +393,5 @@
       "name": "Main.main/0"
     }
   ],
-  "version": 10
+  "version": 16
 }

@@ -10,9 +10,10 @@ inductive Value where
   | nil
   | bool (b : Bool)
   | int (n : Int)
-  | float (f : Float)
+  | float (f : Term.FiniteFloat)
   | atom (s : String)
   | string (s : String)
+  | bitstring (b : Term.Bitstring)
   | pid (id : Nat)
   /-- Unique reference (IR v9); not a heap pointer. -/
   | reference (id : Nat)
@@ -113,6 +114,7 @@ mutual
     | .reference id => .reference id
     | .float f => .float f
     | .string s => .string s
+    | .bitstring b => .bitstring b
     | .ref r =>
       match get? h r with
       | none => .atom "<dangling>"
@@ -156,6 +158,7 @@ mutual
       | .reference id => .reference id
       | .float f => .float f
       | .string s => .string s
+      | .bitstring b => .bitstring b
       | .ref r =>
         match get? h r with
         | none => toTermSentinel
@@ -208,8 +211,9 @@ mutual
     | .atom x, .atom y => x == y
     | .pid x, .pid y => x == y
     | .reference x, .reference y => x == y
-    | .float x, .float y => x == y
+    | .float x, .float y => Term.FiniteFloat.beq x y
     | .string x, .string y => x == y
+    | .bitstring x, .bitstring y => Term.Bitstring.beq x y
     | .ref ra, .ref rb =>
       match get? h ra, get? h rb with
       | some (.tuple xa), some (.tuple xb) =>
@@ -248,8 +252,9 @@ mutual
     | .atom a, .atom b => a == b
     | .pid a, .pid b => a == b
     | .reference a, .reference b => a == b
-    | .float a, .float b => a == b
+    | .float a, .float b => Term.FiniteFloat.beq a b
     | .string a, .string b => a == b
+    | .bitstring a, .bitstring b => Term.Bitstring.beq a b
     | .ref r, .tuple te =>
       match get? h r with
       | some (.tuple ve) =>
@@ -311,6 +316,7 @@ mutual
       | .reference id => (dst, .reference id)
       | .float f => (dst, .float f)
       | .string s => (dst, .string s)
+      | .bitstring b => (dst, .bitstring b)
       | .ref r =>
         match get? src r with
         | none => (dst, .nil)
@@ -382,6 +388,7 @@ mutual
       | .reference id => (h, .reference id)
       | .float f => (h, .float f)
       | .string s => (h, .string s)
+      | .bitstring b => (h, .bitstring b)
       | .tuple elems =>
         let (h, vs) := allocTermArrayFuel fuel h elems 0 #[]
         match alloc? h (.tuple vs) with
@@ -442,7 +449,7 @@ end
 
 /-- Structural size for fuel (avoids `sizeOf` in compiled code). -/
 partial def termFuel : Term → Nat
-  | .nil | .bool _ | .int _ | .float _ | .atom _ | .string _ | .pid _ | .reference _ => 1
+  | .nil | .bool _ | .int _ | .float _ | .atom _ | .string _ | .bitstring _ | .pid _ | .reference _ => 1
   | .tuple elems => elems.foldl (fun n e => n + termFuel e) 1
   | .list elems => elems.foldl (fun n e => n + termFuel e) 1
   | .map entries =>
@@ -480,6 +487,7 @@ mutual
       | .reference id => (fwd, neu, .reference id)
       | .float f => (fwd, neu, .float f)
       | .string s => (fwd, neu, .string s)
+      | .bitstring b => (fwd, neu, .bitstring b)
       | .ref r =>
         if hbound : r < fwd.size then
           match fwd[r] with
@@ -612,6 +620,7 @@ mutual
       | .reference id => (fwd, neu, .reference id)
       | .float f => (fwd, neu, .float f)
       | .string s => (fwd, neu, .string s)
+      | .bitstring b => (fwd, neu, .bitstring b)
       | .ref r =>
         if r < old.oldSize then
           (fwd, neu, .ref r)
@@ -694,6 +703,7 @@ def tagOf (h : Heap) (v : Value) : Tag :=
   | .reference _ => .ref
   | .float _ => .float
   | .string _ => .string
+  | .bitstring b => if Term.Bitstring.isBinary b then .binary else .bitstring
   | .ref r =>
     match Heap.get? h r with
     | some (.tuple _) => .tuple
@@ -701,6 +711,20 @@ def tagOf (h : Heap) (v : Value) : Tag :=
     | some (.map _) => .map
     | some (.closure _ _) => .fun
     | none => .nil
+
+/-- `is_tag` match: `binary` / `bitstring` treat UTF-8 `string` as Elixir-like. -/
+def tagMatches (h : Heap) (v : Value) (tag : Tag) : Bool :=
+  match tag with
+  | .binary =>
+    match v with
+    | .string _ => true
+    | .bitstring b => Term.Bitstring.isBinary b
+    | _ => false
+  | .bitstring =>
+    match v with
+    | .string _ | .bitstring _ => true
+    | _ => false
+  | _ => tagOf h v == tag
 
 end Value
 

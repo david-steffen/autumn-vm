@@ -3,10 +3,15 @@ import Autumn.Step.Progress
 namespace Autumn
 namespace Step
 
-/-! # Per-opcode `stepInstr` progress
+/-! # Per-opcode `stepInstr` progress (public proof surface)
 
-Thin `stepInstr_error_not_structural` dispatcher; bodies live in `*_error_not_structural`.
-Also hosts `step_progress` (depends on the dispatcher).
+Thin `stepInstr_error_not_structural` dispatcher. **External proofs** should
+call these `*_error_not_structural` lemmas (or `step_progress`) rather than
+unfolding `stepInstr` / `builtin`.
+
+Every `Instr` constructor has a case here. Pure-builtin structural errors go
+through `builtin_error_not_structural` / `floatBinop_ne_error` in `Step.Progress`.
+Also hosts `step_progress`. See `AGENTS.md` (“Public proof surface”).
 -/
 
 /-- `loadLit` case of `stepInstr_error_not_structural`. -/
@@ -76,32 +81,119 @@ theorem call_error_not_structural
             · exact raiseValue_error_not_structural _ _ _ _ herr
           · simp only [har, ↓reduceIte, ite_true] at herr; cases herr; rfl
         · simp [hex] at herr
-          by_cases hmref : funName = "make_ref/0"
-          · simp [hmref] at herr
+          by_cases hetsn : funName = "ets_new/0"
+          · simp [hetsn] at herr
             split at herr
-            · exact nomatch herr
+            · simp [etsNew, State.etsNew] at herr
             · cases herr; rfl
-          · simp [hmref] at herr
-            by_cases htu : isMakeTupleName funName = true
-            · simp [htu] at herr; exact nomatch herr
-            · simp [htu] at herr
-              by_cases hbi : isBuiltinName funName = true
-              · simp [hbi] at herr
-                cases hb : builtin p.heap p.pid funName (readArgs! frame argRegs) with
-                | ok v => simp [hb] at herr; exact nomatch herr
-                | badarg =>
-                  simp [hb] at herr
-                  exact raiseValue_error_not_structural _ _ _ _ herr
-                | error e' =>
-                  simp [hb] at herr
-                  cases herr
-                  exact builtin_error_not_structural hb
-              · simp [hbi] at herr
+          · simp [hetsn] at herr
+            by_cases hetsn2 : funName = "ets_new/2"
+            · simp [hetsn2] at herr
+              by_cases har : (readArgs! frame argRegs).size = 2
+              · simp only [har, ↓reduceIte, ite_false] at herr
+                simp [etsNew2] at herr
                 split at herr
                 · split at herr
-                  · exact nomatch herr
-                  · cases herr; rfl
-                · cases herr; rfl
+                  · exact raiseValue_error_not_structural _ _ _ _ herr
+                  · split at herr
+                    · split at herr
+                      · exact raiseValue_error_not_structural _ _ _ _ herr
+                      · exact nomatch herr
+                    · split at herr
+                      · exact raiseValue_error_not_structural _ _ _ _ herr
+                      · exact nomatch herr
+                    · exact raiseValue_error_not_structural _ _ _ _ herr
+                · exact raiseValue_error_not_structural _ _ _ _ herr
+              · simp only [har, ↓reduceIte, ite_true] at herr; cases herr; rfl
+            · simp [hetsn2] at herr
+              by_cases hetsi : funName = "ets_insert/3"
+              · simp [hetsi] at herr
+                by_cases har : (readArgs! frame argRegs).size = 3
+                · simp only [har, ↓reduceIte, ite_false] at herr
+                  simp [etsInsert] at herr
+                  split at herr
+                  · exact raiseValue_error_not_structural _ _ _ _ herr
+                  · split at herr
+                    · exact raiseValue_error_not_structural _ _ _ _ herr
+                    · exact nomatch herr
+                · simp only [har, ↓reduceIte, ite_true] at herr; cases herr; rfl
+              · simp [hetsi] at herr
+                by_cases hetsl : funName = "ets_lookup/2"
+                · simp [hetsl] at herr
+                  by_cases har : (readArgs! frame argRegs).size = 2
+                  · simp only [har, ↓reduceIte, ite_false] at herr
+                    simp [etsLookup] at herr
+                    split at herr
+                    · exact raiseValue_error_not_structural _ _ _ _ herr
+                    · split at herr
+                      · exact raiseValue_error_not_structural _ _ _ _ herr
+                      · exact nomatch herr
+                  · simp only [har, ↓reduceIte, ite_true] at herr; cases herr; rfl
+                · simp [hetsl] at herr
+                  by_cases hetsd : funName = "ets_delete/2"
+                  · simp [hetsd] at herr
+                    by_cases har : (readArgs! frame argRegs).size = 2
+                    · simp only [har, ↓reduceIte, ite_false] at herr
+                      simp [etsDelete] at herr
+                      split at herr
+                      · exact raiseValue_error_not_structural _ _ _ _ herr
+                      · split at herr
+                        · exact raiseValue_error_not_structural _ _ _ _ herr
+                        · exact nomatch herr
+                    · simp only [har, ↓reduceIte, ite_true] at herr; cases herr; rfl
+                  · simp [hetsd] at herr
+                    by_cases hetsm : funName = "ets_match_object/2"
+                    · simp [hetsm] at herr
+                      by_cases har : (readArgs! frame argRegs).size = 2
+                      · simp only [har, ↓reduceIte, ite_false] at herr
+                        simp [etsMatchObject] at herr
+                        split at herr
+                        · exact raiseValue_error_not_structural _ _ _ _ herr
+                        · split at herr
+                          · exact raiseValue_error_not_structural _ _ _ _ herr
+                          · exact nomatch herr
+                      · simp only [har, ↓reduceIte, ite_true] at herr; cases herr; rfl
+                    · simp [hetsm] at herr
+                      by_cases hetss : funName = "ets_select/2"
+                      · simp [hetss] at herr
+                        by_cases har : (readArgs! frame argRegs).size = 2
+                        · simp only [har, ↓reduceIte, ite_false] at herr
+                          simp [etsSelect] at herr
+                          split at herr
+                          · exact raiseValue_error_not_structural _ _ _ _ herr
+                          · split at herr
+                            · exact raiseValue_error_not_structural _ _ _ _ herr
+                            · exact raiseValue_error_not_structural _ _ _ _ herr
+                            · exact nomatch herr
+                        · simp only [har, ↓reduceIte, ite_true] at herr; cases herr; rfl
+                      · simp [hetss] at herr
+                        by_cases hmref : funName = "make_ref/0"
+                        · simp [hmref] at herr
+                          split at herr
+                          · exact nomatch herr
+                          · cases herr; rfl
+                        · simp [hmref] at herr
+                          by_cases htu : isMakeTupleName funName = true
+                          · simp [htu] at herr; exact nomatch herr
+                          · simp [htu] at herr
+                            by_cases hbi : isBuiltinName funName = true
+                            · simp [hbi] at herr
+                              cases hb : builtin p.heap p.pid funName
+                                  (readArgs! frame argRegs) with
+                              | ok v => simp [hb] at herr; exact nomatch herr
+                              | badarg =>
+                                simp [hb] at herr
+                                exact raiseValue_error_not_structural _ _ _ _ herr
+                              | error e' =>
+                                simp [hb] at herr
+                                cases herr
+                                exact builtin_error_not_structural hb
+                            · simp [hbi] at herr
+                              split at herr
+                              · split at herr
+                                · exact nomatch herr
+                                · cases herr; rfl
+                              · cases herr; rfl
 
 /-- `return_` case of `stepInstr_error_not_structural`. -/
 theorem return_error_not_structural
@@ -423,7 +515,7 @@ theorem apply_error_not_structural
           · cases herr; rfl
       | tuple _ | list _ | map _ =>
         simp [hnode] at herr; cases herr; rfl
-  | nil | bool _ | int _ | float _ | atom _ | string _ | pid _ | reference _ =>
+  | nil | bool _ | int _ | float _ | atom _ | string _ | bitstring _ | pid _ | reference _ =>
     simp [hreg] at herr; cases herr; rfl
 
 /-- `loadFile` case of `stepInstr_error_not_structural`. -/
@@ -462,10 +554,10 @@ theorem applyMfa_error_not_structural
         split at herr
         · exact nomatch herr
         · exact raiseValue_error_not_structural _ _ _ _ herr
-    | nil | bool _ | int _ | float _ | string _ | pid _ | reference _ | ref _ =>
+    | nil | bool _ | int _ | float _ | string _ | bitstring _ | pid _ | reference _ | ref _ =>
       simp [hfun] at herr
       exact raiseValue_error_not_structural _ _ _ _ herr
-  | nil | bool _ | int _ | float _ | string _ | pid _ | reference _ | ref _ =>
+  | nil | bool _ | int _ | float _ | string _ | bitstring _ | pid _ | reference _ | ref _ =>
     simp [hmod] at herr
     exact raiseValue_error_not_structural _ _ _ _ herr
 

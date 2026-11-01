@@ -235,6 +235,7 @@ mutual
       | .reference id => (p, .reference id)
       | .float f => (p, .float f)
       | .string s => (p, .string s)
+      | .bitstring b => (p, .bitstring b)
       | .tuple elems =>
         let (p, vs) := allocTermArrayFuel fuel p elems 0 #[]
         allocCompound p Node.tuple vs

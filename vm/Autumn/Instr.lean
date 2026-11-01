@@ -7,7 +7,8 @@ abbrev Reg := Nat
 abbrev Label := Nat
 
 inductive Tag where
-  | nil | bool | int | float | atom | string | tuple | list | map | pid | ref | fun
+  | nil | bool | int | float | atom | string | binary | bitstring
+  | tuple | list | map | pid | ref | fun
   deriving Repr, BEq, Inhabited
 
 inductive Instr where
@@ -123,6 +124,9 @@ def isBuiltinName (name : FunName) : Bool :=
   name == "map_size/1" || name == "map_get/2" || name == "map_put/3" ||
   name == "self/0" || name == "make_ref/0" || name == "<>/2" ||
   name == "cons/2" || name == "Process.flag/2" || name == "Process.exit/2" ||
+  name == "ets_new/0" || name == "ets_new/2" || name == "ets_insert/3" ||
+  name == "ets_lookup/2" || name == "ets_delete/2" ||
+  name == "ets_match_object/2" || name == "ets_select/2" ||
   isMakeTupleName name
 
 end Autumn

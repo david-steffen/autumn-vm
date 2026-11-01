@@ -44,8 +44,9 @@ defmodule Main do
         200 -> 0
       end
 
-    # Restart succeeded if this call returns 3 (not 0 from DOWN/timeout).
-    _ = GenServer.call(pid2, {:add, 3})
-    GenServer.call(pid2, :get)
+    a = GenServer.call(pid2, {:add, 3})
+    b = GenServer.call(pid2, :get)
+    # 3 + 3 — exercises restart + two calls after DOWN
+    a + b
   end
 end

@@ -47,6 +47,21 @@ structure Process where
   trapExit : Bool := false
   deriving Repr, Inhabited
 
+/-- ETS table kind (IR v17 teaching subset). -/
+inductive EtsKind where
+  | set
+  | bag
+  | duplicateBag
+  deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Public ETS table: `{key, val}` objects stored as `Term` pairs (copied on insert). -/
+structure EtsTable where
+  /-- Atom name when created with `ets_new/2`; `none` = anonymous. -/
+  name : Option String := none
+  kind : EtsKind := .set
+  entries : Array (Term × Term) := #[]
+  deriving Repr, Inhabited
+
 /-- Whole-machine state: reduction-preemptive multi-process VM. -/
 structure State where
   module : Module
@@ -65,6 +80,8 @@ structure State where
   nextRef : Nat := 0
   /-- Logical clock for `wait` timeouts (advanced each step / idle jump). -/
   clock : Nat := 0
+  /-- Public ETS tables (IR v17); tid = index into this array. -/
+  etsTables : Array EtsTable := #[]
   deriving Repr, Inhabited
 
 inductive StepError where

@@ -52,6 +52,8 @@ def decodeTag (j : Json) : Except StepError Tag := do
   | "ref" => pure .ref
   | "float" => pure .float
   | "string" => pure .string
+  | "binary" => pure .binary
+  | "bitstring" => pure .bitstring
   | "fun" => pure .fun
   | other => err s!"unknown tag: {other}"
 
@@ -97,12 +99,44 @@ def decodeLitWithFuel : Nat → Json → Except StepError Term
     | .error _ => pure ()
     match j.getObjVal? "float" with
     | .ok v =>
-      match v.getNum? with
-      | .ok n => return Term.float n.toFloat
-      | .error e => err e
+      -- Exact fields (Lean encode) or JSON number (Mix emit).
+      match v.getObjVal? "neg" with
+      | .ok negJ =>
+        let neg ← asBool negJ
+        let exp ← asNat (← field v "exp")
+        let frac ← asNat (← field v "frac")
+        match Term.FiniteFloat.ofFields? neg exp frac with
+        | some f => return Term.float f
+        | none => err "float fields out of binary64 range"
+      | .error _ =>
+        match v.getNum? with
+        | .ok n =>
+          match Term.FiniteFloat.ofScientific (decide (n.mantissa < 0))
+              n.mantissa.natAbs (-(n.exponent : Int)) with
+          | some f => return Term.float f
+          | none => err "non-finite float literal"
+        | .error e => err e
     | .error _ => pure ()
     match j.getObjVal? "string" with
     | .ok v => return Term.string (← asString v)
+    | .error _ => pure ()
+    match j.getObjVal? "binary" with
+    | .ok v =>
+      let ns ← (← asArray v).mapM asNat
+      match Term.Bitstring.ofNatBytes? ns with
+      | some b => return Term.bitstring b
+      | none => err "binary byte out of range"
+    | .error _ => pure ()
+    match j.getObjVal? "bitstring" with
+    | .ok v =>
+      let ns ← (← asArray (← field v "bytes")).mapM asNat
+      let trailing ← asNat (← field v "trailing_bits")
+      match Term.Bitstring.ofNatBytes? ns with
+      | none => err "bitstring byte out of range"
+      | some base =>
+        match Term.Bitstring.ofBytesTrailing? base.bytes trailing with
+        | some b => return Term.bitstring b
+        | none => err "bitstring trailing_bits out of range"
     | .error _ => pure ()
     match j.getObjVal? "closure" with
     | .ok v =>
@@ -229,7 +263,7 @@ def decodeModule (j : Json) : Except StepError Module := do
   if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 &&
       version != 6 && version != 7 && version != 8 && version != 9 && version != 10 &&
       version != 11 && version != 12 && version != 13 && version != 14 &&
-      version != 15 then
+      version != 15 && version != 16 && version != 17 then
     err s!"unsupported IR version: {version}"
   let entry ← asString (← field j "entry")
   match j.getObjVal? "modules" with

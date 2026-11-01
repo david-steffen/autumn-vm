@@ -19,7 +19,14 @@ defmodule AutumnCompiler.Lower do
     {:self, 0} => "self/0",
     {:make_ref, 0} => "make_ref/0",
     {:<>, 2} => "<>/2",
-    {:cons, 2} => "cons/2"
+    {:cons, 2} => "cons/2",
+    {:ets_new, 0} => "ets_new/0",
+    {:ets_new, 2} => "ets_new/2",
+    {:ets_insert, 3} => "ets_insert/3",
+    {:ets_lookup, 2} => "ets_lookup/2",
+    {:ets_delete, 2} => "ets_delete/2",
+    {:ets_match_object, 2} => "ets_match_object/2",
+    {:ets_select, 2} => "ets_select/2"
   }
 
   @type_guards %{
@@ -32,7 +39,8 @@ defmodule AutumnCompiler.Lower do
     is_map: "map",
     is_pid: "pid",
     is_reference: "ref",
-    is_binary: "string",
+    is_binary: "binary",
+    is_bitstring: "bitstring",
     is_nil: "nil",
     is_function: "fun"
   }
@@ -200,6 +208,8 @@ defmodule AutumnCompiler.Lower do
 
   defp module_version(funs) do
     cond do
+      needs_v17?(funs) -> 17
+      needs_v16?(funs) -> 16
       needs_v15?(funs) -> 15
       needs_v14?(funs) -> 14
       needs_v13?(funs) -> 13
@@ -215,6 +225,30 @@ defmodule AutumnCompiler.Lower do
       needs_v2?(funs) -> 2
       true -> 1
     end
+  end
+
+  defp needs_v17?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn
+        %{"op" => "call", "fun" => fun}
+        when fun in ~w(ets_new/2 ets_match_object/2 ets_select/2) ->
+          true
+
+        _ ->
+          false
+      end)
+    end)
+  end
+
+  defp needs_v16?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn
+        %{"op" => "load_lit", "lit" => %{"binary" => _}} -> true
+        %{"op" => "load_lit", "lit" => %{"bitstring" => _}} -> true
+        %{"op" => "is_tag", "tag" => tag} when tag in ~w(binary bitstring) -> true
+        _ -> false
+      end)
+    end)
   end
 
   defp needs_v15?(funs) do
@@ -563,6 +597,14 @@ defmodule AutumnCompiler.Lower do
 
   defp expr(s, env, next, code) when is_binary(s),
     do: emit_lit(%{"string" => s}, env, next, code)
+
+  # Aligned binary literal `<<…>>` (IR v16). Integer bytes + UTF-8 binary/string segments.
+  defp expr({:<<>>, _, segs}, env, next, code) when is_list(segs) do
+    case literal_binary_segments(segs) do
+      {:ok, bytes} -> emit_lit(%{"binary" => bytes}, env, next, code)
+      :error -> {:error, "unsupported binary segment in <<…>>"}
+    end
+  end
 
   defp expr(a, env, next, code) when is_atom(a),
     do: emit_lit(%{"atom" => Atom.to_string(a)}, env, next, code)
@@ -2700,6 +2742,13 @@ defmodule AutumnCompiler.Lower do
 
   defp lit_value({:%{}, _, pairs}) when is_list(pairs), do: literal_map(pairs)
 
+  defp lit_value({:<<>>, _, segs}) when is_list(segs) do
+    case literal_binary_segments(segs) do
+      {:ok, bytes} -> {:ok, %{"binary" => bytes}}
+      :error -> :error
+    end
+  end
+
   defp lit_value({:{}, _, elems}) do
     case literal_tuple(elems) do
       {:ok, lit} -> {:ok, lit}
@@ -2709,6 +2758,30 @@ defmodule AutumnCompiler.Lower do
 
   defp lit_value({a, b}), do: lit_value({:{}, [], [a, b]})
   defp lit_value(_), do: :error
+
+  # Aligned `<<…>>` only: integer bytes (default 8-bit) and UTF-8 binary/string chunks.
+  defp literal_binary_segments(segs) do
+    Enum.reduce_while(segs, {:ok, []}, fn seg, {:ok, acc} ->
+      case binary_segment_bytes(seg) do
+        {:ok, bytes} -> {:cont, {:ok, acc ++ bytes}}
+        :error -> {:halt, :error}
+      end
+    end)
+  end
+
+  defp binary_segment_bytes(n) when is_integer(n) and n >= 0 and n <= 255, do: {:ok, [n]}
+  defp binary_segment_bytes(bin) when is_binary(bin), do: {:ok, :binary.bin_to_list(bin)}
+
+  defp binary_segment_bytes({:"::", _, [n]}) when is_integer(n) and n >= 0 and n <= 255,
+    do: {:ok, [n]}
+
+  defp binary_segment_bytes({:"::", _, [n, _spec]}) when is_integer(n) and n >= 0 and n <= 255,
+    do: {:ok, [n]}
+
+  defp binary_segment_bytes({:"::", _, [bin, _spec]}) when is_binary(bin),
+    do: {:ok, :binary.bin_to_list(bin)}
+
+  defp binary_segment_bytes(_), do: :error
 
   defp resolve_locals(fun, mod_name) do
     code =

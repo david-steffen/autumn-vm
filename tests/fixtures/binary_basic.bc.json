@@ -1,0 +1,285 @@
+{
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 0,
+      "code": [
+        {
+          "lit": {
+            "binary": [
+              1,
+              2
+            ]
+          },
+          "op": "load_lit",
+          "reg": 0
+        },
+        {
+          "lit": {
+            "binary": [
+              3
+            ]
+          },
+          "op": "load_lit",
+          "reg": 1
+        },
+        {
+          "args": [
+            0,
+            1
+          ],
+          "dest": 2,
+          "fun": "<>/2",
+          "op": "call"
+        },
+        {
+          "dest": 4,
+          "op": "is_tag",
+          "reg": 2,
+          "tag": "binary"
+        },
+        {
+          "lit": {
+            "bool": false
+          },
+          "op": "jump_if_eq",
+          "reg": 4,
+          "target": 9
+        },
+        {
+          "lit": null,
+          "op": "jump_if_eq",
+          "reg": 4,
+          "target": 9
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 5
+        },
+        {
+          "dest": 3,
+          "op": "move",
+          "src": 5
+        },
+        {
+          "op": "jump",
+          "target": 11
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 6
+        },
+        {
+          "dest": 3,
+          "op": "move",
+          "src": 6
+        },
+        {
+          "dest": 8,
+          "op": "is_tag",
+          "reg": 2,
+          "tag": "bitstring"
+        },
+        {
+          "lit": {
+            "bool": false
+          },
+          "op": "jump_if_eq",
+          "reg": 8,
+          "target": 17
+        },
+        {
+          "lit": null,
+          "op": "jump_if_eq",
+          "reg": 8,
+          "target": 17
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 9
+        },
+        {
+          "dest": 7,
+          "op": "move",
+          "src": 9
+        },
+        {
+          "op": "jump",
+          "target": 19
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 10
+        },
+        {
+          "dest": 7,
+          "op": "move",
+          "src": 10
+        },
+        {
+          "lit": {
+            "string": "hi"
+          },
+          "op": "load_lit",
+          "reg": 12
+        },
+        {
+          "dest": 13,
+          "op": "is_tag",
+          "reg": 12,
+          "tag": "binary"
+        },
+        {
+          "lit": {
+            "bool": false
+          },
+          "op": "jump_if_eq",
+          "reg": 13,
+          "target": 26
+        },
+        {
+          "lit": null,
+          "op": "jump_if_eq",
+          "reg": 13,
+          "target": 26
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 14
+        },
+        {
+          "dest": 11,
+          "op": "move",
+          "src": 14
+        },
+        {
+          "op": "jump",
+          "target": 28
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 15
+        },
+        {
+          "dest": 11,
+          "op": "move",
+          "src": 15
+        },
+        {
+          "lit": {
+            "binary": [
+              1,
+              2,
+              3
+            ]
+          },
+          "op": "load_lit",
+          "reg": 17
+        },
+        {
+          "args": [
+            2,
+            17
+          ],
+          "dest": 18,
+          "fun": "==/2",
+          "op": "call"
+        },
+        {
+          "lit": {
+            "bool": false
+          },
+          "op": "jump_if_eq",
+          "reg": 18,
+          "target": 35
+        },
+        {
+          "lit": null,
+          "op": "jump_if_eq",
+          "reg": 18,
+          "target": 35
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 19
+        },
+        {
+          "dest": 16,
+          "op": "move",
+          "src": 19
+        },
+        {
+          "op": "jump",
+          "target": 37
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 20
+        },
+        {
+          "dest": 16,
+          "op": "move",
+          "src": 20
+        },
+        {
+          "args": [
+            3,
+            7
+          ],
+          "dest": 21,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "args": [
+            21,
+            11
+          ],
+          "dest": 22,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "args": [
+            22,
+            16
+          ],
+          "dest": 23,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "op": "return",
+          "reg": 23
+        }
+      ],
+      "locals": 24,
+      "name": "Main.main/0"
+    }
+  ],
+  "version": 16
+}

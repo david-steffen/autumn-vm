@@ -1,5 +1,6 @@
 import Autumn.State.Types
 import Autumn.Process
+import Autumn.Ets
 
 namespace Autumn
 
@@ -355,16 +356,101 @@ def monitorWith (s : State) (targetPid : Nat) (refId : Nat) : Except StepError S
         let s := s.setCurrentProcess cur
         .ok { s with processes := s.processes.setIfInBounds idx target }
 
-/-- Drop the current process's monitor for `refId` (no-op if absent). -/
+/-- True when `v` is a heap `{:DOWN, refId, …}` tuple (OTP flush). -/
+def isDownRefMsg (h : Heap) (v : Value) (refId : Nat) : Bool :=
+  match v with
+  | .ref r =>
+    match h.get? r with
+    | some (.tuple elems) =>
+      elems.size == 5 &&
+        match elems[0]!, elems[1]! with
+        | .atom "DOWN", .reference id => decide (id = refId)
+        | _, _ => false
+    | _ => false
+  | _ => false
+
+/-- Drop mailbox messages that are `{:DOWN, refId, …}` (does not touch other mail). -/
+def flushDownRef (h : Heap) (mailbox : Array Value) (refId : Nat) : Array Value :=
+  mailbox.filter (fun v => !(isDownRefMsg h v refId))
+
+/-! ## Thin ETS (public tables; tid = index) -/
+
+/-- Anonymous `:set` table (compat `ets_new/0`). -/
+def etsNew (s : State) : State × Nat :=
+  let tid := s.etsTables.size
+  ({ s with etsTables := s.etsTables.push {} }, tid)
+
+/-- IR v17 `ets_new/2`: `name` is `none` (anonymous) or atom text; fails on dup name. -/
+def etsNewNamed (s : State) (name : Option String) (kind : EtsKind) : Option (State × Nat) :=
+  match name with
+  | some n =>
+    if Ets.nameTaken s.etsTables n then none
+    else
+      let tid := s.etsTables.size
+      let t : EtsTable := { name := some n, kind }
+      some ({ s with etsTables := s.etsTables.push t }, tid)
+  | none =>
+    let tid := s.etsTables.size
+    let t : EtsTable := { kind }
+    some ({ s with etsTables := s.etsTables.push t }, tid)
+
+/-- Resolve tab term (int tid or name atom) to index. -/
+def etsResolve (s : State) (tab : Term) : Option Nat :=
+  Ets.resolveTab s.etsTables tab
+
+def etsInsert (s : State) (tid : Nat) (key val : Term) : Option State :=
+  if h : tid < s.etsTables.size then
+    let t := Ets.insertEntry (s.etsTables[tid]'h) key val
+    some { s with etsTables := s.etsTables.set tid t h }
+  else
+    none
+
+def etsLookup (s : State) (tid : Nat) (key : Term) : Option (Array Term) :=
+  if h : tid < s.etsTables.size then
+    some (Ets.lookupValues (s.etsTables[tid]'h) key)
+  else
+    none
+
+def etsDelete (s : State) (tid : Nat) (key : Term) : Option State :=
+  if h : tid < s.etsTables.size then
+    let t := Ets.deleteKey (s.etsTables[tid]'h) key
+    some { s with etsTables := s.etsTables.set tid t h }
+  else
+    none
+
+def etsMatchObject (s : State) (tid : Nat) (pattern : Term) : Option (Array Term) :=
+  if h : tid < s.etsTables.size then
+    some (Ets.matchObject (s.etsTables[tid]'h) pattern)
+  else
+    none
+
+/-- `none` = bad tab; `some (.error ())` = malformed match-spec; `some (.ok vals)` = ok. -/
+def etsSelect (s : State) (tid : Nat) (spec : Term) : Option (Except Unit (Array Term)) :=
+  if h : tid < s.etsTables.size then
+    match Ets.parseSpec spec with
+    | none => some (.error ())
+    | some clauses => some (.ok (Ets.select (s.etsTables[tid]'h) clauses))
+  else
+    none
+
+/-- Drop the current process's monitor for `refId` and flush a pending DOWN
+(OTP `demonitor(Ref, [:flush])` — Autumn always flushes). No-op if absent. -/
 def demonitorWith (s : State) (refId : Nat) : Except StepError State :=
   if ¬(s.current < s.processes.size) then
     .error .noRunnable
   else
     let cur0 := s.processes[s.current]!
+    let mailbox := flushDownRef cur0.heap cur0.mailbox refId
     match cur0.monitors.find? (fun (_, r) => r == refId) with
-    | none => .ok s
+    | none =>
+      let cur := { cur0 with mailbox }
+      .ok (s.setCurrentProcess cur)
     | some (targetPid, _) =>
-      let cur := { cur0 with monitors := dropByRef cur0.monitors refId }
+      let cur := {
+        cur0 with
+        monitors := dropByRef cur0.monitors refId
+        mailbox
+      }
       let s := s.setCurrentProcess cur
       .ok (clearTargetMonitor s cur.pid targetPid refId)
 
@@ -408,6 +494,17 @@ def findRunnable (procs : Array Process) (idx : Nat) : Nat → Option Nat
       if p.status == .runnable && p.result.isNone then some idx
       else findRunnable procs idx fuel
 
+/-- Scheduler preference for proof / `runScheduled` (not stored on `State`). -/
+inductive ScheduleChoice where
+  /-- Deterministic round-robin (default `scheduleNext`). -/
+  | roundRobin
+  /-- Select this process index when runnable; otherwise fall back to round-robin. -/
+  | prefer (idx : Nat)
+  deriving Repr, BEq, Inhabited
+
+def processRunnable (p : Process) : Bool :=
+  p.status == .runnable && p.result.isNone
+
 /-- Round-robin: find next runnable process starting after `fromIdx`.
 Wakes timed-out waiters (advancing `clock` to the next deadline if needed). -/
 def scheduleNext (s : State) (fromIdx : Nat) : Except StepError State :=
@@ -442,6 +539,30 @@ def scheduleNext (s : State) (fromIdx : Nat) : Except StepError State :=
             .ok { s with result := some (Heap.toTerm ep.heap v), reductions := reductionBudget }
           | none => .error .noRunnable
         | none => .error .noRunnable
+
+/-- Quantified scheduler: `.prefer idx` when that slot is runnable, else `scheduleNext`. -/
+def scheduleNextWith (s : State) (fromIdx : Nat) (choice : ScheduleChoice) :
+    Except StepError State :=
+  match choice with
+  | .roundRobin => scheduleNext s fromIdx
+  | .prefer idx =>
+    if s.processes.size = 0 then
+      .error .noRunnable
+    else
+      let procs := wakeExpired s.processes s.clock
+      if h : idx < procs.size then
+        if processRunnable (procs[idx]) then
+          .ok { s with processes := procs, current := idx, reductions := reductionBudget }
+        else
+          scheduleNext { s with processes := procs } fromIdx
+      else
+        scheduleNext { s with processes := procs } fromIdx
+
+/-- Pop one choice; empty tape means round-robin forever. -/
+def popChoice (choices : List ScheduleChoice) : ScheduleChoice × List ScheduleChoice :=
+  match choices with
+  | [] => (.roundRobin, [])
+  | c :: rest => (c, rest)
 
 end State
 

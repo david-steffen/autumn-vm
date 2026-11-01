@@ -186,23 +186,24 @@ def uniqueModuleNames (m : Module) : Prop :=
 
 def versionOk (v : Nat) : Prop :=
   v = 1 ∨ v = 2 ∨ v = 3 ∨ v = 4 ∨ v = 5 ∨ v = 6 ∨ v = 7 ∨ v = 8 ∨ v = 9 ∨
-    v = 10 ∨ v = 11 ∨ v = 12 ∨ v = 13 ∨ v = 14 ∨ v = 15
+    v = 10 ∨ v = 11 ∨ v = 12 ∨ v = 13 ∨ v = 14 ∨ v = 15 ∨ v = 16 ∨ v = 17
 
 def versionOkB (v : Nat) : Bool :=
-  (1 ≤ v) && (v ≤ 15)
+  (1 ≤ v) && (v ≤ 17)
 
 theorem versionOkB_sound (v : Nat) (h : versionOkB v = true) : versionOk v := by
   simp only [versionOkB, Bool.and_eq_true, decide_eq_true_eq] at h
   match v with
   | 0 => omega
-  | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 => simp [versionOk]
-  | n + 16 => omega
+  | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 =>
+    simp [versionOk]
+  | n + 18 => omega
 
 theorem versionOkB_complete (v : Nat) (h : versionOk v) : versionOkB v = true := by
   simp only [versionOk] at h
   simp only [versionOkB, Bool.and_eq_true, decide_eq_true_eq]
   rcases h with
-    h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;> subst h <;> decide
+    h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;> subst h <;> decide
 
 def uniqueFunNamesB (m : Module) : Bool :=
   (List.range m.allFunctions.size).all fun i =>
@@ -369,8 +370,9 @@ theorem valueBound_int (bound : Nat) (n : Int) : valueBound bound (.int n) := tr
 theorem valueBound_atom (bound : Nat) (s : String) : valueBound bound (.atom s) := trivial
 theorem valueBound_pid (bound : Nat) (id : Nat) : valueBound bound (.pid id) := trivial
 theorem valueBound_reference (bound : Nat) (id : Nat) : valueBound bound (.reference id) := trivial
-theorem valueBound_float (bound : Nat) (f : Float) : valueBound bound (.float f) := trivial
+theorem valueBound_float (bound : Nat) (f : Term.FiniteFloat) : valueBound bound (.float f) := trivial
 theorem valueBound_string (bound : Nat) (s : String) : valueBound bound (.string s) := trivial
+theorem valueBound_bitstring (bound : Nat) (b : Term.Bitstring) : valueBound bound (.bitstring b) := trivial
 
 theorem valueWF_nil (h : Heap) : valueWF h .nil := ⟨trivial, trivial⟩
 theorem valueWF_bool (h : Heap) (b : Bool) : valueWF h (.bool b) := ⟨trivial, trivial⟩
@@ -378,8 +380,9 @@ theorem valueWF_int (h : Heap) (n : Int) : valueWF h (.int n) := ⟨trivial, tri
 theorem valueWF_atom (h : Heap) (s : String) : valueWF h (.atom s) := ⟨trivial, trivial⟩
 theorem valueWF_pid (h : Heap) (id : Nat) : valueWF h (.pid id) := ⟨trivial, trivial⟩
 theorem valueWF_reference (h : Heap) (id : Nat) : valueWF h (.reference id) := ⟨trivial, trivial⟩
-theorem valueWF_float (h : Heap) (f : Float) : valueWF h (.float f) := ⟨trivial, trivial⟩
+theorem valueWF_float (h : Heap) (f : Term.FiniteFloat) : valueWF h (.float f) := ⟨trivial, trivial⟩
 theorem valueWF_string (h : Heap) (s : String) : valueWF h (.string s) := ⟨trivial, trivial⟩
+theorem valueWF_bitstring (h : Heap) (b : Term.Bitstring) : valueWF h (.bitstring b) := ⟨trivial, trivial⟩
 
 theorem valueBound_mono {b₁ b₂ : Nat} (h : b₁ ≤ b₂) :
     ∀ v, valueBound b₁ v → valueBound b₂ v
@@ -390,6 +393,7 @@ theorem valueBound_mono {b₁ b₂ : Nat} (h : b₁ ≤ b₂) :
   | .float _f, _ => trivial
   | .atom _s, _ => trivial
   | .string _s, _ => trivial
+  | .bitstring _b, _ => trivial
   | .pid _id, _ => trivial
   | .reference _id, _ => trivial
 

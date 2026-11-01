@@ -38,11 +38,24 @@ defmodule Mix.Tasks.Autumn.Smoke do
     {"genserver_counter", "7"},
     {"genserver_call_down", "1"},
     {"list_lit", "[1, 2, 3]"},
+    {"float_string", "5"},
+    {"binary_basic", "4"},
     {"genserver_stdlib", "7", [Path.join(@stdlib, "genserver.ex")]},
     {"genserver_stdlib_down", "0", [Path.join(@stdlib, "genserver.ex")]},
     {"genserver_behaviour", "8", [Path.join(@stdlib, "genserver.ex")]},
-    {"supervisor_one_for_one", "3",
-     [Path.join(@stdlib, "genserver.ex"), Path.join(@stdlib, "supervisor.ex")]}
+    {"supervisor_one_for_one", "6",
+     [Path.join(@stdlib, "genserver.ex"), Path.join(@stdlib, "supervisor.ex")]},
+    {"genserver_info", "3", [Path.join(@stdlib, "genserver.ex")]},
+    {"supervisor_intensity", "1",
+     [Path.join(@stdlib, "genserver.ex"), Path.join(@stdlib, "supervisor.ex")]},
+    {"supervisor_rest_for_one", "8",
+     [Path.join(@stdlib, "genserver.ex"), Path.join(@stdlib, "supervisor.ex")]},
+    {"supervisor_one_for_all", "5",
+     [Path.join(@stdlib, "genserver.ex"), Path.join(@stdlib, "supervisor.ex")]},
+    {"ets_basic", "42", [Path.join(@stdlib, "ets.ex")]},
+    {"ets_bag", "2", [Path.join(@stdlib, "ets.ex")]},
+    {"ets_named", "7", [Path.join(@stdlib, "ets.ex")]},
+    {"ets_select", "5", [Path.join(@stdlib, "ets.ex")]}
   ]
 
   @impl Mix.Task

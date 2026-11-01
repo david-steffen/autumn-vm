@@ -6,11 +6,13 @@ import Std.Data.TreeMap.Raw.WF
 import Init.Data.Order.LemmasExtra
 
 /-!
-# Encode ↔ Decode roundtrip
+# Encode ↔ Decode roundtrip (public proof surface)
 
-JSON is the Mix ↔ Lean contract. Tags are unconditional; literals exclude `.float`
-anywhere in the term tree (`Term.FloatFree`). Compound lits, instructions, and the
-`modules[]` module image all roundtrip under the stated hypotheses.
+JSON is the Mix ↔ Lean contract. Prefer `decode*_encode*` theorems here over
+hand-rolled lit parsers. Tags and literals (including exact-field floats)
+roundtrip under the stated fuel / locals / version hypotheses. `Term.FloatFree`
+allows floats (exact-field encode); name kept for stable signatures.
+See `AGENTS.md` (“Public proof surface”).
 -/
 
 open Lean Std
@@ -21,10 +23,12 @@ theorem decodeTag_encodeTag (t : Tag) :
     Json.Decode.decodeTag (Json.Encode.encodeTag t) = .ok t := by
   cases t <;> rfl
 
-/-- No `.float` anywhere in the term tree (avoids `JsonNumber.fromFloat?` collapse). -/
+/-- Historically excluded floats (JSON `fromFloat?` collapse). Exact-field encode
+makes every term float-safe; the predicate remains for stable lemma signatures. -/
 def Term.FloatFree : Term → Prop
-  | .float _ => False
-  | .nil | .bool _ | .int _ | .atom _ | .string _ | .pid _ | .reference _ => True
+  | .nil | .bool _ | .int _ | .float _ | .atom _ | .string _ | .pid _ | .reference _ => True
+  -- Bitstring JSON roundtrip uses `Id.run` byte rebuild; proven separately when needed.
+  | .bitstring _ => False
   | .tuple es | .list es => ∀ e ∈ es, Term.FloatFree e
   | .map es => ∀ kv ∈ es, Term.FloatFree kv.1 ∧ Term.FloatFree kv.2
   | .closure _ env => ∀ e ∈ env, Term.FloatFree e
@@ -50,13 +54,13 @@ def Function.FloatFree (f : Function) : Prop :=
 def CodeModule.FloatFree (cm : CodeModule) : Prop :=
   ∀ i, (hi : i < cm.functions.size) → Function.FloatFree (cm.functions[i]'hi)
 
-/-- Modules whose encoded `modules[]` image has float-free literals. -/
+/-- Modules whose encoded `modules[]` image has float-safe literals. -/
 def Module.FloatFree (m : Module) : Prop :=
   ∀ i, (hi : i < m.modules.size) → CodeModule.FloatFree (m.modules[i]'hi)
 
 /-- Nesting depth used as a lower bound on decode fuel. -/
 def Term.depth : Term → Nat
-  | .nil | .bool _ | .int _ | .float _ | .atom _ | .string _ | .pid _ | .reference _ => 1
+  | .nil | .bool _ | .int _ | .float _ | .atom _ | .string _ | .bitstring _ | .pid _ | .reference _ => 1
   | .tuple es | .list es =>
     1 + es.attach.foldl (fun n ⟨e, _⟩ => Nat.max n (Term.depth e)) 0
   | .map es =>
@@ -396,7 +400,72 @@ theorem decodeLitWithFuel_singleton_ref (fuel : Nat) (id : Nat) (hfuel : 1 ≤ f
     simp [isNull_mkObj, hbool, hint, hatom, htuple, hlist, hmap, hpid, href,
       asNat_coe, Bind.bind, Pure.pure, Except.bind, Except.pure]
 
-/-- Fuel-aware roundtrip for float-free literals. -/
+theorem ofFields?_self (f : Term.FiniteFloat) :
+    Term.FiniteFloat.ofFields? f.negative f.exponent.val f.fraction.val = some f := by
+  unfold Term.FiniteFloat.ofFields?
+  simp [f.exponent.isLt, f.fraction.isLt]
+
+/-- Exact IEEE-field float encode/decode is bit-identical. -/
+theorem decodeLitWithFuel_singleton_float (fuel : Nat) (f : Term.FiniteFloat) (hfuel : 1 ≤ fuel) :
+    Decode.decodeLitWithFuel fuel (Encode.encodeLit (.float f)) = .ok (.float f) := by
+  match fuel with
+  | 0 => omega
+  | fuel + 1 =>
+    rw [Encode.encodeLit]
+    unfold Decode.decodeLitWithFuel
+    have hbool := getObjVal?_singleton_ne "float" "bool"
+      (Json.mkObj
+        [("neg", (f.negative : Json)), ("exp", (f.exponent.val : Json)),
+         ("frac", (f.fraction.val : Json))]) (by decide)
+    have hint := getObjVal?_singleton_ne "float" "int"
+      (Json.mkObj
+        [("neg", (f.negative : Json)), ("exp", (f.exponent.val : Json)),
+         ("frac", (f.fraction.val : Json))]) (by decide)
+    have hatom := getObjVal?_singleton_ne "float" "atom"
+      (Json.mkObj
+        [("neg", (f.negative : Json)), ("exp", (f.exponent.val : Json)),
+         ("frac", (f.fraction.val : Json))]) (by decide)
+    have htuple := getObjVal?_singleton_ne "float" "tuple"
+      (Json.mkObj
+        [("neg", (f.negative : Json)), ("exp", (f.exponent.val : Json)),
+         ("frac", (f.fraction.val : Json))]) (by decide)
+    have hlist := getObjVal?_singleton_ne "float" "list"
+      (Json.mkObj
+        [("neg", (f.negative : Json)), ("exp", (f.exponent.val : Json)),
+         ("frac", (f.fraction.val : Json))]) (by decide)
+    have hmap := getObjVal?_singleton_ne "float" "map"
+      (Json.mkObj
+        [("neg", (f.negative : Json)), ("exp", (f.exponent.val : Json)),
+         ("frac", (f.fraction.val : Json))]) (by decide)
+    have hpid := getObjVal?_singleton_ne "float" "pid"
+      (Json.mkObj
+        [("neg", (f.negative : Json)), ("exp", (f.exponent.val : Json)),
+         ("frac", (f.fraction.val : Json))]) (by decide)
+    have href := getObjVal?_singleton_ne "float" "ref"
+      (Json.mkObj
+        [("neg", (f.negative : Json)), ("exp", (f.exponent.val : Json)),
+         ("frac", (f.fraction.val : Json))]) (by decide)
+    have hfloat := getObjVal?_singleton "float"
+      (Json.mkObj
+        [("neg", (f.negative : Json)), ("exp", (f.exponent.val : Json)),
+         ("frac", (f.fraction.val : Json))])
+    have hneg := getObjVal?_of_mem
+      [("neg", (f.negative : Json)), ("exp", (f.exponent.val : Json)),
+       ("frac", (f.fraction.val : Json))]
+      "neg" (f.negative : Json) (by simp) (by simp [List.pairwise_cons])
+    have hexp := getObjVal?_of_mem
+      [("neg", (f.negative : Json)), ("exp", (f.exponent.val : Json)),
+       ("frac", (f.fraction.val : Json))]
+      "exp" (f.exponent.val : Json) (by simp) (by simp [List.pairwise_cons])
+    have hfrac := getObjVal?_of_mem
+      [("neg", (f.negative : Json)), ("exp", (f.exponent.val : Json)),
+       ("frac", (f.fraction.val : Json))]
+      "frac" (f.fraction.val : Json) (by simp) (by simp [List.pairwise_cons])
+    simp [isNull_mkObj, hbool, hint, hatom, htuple, hlist, hmap, hpid, href, hfloat,
+      hneg, hexp, hfrac, Decode.field, asBool_coe, asNat_coe, ofFields?_self,
+      Bind.bind, Pure.pure, Except.bind, Except.pure]
+
+/-- Fuel-aware roundtrip for literals (floats use exact IEEE fields). -/
 theorem decodeLitWithFuel_encodeLit (fuel : Nat) (t : Term) (ht : Term.FloatFree t)
     (hfuel : Term.depth t ≤ fuel) :
     Decode.decodeLitWithFuel fuel (Encode.encodeLit t) = .ok t := by
@@ -415,14 +484,17 @@ theorem decodeLitWithFuel_encodeLit (fuel : Nat) (t : Term) (ht : Term.FloatFree
   | .int n =>
     have : 1 ≤ fuel := by simpa [Term.depth] using hfuel
     exact decodeLitWithFuel_singleton_int fuel n this
-  | .float _ =>
-    simp [Term.FloatFree] at ht
+  | .float f =>
+    have : 1 ≤ fuel := by simpa [Term.depth] using hfuel
+    exact decodeLitWithFuel_singleton_float fuel f this
   | .atom s =>
     have : 1 ≤ fuel := by simpa [Term.depth] using hfuel
     exact decodeLitWithFuel_singleton_atom fuel s this
   | .string s =>
     have : 1 ≤ fuel := by simpa [Term.depth] using hfuel
     exact decodeLitWithFuel_singleton_string fuel s this
+  | .bitstring _ =>
+    simp only [Term.FloatFree] at ht
   | .pid id =>
     have : 1 ≤ fuel := by simpa [Term.depth] using hfuel
     exact decodeLitWithFuel_singleton_pid fuel id this
@@ -617,6 +689,12 @@ theorem decodeLitWithFuel_encodeLit (fuel : Nat) (t : Term) (ht : Term.FloatFree
       have hstr := getObjVal?_singleton_ne "closure" "string"
         (Json.mkObj [("fun", (funName : Json)), ("env", Json.arr (env.map Encode.encodeLit))])
         (by decide)
+      have hbin := getObjVal?_singleton_ne "closure" "binary"
+        (Json.mkObj [("fun", (funName : Json)), ("env", Json.arr (env.map Encode.encodeLit))])
+        (by decide)
+      have hbits := getObjVal?_singleton_ne "closure" "bitstring"
+        (Json.mkObj [("fun", (funName : Json)), ("env", Json.arr (env.map Encode.encodeLit))])
+        (by decide)
       have hclos := getObjVal?_singleton "closure"
         (Json.mkObj [("fun", (funName : Json)), ("env", Json.arr (env.map Encode.encodeLit))])
       have hfun := getObjVal?_of_mem
@@ -627,7 +705,7 @@ theorem decodeLitWithFuel_encodeLit (fuel : Nat) (t : Term) (ht : Term.FloatFree
         "env" (Json.arr (env.map Encode.encodeLit)) (by simp) (by simp [List.pairwise_cons])
       have hdone := mapM_decodeLitWithFuel_encodeLit fuel env hround
       simp [isNull_mkObj, hbool, hint, hatom, htuple, hlist, hmap, hpid, href, hfloat, hstr,
-        hclos, Decode.field, hfun, henv, asString_coe, asArray_arr,
+        hbin, hbits, hclos, Decode.field, hfun, henv, asString_coe, asArray_arr,
         Bind.bind, Pure.pure, Except.bind, Except.pure, hdone]
 
 
@@ -1072,10 +1150,11 @@ theorem decodeInstr_encodeInstr (i : Instr) (hi : Instr.FloatFree i)
 
 theorem versionOk_not_rejected (v : Nat) (h : Module.versionOk v) :
     (v != 1 && v != 2 && v != 3 && v != 4 && v != 5 && v != 6 && v != 7 && v != 8 &&
-      v != 9 && v != 10 && v != 11 && v != 12 && v != 13 && v != 14 && v != 15) = false := by
+      v != 9 && v != 10 && v != 11 && v != 12 && v != 13 && v != 14 && v != 15 &&
+      v != 16 && v != 17) = false := by
   simp only [Module.versionOk] at h
   rcases h with
-    h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;> simp [h]
+    h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;> simp [h]
 
 theorem decodeFunction_encodeFunction (f : Function)
     (hf : Function.FloatFree f) (hfuel : Function.LitFuelOk f)
@@ -1187,70 +1266,23 @@ theorem decodeModule_encodeModule (m : Module) (hm : Module.FloatFree m)
     Json.Decode.decodeModule (Json.Encode.encodeModule m) = .ok m :=
   Json.decodeModule_encodeModule m hm hfuel hloc hv hne
 
-/-! ## Float literals (Phase 18)
+/-! ## Float literals (Phase 25)
 
-`encodeLit (.float f)` goes through `JsonNumber.fromFloat?`. Finite floats recover
-`n.toFloat` (not necessarily bit-identical to `f`). Non-finite floats collapse to `0.0`.
+Exact IEEE field encode/decode is bit-identical (`neg` / `exp` / `frac`).
 -/
 
 namespace Json
 
-theorem decodeLitWithFuel_encodeLit_float_inr (fuel : Nat) (f : Float) (n : JsonNumber)
-    (hfuel : 1 ≤ fuel) (hn : JsonNumber.fromFloat? f = .inr n) :
-    Decode.decodeLitWithFuel fuel (Encode.encodeLit (.float f)) =
-      .ok (.float n.toFloat) := by
-  match fuel with
-  | 0 => omega
-  | fuel + 1 =>
-    rw [Encode.encodeLit, hn]
-    unfold Decode.decodeLitWithFuel
-    have hbool := getObjVal?_singleton_ne "float" "bool" (Json.num n) (by decide)
-    have hint := getObjVal?_singleton_ne "float" "int" (Json.num n) (by decide)
-    have hatom := getObjVal?_singleton_ne "float" "atom" (Json.num n) (by decide)
-    have htuple := getObjVal?_singleton_ne "float" "tuple" (Json.num n) (by decide)
-    have hlist := getObjVal?_singleton_ne "float" "list" (Json.num n) (by decide)
-    have hmap := getObjVal?_singleton_ne "float" "map" (Json.num n) (by decide)
-    have hpid := getObjVal?_singleton_ne "float" "pid" (Json.num n) (by decide)
-    have href := getObjVal?_singleton_ne "float" "ref" (Json.num n) (by decide)
-    have hfloat := getObjVal?_singleton "float" (Json.num n)
-    simp [isNull_mkObj, hbool, hint, hatom, htuple, hlist, hmap, hpid, href, hfloat,
-      Json.getNum?, Bind.bind, Pure.pure, Except.bind, Except.pure]
+theorem decodeLitWithFuel_encodeLit_float (fuel : Nat) (f : Term.FiniteFloat)
+    (hfuel : 1 ≤ fuel) :
+    Decode.decodeLitWithFuel fuel (Encode.encodeLit (.float f)) = .ok (.float f) :=
+  decodeLitWithFuel_singleton_float fuel f hfuel
 
-theorem decodeLitWithFuel_encodeLit_float_inl (fuel : Nat) (f : Float) (msg : String)
-    (hfuel : 1 ≤ fuel) (hn : JsonNumber.fromFloat? f = .inl msg) :
-    Decode.decodeLitWithFuel fuel (Encode.encodeLit (.float f)) =
-      .ok (.float (JsonNumber.toFloat ⟨0, 0⟩)) := by
-  match fuel with
-  | 0 => omega
-  | fuel + 1 =>
-    rw [Encode.encodeLit, hn]
-    unfold Decode.decodeLitWithFuel
-    have hbool := getObjVal?_singleton_ne "float" "bool" (Json.num ⟨0, 0⟩) (by decide)
-    have hint := getObjVal?_singleton_ne "float" "int" (Json.num ⟨0, 0⟩) (by decide)
-    have hatom := getObjVal?_singleton_ne "float" "atom" (Json.num ⟨0, 0⟩) (by decide)
-    have htuple := getObjVal?_singleton_ne "float" "tuple" (Json.num ⟨0, 0⟩) (by decide)
-    have hlist := getObjVal?_singleton_ne "float" "list" (Json.num ⟨0, 0⟩) (by decide)
-    have hmap := getObjVal?_singleton_ne "float" "map" (Json.num ⟨0, 0⟩) (by decide)
-    have hpid := getObjVal?_singleton_ne "float" "pid" (Json.num ⟨0, 0⟩) (by decide)
-    have href := getObjVal?_singleton_ne "float" "ref" (Json.num ⟨0, 0⟩) (by decide)
-    have hfloat := getObjVal?_singleton "float" (Json.num ⟨0, 0⟩)
-    simp [isNull_mkObj, hbool, hint, hatom, htuple, hlist, hmap, hpid, href, hfloat,
-      Json.getNum?, Bind.bind, Pure.pure, Except.bind, Except.pure]
-
-/-- Public-fuel form: finite float → decode recovers `n.toFloat`. -/
-theorem decodeLit_encodeLit_float_inr (f : Float) (n : JsonNumber)
-    (hn : JsonNumber.fromFloat? f = .inr n) :
-    Decode.decodeLit (Encode.encodeLit (.float f)) = .ok (.float n.toFloat) := by
+/-- Public-fuel form: decode recovers the same `FiniteFloat` fields. -/
+theorem decodeLit_encodeLit_float (f : Term.FiniteFloat) :
+    Decode.decodeLit (Encode.encodeLit (.float f)) = .ok (.float f) := by
   simpa [Decode.decodeLit] using
-    decodeLitWithFuel_encodeLit_float_inr 100000 f n (by decide) hn
-
-/-- Public-fuel form: non-finite float collapses to encode/decode of `⟨0,0⟩`. -/
-theorem decodeLit_encodeLit_float_inl (f : Float) (msg : String)
-    (hn : JsonNumber.fromFloat? f = .inl msg) :
-    Decode.decodeLit (Encode.encodeLit (.float f)) =
-      .ok (.float (JsonNumber.toFloat ⟨0, 0⟩)) := by
-  simpa [Decode.decodeLit] using
-    decodeLitWithFuel_encodeLit_float_inl 100000 f msg (by decide) hn
+    decodeLitWithFuel_encodeLit_float 100000 f (by decide)
 
 end Json
 

@@ -17,6 +17,8 @@ def encodeTag : Tag → Json
   | .ref => "ref"
   | .float => "float"
   | .string => "string"
+  | .binary => "binary"
+  | .bitstring => "bitstring"
   | .fun => "fun"
 
 /-- Well-founded encode (no opaque `partial`) so Encode↔Decode lemmas can unfold. -/
@@ -25,11 +27,22 @@ def encodeLit : Term → Json
   | .bool b => Json.mkObj [("bool", b)]
   | .int n => Json.mkObj [("int", Json.num n)]
   | .float f =>
-      match JsonNumber.fromFloat? f with
-      | .inr n => Json.mkObj [("float", Json.num n)]
-      | .inl _ => Json.mkObj [("float", Json.num ⟨0, 0⟩)]
+      -- Exact IEEE fields (bit-identical roundtrip). Mix still emits JSON numbers.
+      Json.mkObj [("float", Json.mkObj
+        [("neg", (f.negative : Json)),
+         ("exp", (f.exponent.val : Json)),
+         ("frac", (f.fraction.val : Json))])]
   | .atom s => Json.mkObj [("atom", s)]
   | .string s => Json.mkObj [("string", s)]
+  | .bitstring b =>
+      let byteJsons :=
+        (Term.Bitstring.toNatBytes b.bytes).map fun (n : Nat) => Json.num (Int.ofNat n)
+      if b.trailingBits = 0 then
+        Json.mkObj [("binary", Json.arr byteJsons)]
+      else
+        Json.mkObj [("bitstring", Json.mkObj
+          [("bytes", Json.arr byteJsons),
+           ("trailing_bits", Json.num (Int.ofNat b.trailingBits))])]
   | .tuple elems =>
       Json.mkObj [("tuple", Json.arr (elems.attach.map fun ⟨e, _⟩ => encodeLit e))]
   | .list elems =>

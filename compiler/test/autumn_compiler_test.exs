@@ -363,17 +363,108 @@ defmodule AutumnCompilerTest do
     assert "CrashOnce" in names
   end
 
-  test "lowers float_string (IR v10)" do
+  test "lowers genserver_info (handle_info)" do
+    gs = Path.join(@stdlib, "genserver.ex")
+    path = Path.join(@fixtures, "genserver_info.ex")
+    expected_path = Path.join(@fixtures, "genserver_info.bc.json")
+    assert {:ok, module} = AutumnCompiler.compile_files([gs, path])
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+    funs = Enum.flat_map(module["modules"], & &1["functions"])
+    assert Enum.any?(funs, &(&1["name"] == "InfoCounter.handle_info/2"))
+    assert Enum.any?(funs, &(&1["name"] == "GenServer.do_info/3"))
+  end
+
+  test "lowers supervisor_intensity" do
+    gs = Path.join(@stdlib, "genserver.ex")
+    sup = Path.join(@stdlib, "supervisor.ex")
+    path = Path.join(@fixtures, "supervisor_intensity.ex")
+    expected_path = Path.join(@fixtures, "supervisor_intensity.bc.json")
+    assert {:ok, module} = AutumnCompiler.compile_files([gs, sup, path])
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+    funs = Enum.flat_map(module["modules"], & &1["functions"])
+    assert Enum.any?(funs, &(&1["name"] == "Supervisor.start_link/2"))
+    assert Enum.any?(funs, &(&1["name"] == "BoomChild.init/1"))
+  end
+
+  test "lowers supervisor_rest_for_one" do
+    gs = Path.join(@stdlib, "genserver.ex")
+    sup = Path.join(@stdlib, "supervisor.ex")
+    path = Path.join(@fixtures, "supervisor_rest_for_one.ex")
+    expected_path = Path.join(@fixtures, "supervisor_rest_for_one.bc.json")
+    assert {:ok, module} = AutumnCompiler.compile_files([gs, sup, path])
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+    funs = Enum.flat_map(module["modules"], & &1["functions"])
+    assert Enum.any?(funs, &(&1["name"] == "Supervisor.restart_for/3"))
+  end
+
+  test "lowers supervisor_one_for_all" do
+    gs = Path.join(@stdlib, "genserver.ex")
+    sup = Path.join(@stdlib, "supervisor.ex")
+    path = Path.join(@fixtures, "supervisor_one_for_all.ex")
+    expected_path = Path.join(@fixtures, "supervisor_one_for_all.bc.json")
+    assert {:ok, module} = AutumnCompiler.compile_files([gs, sup, path])
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+  end
+
+  test "lowers ets_basic" do
+    ets = Path.join(@stdlib, "ets.ex")
+    path = Path.join(@fixtures, "ets_basic.ex")
+    expected_path = Path.join(@fixtures, "ets_basic.bc.json")
+    assert {:ok, module} = AutumnCompiler.compile_files([ets, path])
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+    funs = Enum.flat_map(module["modules"], & &1["functions"])
+    code = Enum.flat_map(funs, & &1["code"])
+    assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "ets_new/0"))
+    assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "ets_insert/3"))
+    assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "ets_lookup/2"))
+    assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "ets_delete/2"))
+  end
+
+  test "lowers ets_bag / ets_named / ets_select (IR v17)" do
+    ets = Path.join(@stdlib, "ets.ex")
+
+    for {stem, funs} <- [
+          {"ets_bag", ["ets_new/2"]},
+          {"ets_named", ["ets_new/2"]},
+          {"ets_select", ["ets_new/2", "ets_match_object/2", "ets_select/2"]}
+        ] do
+      path = Path.join(@fixtures, "#{stem}.ex")
+      expected_path = Path.join(@fixtures, "#{stem}.bc.json")
+      assert {:ok, module} = AutumnCompiler.compile_files([ets, path])
+      expected = expected_path |> File.read!() |> Jason.decode!()
+      assert module == expected
+      assert module["version"] == 17
+
+      code =
+        module["modules"]
+        |> Enum.flat_map(& &1["functions"])
+        |> Enum.flat_map(& &1["code"])
+
+      for fun <- funs do
+        assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == fun)),
+               "#{stem} missing #{fun}"
+      end
+    end
+  end
+
+  test "lowers float_string (IR v16 via is_binary)" do
     path = Path.join(@fixtures, "float_string.ex")
     expected_path = Path.join(@fixtures, "float_string.bc.json")
     assert {:ok, module} = AutumnCompiler.compile_file(path)
     expected = expected_path |> File.read!() |> Jason.decode!()
     assert module == expected
-    assert module["version"] == 10
+    # `is_binary/1` lowers to tag `binary` (v16); strings/floats remain v10 lits.
+    assert module["version"] == 16
     code = Enum.flat_map(module["functions"], & &1["code"])
     assert Enum.any?(code, &(&1["op"] == "load_lit" && match?(%{"float" => _}, &1["lit"])))
     assert Enum.any?(code, &(&1["op"] == "load_lit" && match?(%{"string" => _}, &1["lit"])))
     assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "<>/2"))
+    assert Enum.any?(code, &(&1["op"] == "is_tag" && &1["tag"] == "binary"))
   end
 
   test "lowers if_else / cond_main (Phase 7)" do
