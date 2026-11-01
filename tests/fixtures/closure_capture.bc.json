@@ -1,165 +1,165 @@
 {
-    "entry": "Main.main/0",
-    "functions": [
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 0,
+      "code": [
         {
-            "arity": 0,
-            "code": [
-                {
-                    "lit": {
-                        "int": 10
-                    },
-                    "op": "load_lit",
-                    "reg": 0
-                },
-                {
-                    "lit": {
-                        "int": 3
-                    },
-                    "op": "load_lit",
-                    "reg": 1
-                },
-                {
-                    "captures": [
-                        0
-                    ],
-                    "dest": 2,
-                    "fun": "Main.__fn_0/2",
-                    "op": "make_fun"
-                },
-                {
-                    "args": [
-                        1
-                    ],
-                    "dest": 3,
-                    "fun": 2,
-                    "op": "apply"
-                },
-                {
-                    "captures": [],
-                    "dest": 4,
-                    "fun": "Main.__fn_1/1",
-                    "op": "make_fun"
-                },
-                {
-                    "lit": {
-                        "int": 1
-                    },
-                    "op": "load_lit",
-                    "reg": 5
-                },
-                {
-                    "args": [
-                        5
-                    ],
-                    "dest": 6,
-                    "fun": 4,
-                    "op": "apply"
-                },
-                {
-                    "dest": 8,
-                    "op": "is_tag",
-                    "reg": 2,
-                    "tag": "fun"
-                },
-                {
-                    "lit": {
-                        "bool": false
-                    },
-                    "op": "jump_if_eq",
-                    "reg": 8,
-                    "target": 13
-                },
-                {
-                    "lit": null,
-                    "op": "jump_if_eq",
-                    "reg": 8,
-                    "target": 13
-                },
-                {
-                    "lit": {
-                        "int": 1
-                    },
-                    "op": "load_lit",
-                    "reg": 9
-                },
-                {
-                    "dest": 7,
-                    "op": "move",
-                    "src": 9
-                },
-                {
-                    "op": "jump",
-                    "target": 15
-                },
-                {
-                    "lit": {
-                        "int": 0
-                    },
-                    "op": "load_lit",
-                    "reg": 10
-                },
-                {
-                    "dest": 7,
-                    "op": "move",
-                    "src": 10
-                },
-                {
-                    "args": [
-                        3,
-                        6
-                    ],
-                    "dest": 11,
-                    "fun": "+/2",
-                    "op": "call"
-                },
-                {
-                    "args": [
-                        11,
-                        7
-                    ],
-                    "dest": 12,
-                    "fun": "+/2",
-                    "op": "call"
-                },
-                {
-                    "op": "return",
-                    "reg": 12
-                }
-            ],
-            "locals": 13,
-            "name": "Main.main/0"
+          "lit": {
+            "int": 10
+          },
+          "op": "load_lit",
+          "reg": 0
         },
         {
-            "arity": 2,
-            "code": [
-                {
-                    "args": [
-                        0,
-                        1
-                    ],
-                    "dest": 2,
-                    "fun": "+/2",
-                    "op": "call"
-                },
-                {
-                    "op": "return",
-                    "reg": 2
-                }
-            ],
-            "locals": 3,
-            "name": "Main.__fn_0/2"
+          "lit": {
+            "int": 3
+          },
+          "op": "load_lit",
+          "reg": 1
         },
         {
-            "arity": 1,
-            "code": [
-                {
-                    "op": "return",
-                    "reg": 0
-                }
-            ],
-            "locals": 1,
-            "name": "Main.__fn_1/1"
+          "captures": [
+            0
+          ],
+          "dest": 2,
+          "fun": "Main.__fn_0/2",
+          "op": "make_fun"
+        },
+        {
+          "args": [
+            1
+          ],
+          "dest": 3,
+          "fun": 2,
+          "op": "apply"
+        },
+        {
+          "captures": [],
+          "dest": 4,
+          "fun": "Main.__fn_1/1",
+          "op": "make_fun"
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 5
+        },
+        {
+          "args": [
+            5
+          ],
+          "dest": 6,
+          "fun": 4,
+          "op": "apply"
+        },
+        {
+          "dest": 8,
+          "op": "is_tag",
+          "reg": 2,
+          "tag": "fun"
+        },
+        {
+          "lit": {
+            "bool": false
+          },
+          "op": "jump_if_eq",
+          "reg": 8,
+          "target": 13
+        },
+        {
+          "lit": null,
+          "op": "jump_if_eq",
+          "reg": 8,
+          "target": 13
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 9
+        },
+        {
+          "dest": 7,
+          "op": "move",
+          "src": 9
+        },
+        {
+          "op": "jump",
+          "target": 15
+        },
+        {
+          "lit": {
+            "int": 0
+          },
+          "op": "load_lit",
+          "reg": 10
+        },
+        {
+          "dest": 7,
+          "op": "move",
+          "src": 10
+        },
+        {
+          "args": [
+            3,
+            6
+          ],
+          "dest": 11,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "args": [
+            11,
+            7
+          ],
+          "dest": 12,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "op": "return",
+          "reg": 12
         }
-    ],
-    "version": 11
+      ],
+      "locals": 13,
+      "name": "Main.main/0"
+    },
+    {
+      "arity": 2,
+      "code": [
+        {
+          "args": [
+            0,
+            1
+          ],
+          "dest": 2,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "op": "return",
+          "reg": 2
+        }
+      ],
+      "locals": 3,
+      "name": "Main.__fn_0/2"
+    },
+    {
+      "arity": 1,
+      "code": [
+        {
+          "op": "return",
+          "reg": 0
+        }
+      ],
+      "locals": 1,
+      "name": "Main.__fn_1/1"
+    }
+  ],
+  "version": 11
 }

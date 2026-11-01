@@ -47,11 +47,12 @@ structure Process where
   trapExit : Bool := false
   deriving Repr, Inhabited
 
-/-- ETS table kind (IR v17 teaching subset). -/
+/-- ETS table kind (IR v17/v18 teaching subset). -/
 inductive EtsKind where
   | set
   | bag
   | duplicateBag
+  | orderedSet
   deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Public ETS table: `{key, val}` objects stored as `Term` pairs (copied on insert). -/
@@ -60,6 +61,12 @@ structure EtsTable where
   name : Option String := none
   kind : EtsKind := .set
   entries : Array (Term × Term) := #[]
+  /-- Creator process pid (IR v18). -/
+  owner : Option Nat := none
+  /-- Heir pid + opaque data delivered on owner exit (IR v18). -/
+  heir : Option (Nat × Term) := none
+  /-- False after owner exit without heir; tid slot kept (IR v18). -/
+  alive : Bool := true
   deriving Repr, Inhabited
 
 /-- Whole-machine state: reduction-preemptive multi-process VM. -/

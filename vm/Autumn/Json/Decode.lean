@@ -199,9 +199,12 @@ def decodeInstr (j : Json) : Except StepError Instr := do
     let after ← asNat (← field j "after")
     let timeout ←
       match j.getObjVal? "timeout" with
-      | .error _ => pure none
-      | .ok Json.null => pure none
-      | .ok t => pure (some (← asNat t))
+      | .error _ => pure WaitTimeout.infinity
+      | .ok Json.null => pure WaitTimeout.infinity
+      | .ok t =>
+        match t.getObjVal? "reg" with
+        | .ok rv => pure (WaitTimeout.reg (← asNat rv))
+        | .error _ => pure (WaitTimeout.lit (← asNat t))
     pure (.wait retry after timeout)
   | "enter_try" =>
     pure (.enterTry (← asNat (← field j "rescue")) (← asNat (← field j "exc")))
@@ -263,7 +266,8 @@ def decodeModule (j : Json) : Except StepError Module := do
   if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 &&
       version != 6 && version != 7 && version != 8 && version != 9 && version != 10 &&
       version != 11 && version != 12 && version != 13 && version != 14 &&
-      version != 15 && version != 16 && version != 17 then
+      version != 15 && version != 16 && version != 17 && version != 18 &&
+      version != 19 then
     err s!"unsupported IR version: {version}"
   let entry ← asString (← field j "entry")
   match j.getObjVal? "modules" with

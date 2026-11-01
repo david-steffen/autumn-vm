@@ -1,26 +1,60 @@
 {
-  "version": 1,
   "entry": "Main.main/0",
   "functions": [
     {
-      "name": "Main.add/2",
       "arity": 2,
-      "locals": 3,
       "code": [
-        {"op": "call", "dest": 2, "fun": "+/2", "args": [0, 1]},
-        {"op": "return", "reg": 2}
-      ]
+        {
+          "args": [
+            0,
+            1
+          ],
+          "dest": 2,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "op": "return",
+          "reg": 2
+        }
+      ],
+      "locals": 3,
+      "name": "Main.add/2"
     },
     {
-      "name": "Main.main/0",
       "arity": 0,
-      "locals": 3,
       "code": [
-        {"op": "load_lit", "reg": 0, "lit": {"int": 1}},
-        {"op": "load_lit", "reg": 1, "lit": {"int": 2}},
-        {"op": "call", "dest": 2, "fun": "Main.add/2", "args": [0, 1]},
-        {"op": "return", "reg": 2}
-      ]
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 0
+        },
+        {
+          "lit": {
+            "int": 2
+          },
+          "op": "load_lit",
+          "reg": 1
+        },
+        {
+          "args": [
+            0,
+            1
+          ],
+          "dest": 2,
+          "fun": "Main.add/2",
+          "op": "call"
+        },
+        {
+          "op": "return",
+          "reg": 2
+        }
+      ],
+      "locals": 3,
+      "name": "Main.main/0"
     }
-  ]
+  ],
+  "version": 1
 }

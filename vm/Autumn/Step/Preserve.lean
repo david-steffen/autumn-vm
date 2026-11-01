@@ -659,7 +659,9 @@ theorem State.etsInsert_preserves_WF (s : State) (tid : Nat) (key val : Term) {s
     State.WF s' ∧ s'.module = s.module := by
   unfold State.etsInsert at h
   split at h
-  · cases h; exact ⟨etsTables_preserves s _ hs, rfl⟩
+  · split at h
+    · exact nomatch h
+    · cases h; exact ⟨etsTables_preserves s _ hs, rfl⟩
   · exact nomatch h
 
 theorem State.etsDelete_preserves_WF (s : State) (tid : Nat) (key : Term) {s'}
@@ -667,7 +669,38 @@ theorem State.etsDelete_preserves_WF (s : State) (tid : Nat) (key : Term) {s'}
     State.WF s' ∧ s'.module = s.module := by
   unfold State.etsDelete at h
   split at h
-  · cases h; exact ⟨etsTables_preserves s _ hs, rfl⟩
+  · split at h
+    · exact nomatch h
+    · cases h; exact ⟨etsTables_preserves s _ hs, rfl⟩
+  · exact nomatch h
+
+theorem State.etsDeleteObject_preserves_WF (s : State) (tid : Nat) (key val : Term) {s'}
+    (hs : State.WF s) (h : State.etsDeleteObject s tid key val = some s') :
+    State.WF s' ∧ s'.module = s.module := by
+  unfold State.etsDeleteObject at h
+  split at h
+  · split at h
+    · exact nomatch h
+    · cases h; exact ⟨etsTables_preserves s _ hs, rfl⟩
+  · exact nomatch h
+
+theorem State.etsHeir_preserves_WF (s : State) (tid : Nat) (heirT : Term) {s'}
+    (hs : State.WF s) (h : State.etsHeir s tid heirT = some s') :
+    State.WF s' ∧ s'.module = s.module := by
+  unfold State.etsHeir at h
+  split at h
+  · split at h
+    · exact nomatch h
+    · split at h
+      · split at h
+        · cases h; exact ⟨etsTables_preserves s _ hs, rfl⟩
+        · exact nomatch h
+      · split at h
+        · split at h
+          · cases h; exact ⟨etsTables_preserves s _ hs, rfl⟩
+          · exact nomatch h
+        · exact nomatch h
+      · exact nomatch h
   · exact nomatch h
 
 /-- `finishWithTerm` allocates `t` into `dest` and advances IP. -/
@@ -742,7 +775,7 @@ theorem etsNew_preserves
     State.WF s' := by
   simp [etsNew, State.etsNew] at h; cases h
   let tid := s.etsTables.size
-  let s1 := { s with etsTables := s.etsTables.push {} }
+  let s1 := { s with etsTables := s.etsTables.push { owner := some p.pid } }
   have hs1 : State.WF s1 := etsTables_preserves s _ hs
   let frame1 := setReg! frame dest (.int tid)
   let frame2 := { frame1 with ip := frame1.ip + 1 }
@@ -751,9 +784,9 @@ theorem etsNew_preserves
   simpa [s1] using apply_top_frame_preserves s1 p frame2 hs1 hp hres hstat htop hfwf2
     (by simp [frame2, frame1, setReg!, hframe]) (by simp [frame2, frame1, setReg!, hframe])
 
-theorem State.etsNewNamed_preserves_WF (s : State) (name : Option String) (kind : EtsKind)
-    {s' : State} {tid : Nat}
-    (hs : State.WF s) (h : State.etsNewNamed s name kind = some (s', tid)) :
+theorem State.etsNewNamed_preserves_WF (s : State) (ownerPid : Nat) (name : Option String)
+    (kind : EtsKind) {s' : State} {tid : Nat}
+    (hs : State.WF s) (h : State.etsNewNamed s ownerPid name kind = some (s', tid)) :
     State.WF s' ∧ s'.module = s.module := by
   unfold State.etsNewNamed at h
   split at h
@@ -785,13 +818,13 @@ theorem etsNew2_preserves
       cases hn : Heap.toTerm p.heap nameV with
       | nil =>
         simp [hn] at h
-        cases hnew : State.etsNewNamed s none kind with
+        cases hnew : State.etsNewNamed s p.pid none kind with
         | none =>
           simp [hnew] at h
           exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
         | some st =>
           simp [hnew] at h; cases h
-          have ⟨hs1, hmod⟩ := State.etsNewNamed_preserves_WF s none kind hs hnew
+          have ⟨hs1, hmod⟩ := State.etsNewNamed_preserves_WF s p.pid none kind hs hnew
           have hp1 : Process.WF st.1.module p := by simpa [hmod] using hp
           have hfwf1 : Frame.WF st.1.module frame := by simpa [hmod] using hfwf
           let frame1 := setReg! frame dest (.int st.2)
@@ -802,13 +835,13 @@ theorem etsNew2_preserves
             (by simp [frame2, frame1, setReg!, hframe]) (by simp [frame2, frame1, setReg!, hframe])
       | atom n =>
         simp [hn] at h
-        cases hnew : State.etsNewNamed s (some n) kind with
+        cases hnew : State.etsNewNamed s p.pid (some n) kind with
         | none =>
           simp [hnew] at h
           exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
         | some st =>
           simp [hnew] at h; cases h
-          have ⟨hs1, hmod⟩ := State.etsNewNamed_preserves_WF s (some n) kind hs hnew
+          have ⟨hs1, hmod⟩ := State.etsNewNamed_preserves_WF s p.pid (some n) kind hs hnew
           have hp1 : Process.WF st.1.module p := by simpa [hmod] using hp
           have hfwf1 : Frame.WF st.1.module frame := by simpa [hmod] using hfwf
           let frame1 := setReg! frame dest (.int st.2)
@@ -917,6 +950,80 @@ theorem etsDelete_preserves
       exact apply_top_frame_preserves s1 p frame2 hs1 hp1 hres hstat htop hfwf2
         (by simp [frame2, frame1, setReg!, hframe]) (by simp [frame2, frame1, setReg!, hframe])
 
+/-- Successful `ets_delete_object/2` preserves WF. -/
+theorem etsDeleteObject_preserves
+    (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV objV : Value) {s'}
+    (hs : State.WF s) (hp : Process.WF s.module p) (hfwf : Frame.WF s.module frame)
+    (hres : p.result = none) (hstat : p.status = .runnable)
+    (htop : p.stack.size > 0) (hframe : p.stack[p.stack.size - 1]! = frame)
+    (hip : frame.ip + 1 < frame.function.code.size)
+    (h : etsDeleteObject s p frame dest tabV objV = .ok s') :
+    State.WF s' := by
+  simp [etsDeleteObject] at h
+  cases hr : State.etsResolve s (Heap.toTerm p.heap tabV) with
+  | none =>
+    simp [hr] at h
+    exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+  | some tid =>
+    simp [hr] at h
+    cases ho : Heap.toTerm p.heap objV with
+    | tuple elems =>
+      simp [ho] at h
+      split at h
+      · cases hd : State.etsDeleteObject s tid (elems[0]'(by omega)) (elems[1]'(by omega)) with
+        | none =>
+          simp [hd] at h
+          exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+        | some s1 =>
+          simp [hd] at h; cases h
+          have ⟨hs1, hmod⟩ := State.etsDeleteObject_preserves_WF s tid _ _ hs hd
+          have hp1 : Process.WF s1.module p := by simpa [hmod] using hp
+          have hfwf1 : Frame.WF s1.module frame := by simpa [hmod] using hfwf
+          let frame1 := setReg! frame dest (.atom "true")
+          let frame2 := { frame1 with ip := frame1.ip + 1 }
+          have hfwf2 : Frame.WF s1.module frame2 :=
+            bumpIp_frame _ _ (setReg!_WF _ _ _ _ hfwf1) (by simpa [frame1, setReg!] using hip)
+          exact apply_top_frame_preserves s1 p frame2 hs1 hp1 hres hstat htop hfwf2
+            (by simp [frame2, frame1, setReg!, hframe]) (by simp [frame2, frame1, setReg!, hframe])
+      · exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+    | _ =>
+      simp [ho] at h
+      exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+
+/-- Successful `ets_heir/2` preserves WF. -/
+theorem etsHeir_preserves
+    (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV heirV : Value) {s'}
+    (hs : State.WF s) (hp : Process.WF s.module p) (hfwf : Frame.WF s.module frame)
+    (hres : p.result = none) (hstat : p.status = .runnable)
+    (htop : p.stack.size > 0) (hframe : p.stack[p.stack.size - 1]! = frame)
+    (hip : frame.ip + 1 < frame.function.code.size)
+    (h : etsHeir s p frame dest tabV heirV = .ok s') :
+    State.WF s' := by
+  simp [etsHeir] at h
+  cases hr : State.etsResolve s (Heap.toTerm p.heap tabV) with
+  | none =>
+    simp [hr] at h
+    exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+  | some tid =>
+    simp [hr] at h
+    cases hh : State.etsHeir s tid (Heap.toTerm p.heap heirV) with
+    | none =>
+      simp [hh] at h
+      exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+    | some s1 =>
+      simp [hh] at h; cases h
+      have ⟨hs1, hmod⟩ := State.etsHeir_preserves_WF s tid _ hs hh
+      have hp1 : Process.WF s1.module p := by simpa [hmod] using hp
+      have hfwf1 : Frame.WF s1.module frame := by simpa [hmod] using hfwf
+      let frame1 := setReg! frame dest (.atom "true")
+      let frame2 := { frame1 with ip := frame1.ip + 1 }
+      have hfwf2 : Frame.WF s1.module frame2 :=
+        bumpIp_frame _ _ (setReg!_WF _ _ _ _ hfwf1) (by simpa [frame1, setReg!] using hip)
+      exact apply_top_frame_preserves s1 p frame2 hs1 hp1 hres hstat htop hfwf2
+        (by simp [frame2, frame1, setReg!, hframe]) (by simp [frame2, frame1, setReg!, hframe])
+
 /-- Successful `ets_match_object/2` preserves WF. -/
 theorem etsMatchObject_preserves
     (s : State) (p : Process) (frame : Frame) (dest : Reg)
@@ -1000,6 +1107,67 @@ theorem processExit_preserves
         (s.setCurrentProcess (State.setCurrentFrame p frame2)) pid reason hs1
       exact scheduleNext_preserves _ _ hs2 h
   · exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+
+/-- Successful `Process.hibernate/0` preserves WF. -/
+theorem processHibernate_preserves
+    (s : State) (p : Process) (frame : Frame) (dest : Reg) {s'}
+    (hs : State.WF s) (hp : Process.WF s.module p) (hfwf : Frame.WF s.module frame)
+    (hres : p.result = none) (hstat : p.status = .runnable)
+    (htop : p.stack.size > 0) (hframe : p.stack[p.stack.size - 1]! = frame)
+    (hip : frame.ip + 1 < frame.function.code.size)
+    (h : processHibernate s p frame dest = .ok s') :
+    State.WF s' := by
+  simp [processHibernate] at h; cases h
+  let p0 := State.setCurrentFrame p frame
+  have hp0 : Process.WF s.module p0 :=
+    setCurrentFrame_sameMeta_WF _ _ _ hres hstat htop hp hfwf
+      (by simp [hframe]) (by simp [hframe])
+  have hsz0 : 0 < p0.stack.size := by
+    simpa [p0, setCurrentFrame_stack_size p frame htop] using htop
+  have hres0 : p0.result = none := by
+    dsimp [p0, State.setCurrentFrame]; simp [htop, hres]
+  have hstat0 : p0.status = .runnable := by
+    dsimp [p0, State.setCurrentFrame]; simp [htop, hstat]
+  let p1 := Process.gc p0
+  have hp1 : Process.WF s.module p1 := Process.gc_preserves_process_WF _ _ hp0
+  have hr := Process.gc_rel p0
+  have hstat1 : p1.status = .runnable := by simpa [p1, hstat0] using hr.status
+  have hres1 : p1.result = none := hr.result_none.2 hres0
+  have hszEq : p1.stack.size = p0.stack.size := hr.stack_size
+  have hsz1 : 0 < p1.stack.size := by simpa [hszEq] using hsz0
+  have htop0 : p0.stack[p0.stack.size - 1]! = frame := by
+    dsimp [p0, State.setCurrentFrame]
+    simp only [htop, ↓reduceDIte]
+    have hlt := Nat.sub_one_lt_of_lt htop
+    simp [Array.getElem_set_self, getElem!_pos, hlt]
+  have hmetaF := Process.gc_top_frame_meta p0 hsz0
+  have htopFun :
+      (p1.stack[p1.stack.size - 1]!).function = frame.function := by
+    have := hmetaF.1
+    simpa [p1, getElem!_pos, htop0] using this
+  have htopIp : (p1.stack[p1.stack.size - 1]!).ip = frame.ip := by
+    have := hmetaF.2
+    simpa [p1, getElem!_pos, htop0] using this
+  have hfwf1 : Frame.WF s.module (p1.stack[p1.stack.size - 1]!) := by
+    have hsw : Process.stackWF s.module p1.stack := by
+      have hh := hp1
+      simp [Process.WF, hres1, hstat1] at hh
+      exact hh.2.2.1
+    have hi : p1.stack.size - 1 < p1.stack.size := Nat.sub_one_lt_of_lt hsz1
+    rw [getElem!_pos p1.stack (p1.stack.size - 1) hi]
+    exact hsw.1 (p1.stack.size - 1) hi
+  have hip1 : (p1.stack[p1.stack.size - 1]!).ip + 1 <
+      (p1.stack[p1.stack.size - 1]!).function.code.size := by
+    simpa [htopFun, htopIp] using hip
+  let frame1 := setReg! (p1.stack[p1.stack.size - 1]!) dest (.atom "ok")
+  let frame2 := { frame1 with ip := frame1.ip + 1 }
+  have hfwf2 : Frame.WF s.module frame2 :=
+    bumpIp_frame _ _ (setReg!_WF _ _ _ _ hfwf1) (by
+      simpa [frame2, frame1, setReg!] using hip1)
+  exact setCurrentProcess_WF s _ hs
+    (setCurrentFrame_sameMeta_WF s.module p1 frame2 hres1 hstat1 hsz1 hp1 hfwf2
+      (by simp [frame2, frame1, setReg!])
+      (by simp [frame2, frame1, setReg!]))
 
 /-- When `peekLoadFile` succeeds, the current instruction is `load_file` with a string path. -/
 theorem peekLoadFile_spec (s : State) (dest : Reg) (path : String)

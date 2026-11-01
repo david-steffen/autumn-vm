@@ -133,6 +133,66 @@ def dropByRef (arr : Array (Nat × Nat)) (refId : Nat) : Array (Nat × Nat) :=
 def dropMonitoredBy (arr : Array (Nat × Nat)) (fromPid refId : Nat) : Array (Nat × Nat) :=
   arr.filter (fun (p, r) => !(p == fromPid && r == refId))
 
+/-- Deliver `{:ETS-TRANSFER, tid, fromPid, data}` to heir and wake if waiting (IR v18). -/
+def notifyEtsTransfer (s : State) (tid fromPid heirPid : Nat) (data : Term) : State :=
+  match s.findProcessIdx heirPid with
+  | none => s
+  | some idx =>
+    if hpeer : idx < s.processes.size then
+      let peer0 := s.processes[idx]'hpeer
+      if peer0.status == .exited then
+        s
+      else
+        let (peer0, dataV) := Process.allocTerm peer0 data
+        let (peer0, msg) :=
+          Process.allocCompound peer0 Node.tuple
+            #[.atom "ETS-TRANSFER", .int tid, .pid fromPid, dataV]
+        let peer1 := { peer0 with mailbox := peer0.mailbox.push msg }
+        let peer :=
+          if peer0.status == .waiting then wakeOnMessage peer1 else peer1
+        { s with processes := s.processes.set idx peer hpeer }
+    else
+      s
+
+/-- True if `pid` is a non-exited process. -/
+def processLive (s : State) (pid : Nat) : Bool :=
+  match s.findProcessIdx pid with
+  | none => false
+  | some idx =>
+    if h : idx < s.processes.size then
+      (s.processes[idx]'h).status != .exited
+    else
+      false
+
+/-- One table index: transfer to live heir or kill (IR v18). -/
+def etsOnOwnerExit.one (s : State) (fromPid i : Nat) : State :=
+  if h : i < s.etsTables.size then
+    let t := s.etsTables[i]'h
+    if ht : t.alive && t.owner == some fromPid then
+      match th : t.heir with
+      | some (heirPid, data) =>
+        if processLive s heirPid then
+          let t := { t with owner := some heirPid, heir := none }
+          let s := { s with etsTables := s.etsTables.set i t h }
+          notifyEtsTransfer s i fromPid heirPid data
+        else
+          { s with etsTables := s.etsTables.set i (Ets.killTable t) h }
+      | none =>
+        { s with etsTables := s.etsTables.set i (Ets.killTable t) h }
+    else
+      s
+  else
+    s
+
+/-- Fold owner-exit handling over table indices. -/
+def etsOnOwnerExit.go (s : State) (fromPid : Nat) : List Nat → State
+  | [] => s
+  | i :: rest => etsOnOwnerExit.go (etsOnOwnerExit.one s fromPid i) fromPid rest
+
+/-- After owner exit: transfer to live heir or kill the table (IR v18). -/
+def etsOnOwnerExit (s : State) (fromPid : Nat) : State :=
+  etsOnOwnerExit.go s fromPid (List.range s.etsTables.size)
+
 /-- Deliver one `{:EXIT, fromPid, reason}` to a **trapping** peer (mailbox only). -/
 def notifyExitMailbox (s : State) (fromPid : Nat) (heap : Heap) (reason : Value)
     (peerPid : Nat) : State :=
@@ -288,8 +348,11 @@ def propagateExit (s : State) (exitedIdx : Nat) (reason : Value) : State :=
     let heap := exited0.heap
     let exited := { exited0 with links := #[], monitors := #[], monitoredBy := #[] }
     let s := { s with processes := s.processes.set exitedIdx exited hlt }
-    propagateExit.from s.processes.size s fromPid heap reason
-      linkPids.toList downs.toList outs.toList
+    let s :=
+      propagateExit.from s.processes.size s fromPid heap reason
+        linkPids.toList downs.toList outs.toList
+    -- IR v18: ETS owner exit → heir transfer or kill table.
+    etsOnOwnerExit s fromPid
   else
     s
 
@@ -373,63 +436,113 @@ def isDownRefMsg (h : Heap) (v : Value) (refId : Nat) : Bool :=
 def flushDownRef (h : Heap) (mailbox : Array Value) (refId : Nat) : Array Value :=
   mailbox.filter (fun v => !(isDownRefMsg h v refId))
 
-/-! ## Thin ETS (public tables; tid = index) -/
+/-! ## ETS (public tables; tid = index; IR v17/v18) -/
 
-/-- Anonymous `:set` table (compat `ets_new/0`). -/
-def etsNew (s : State) : State × Nat :=
+/-- Anonymous `:set` table (compat `ets_new/0`); `owner` = creator pid. -/
+def etsNew (s : State) (ownerPid : Nat) : State × Nat :=
   let tid := s.etsTables.size
-  ({ s with etsTables := s.etsTables.push {} }, tid)
+  let t : EtsTable := { owner := some ownerPid }
+  ({ s with etsTables := s.etsTables.push t }, tid)
 
-/-- IR v17 `ets_new/2`: `name` is `none` (anonymous) or atom text; fails on dup name. -/
-def etsNewNamed (s : State) (name : Option String) (kind : EtsKind) : Option (State × Nat) :=
+/-- IR v17/v18 `ets_new/2`: `name` is `none` (anonymous) or atom text; fails on dup name. -/
+def etsNewNamed (s : State) (ownerPid : Nat) (name : Option String) (kind : EtsKind) :
+    Option (State × Nat) :=
   match name with
   | some n =>
     if Ets.nameTaken s.etsTables n then none
     else
       let tid := s.etsTables.size
-      let t : EtsTable := { name := some n, kind }
+      let t : EtsTable := { name := some n, kind, owner := some ownerPid }
       some ({ s with etsTables := s.etsTables.push t }, tid)
   | none =>
     let tid := s.etsTables.size
-    let t : EtsTable := { kind }
+    let t : EtsTable := { kind, owner := some ownerPid }
     some ({ s with etsTables := s.etsTables.push t }, tid)
 
-/-- Resolve tab term (int tid or name atom) to index. -/
+/-- Resolve tab term (int tid or name atom) to a **live** index. -/
 def etsResolve (s : State) (tab : Term) : Option Nat :=
   Ets.resolveTab s.etsTables tab
 
 def etsInsert (s : State) (tid : Nat) (key val : Term) : Option State :=
   if h : tid < s.etsTables.size then
-    let t := Ets.insertEntry (s.etsTables[tid]'h) key val
-    some { s with etsTables := s.etsTables.set tid t h }
+    if ha : !(s.etsTables[tid]'h).alive then none
+    else
+      let t := Ets.insertEntry (s.etsTables[tid]'h) key val
+      some { s with etsTables := s.etsTables.set tid t h }
   else
     none
 
 def etsLookup (s : State) (tid : Nat) (key : Term) : Option (Array Term) :=
   if h : tid < s.etsTables.size then
-    some (Ets.lookupValues (s.etsTables[tid]'h) key)
+    if ha : !(s.etsTables[tid]'h).alive then none
+    else some (Ets.lookupValues (s.etsTables[tid]'h) key)
   else
     none
 
 def etsDelete (s : State) (tid : Nat) (key : Term) : Option State :=
   if h : tid < s.etsTables.size then
-    let t := Ets.deleteKey (s.etsTables[tid]'h) key
-    some { s with etsTables := s.etsTables.set tid t h }
+    if ha : !(s.etsTables[tid]'h).alive then none
+    else
+      let t := Ets.deleteKey (s.etsTables[tid]'h) key
+      some { s with etsTables := s.etsTables.set tid t h }
+  else
+    none
+
+def etsDeleteObject (s : State) (tid : Nat) (key val : Term) : Option State :=
+  if h : tid < s.etsTables.size then
+    if ha : !(s.etsTables[tid]'h).alive then none
+    else
+      let t := Ets.deleteObject (s.etsTables[tid]'h) key val
+      some { s with etsTables := s.etsTables.set tid t h }
   else
     none
 
 def etsMatchObject (s : State) (tid : Nat) (pattern : Term) : Option (Array Term) :=
   if h : tid < s.etsTables.size then
-    some (Ets.matchObject (s.etsTables[tid]'h) pattern)
+    if ha : !(s.etsTables[tid]'h).alive then none
+    else some (Ets.matchObject (s.etsTables[tid]'h) pattern)
   else
     none
 
-/-- `none` = bad tab; `some (.error ())` = malformed match-spec; `some (.ok vals)` = ok. -/
+/-- `none` = bad tab; `some (.error ())` = malformed/unsupported guard; `some (.ok vals)` = ok. -/
 def etsSelect (s : State) (tid : Nat) (spec : Term) : Option (Except Unit (Array Term)) :=
   if h : tid < s.etsTables.size then
-    match Ets.parseSpec spec with
-    | none => some (.error ())
-    | some clauses => some (.ok (Ets.select (s.etsTables[tid]'h) clauses))
+    if ha : !(s.etsTables[tid]'h).alive then none
+    else
+      match Ets.parseSpec spec with
+      | none => some (.error ())
+      | some clauses =>
+        match Ets.select (s.etsTables[tid]'h) clauses with
+        | none => some (.error ())
+        | some vals => some (.ok vals)
+  else
+    none
+
+/-- Set or clear heir: `heirT` is `{pid, data}` or atom `none`. -/
+def etsHeir (s : State) (tid : Nat) (heirT : Term) : Option State :=
+  if h : tid < s.etsTables.size then
+    if ha : !(s.etsTables[tid]'h).alive then none
+    else
+      let t0 := s.etsTables[tid]'h
+      match heirT with
+      | .atom name =>
+        if name == "none" then
+          some { s with etsTables := s.etsTables.set tid { t0 with heir := none } h }
+        else
+          none
+      | .tuple elems =>
+        if hsz : elems.size = 2 then
+          match elems[0]'(by omega) with
+          | .pid pid =>
+            some {
+              s with
+              etsTables :=
+                s.etsTables.set tid { t0 with heir := some (pid, elems[1]'(by omega)) } h
+            }
+          | _ => none
+        else
+          none
+      | _ => none
   else
     none
 

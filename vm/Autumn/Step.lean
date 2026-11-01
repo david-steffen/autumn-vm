@@ -250,6 +250,29 @@ def processExit (s : State) (p : Process) (frame : Frame) (dest : Reg)
       State.scheduleNext s s.current
   | _ => raiseValue s p frame (.atom "badarg")
 
+/-- IR v19 teaching `Process.hibernate/0`: GC current process, return `:ok`. -/
+def processHibernate (s : State) (p : Process) (frame : Frame) (dest : Reg) :
+    Except StepError State :=
+  let p := State.setCurrentFrame p frame
+  let p := Process.gc p
+  let frame := p.stack[p.stack.size - 1]!
+  let frame := setReg! frame dest (.atom "ok")
+  let frame := { frame with ip := frame.ip + 1 }
+  .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
+
+/-- Resolve `wait` timeout to optional tick count (`none` = infinity). -/
+@[irreducible] def resolveWaitTimeout (frame : Frame) (timeout : WaitTimeout) :
+    Except StepError (Option Nat) :=
+  match timeout with
+  | .infinity => pure none
+  | .lit n => pure (some n)
+  | .reg r =>
+    match getReg! frame r with
+    | .int n =>
+      if n < 0 then throw (.typeError "wait timeout reg expects a non-neg int")
+      else pure (some n.toNat)
+    | _ => throw (.typeError "wait timeout reg expects an int")
+
 /-- Park `t` in `dest` and advance IP (may GC). -/
 def finishWithTerm (s : State) (p : Process) (frame : Frame) (dest : Reg) (t : Term) :
     Except StepError State :=
@@ -263,7 +286,7 @@ def finishWithTerm (s : State) (p : Process) (frame : Frame) (dest : Reg) (t : T
 /-- `ets_new/0` — allocate anonymous `:set`; returns tid as int. -/
 def etsNew (s : State) (p : Process) (frame : Frame) (dest : Reg) :
     Except StepError State :=
-  let (s, tid) := State.etsNew s
+  let (s, tid) := State.etsNew s p.pid
   let frame := setReg! frame dest (.int tid)
   let frame := { frame with ip := frame.ip + 1 }
   .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
@@ -280,14 +303,14 @@ def etsNew2 (s : State) (p : Process) (frame : Frame) (dest : Reg)
     | some kind =>
       match nameT with
       | .nil =>
-        match State.etsNewNamed s none kind with
+        match State.etsNewNamed s p.pid none kind with
         | none => raiseValue s p frame (.atom "badarg")
         | some (s, tid) =>
           let frame := setReg! frame dest (.int tid)
           let frame := { frame with ip := frame.ip + 1 }
           .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
       | .atom n =>
-        match State.etsNewNamed s (some n) kind with
+        match State.etsNewNamed s p.pid (some n) kind with
         | none => raiseValue s p frame (.atom "badarg")
         | some (s, tid) =>
           let frame := setReg! frame dest (.int tid)
@@ -333,6 +356,41 @@ def etsDelete (s : State) (p : Process) (frame : Frame) (dest : Reg)
   | some tid =>
     let keyT := Heap.toTerm p.heap keyV
     match State.etsDelete s tid keyT with
+    | none => raiseValue s p frame (.atom "badarg")
+    | some s =>
+      let frame := setReg! frame dest (.atom "true")
+      let frame := { frame with ip := frame.ip + 1 }
+      .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
+
+/-- `ets_delete_object/2` — drop one exact `{key,val}`. -/
+def etsDeleteObject (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV objV : Value) : Except StepError State :=
+  let tabT := Heap.toTerm p.heap tabV
+  match State.etsResolve s tabT with
+  | none => raiseValue s p frame (.atom "badarg")
+  | some tid =>
+    match Heap.toTerm p.heap objV with
+    | .tuple elems =>
+      if hsz : elems.size = 2 then
+        match State.etsDeleteObject s tid (elems[0]'(by omega)) (elems[1]'(by omega)) with
+        | none => raiseValue s p frame (.atom "badarg")
+        | some s =>
+          let frame := setReg! frame dest (.atom "true")
+          let frame := { frame with ip := frame.ip + 1 }
+          .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
+      else
+        raiseValue s p frame (.atom "badarg")
+    | _ => raiseValue s p frame (.atom "badarg")
+
+/-- `ets_heir/2` — set `{pid, data}` or `:none`. -/
+def etsHeir (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV heirV : Value) : Except StepError State :=
+  let tabT := Heap.toTerm p.heap tabV
+  match State.etsResolve s tabT with
+  | none => raiseValue s p frame (.atom "badarg")
+  | some tid =>
+    let heirT := Heap.toTerm p.heap heirV
+    match State.etsHeir s tid heirT with
     | none => raiseValue s p frame (.atom "badarg")
     | some s =>
       let frame := setReg! frame dest (.atom "true")
@@ -444,6 +502,11 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
         throw (.badArity funName 2 args.size)
       else
         processExit s p frame dest args[0]! args[1]!
+    else if funName == "Process.hibernate/0" then
+      if args.size != 0 then
+        throw (.badArity funName 0 args.size)
+      else
+        processHibernate s p frame dest
     else if funName == "ets_new/0" then
       if args.size != 0 then
         throw (.badArity funName 0 args.size)
@@ -469,6 +532,11 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
         throw (.badArity funName 2 args.size)
       else
         etsDelete s p frame dest args[0]! args[1]!
+    else if funName == "ets_delete_object/2" then
+      if args.size != 2 then
+        throw (.badArity funName 2 args.size)
+      else
+        etsDeleteObject s p frame dest args[0]! args[1]!
     else if funName == "ets_match_object/2" then
       if args.size != 2 then
         throw (.badArity funName 2 args.size)
@@ -479,6 +547,11 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
         throw (.badArity funName 2 args.size)
       else
         etsSelect s p frame dest args[0]! args[1]!
+    else if funName == "ets_heir/2" then
+      if args.size != 2 then
+        throw (.badArity funName 2 args.size)
+      else
+        etsHeir s p frame dest args[0]! args[1]!
     else if funName == "make_ref/0" then
       if args.size != 0 then
         throw (.badArity funName 0 args.size)
@@ -710,7 +783,8 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
           let s := s.setCurrentProcess p
           State.scheduleNext s s.current
       | none =>
-        match timeout with
+        let ticks? ← resolveWaitTimeout frame timeout
+        match ticks? with
         | some 0 =>
           let frame := { frame with ip := after }
           pure (s.setCurrentProcess (State.setCurrentFrame p frame))

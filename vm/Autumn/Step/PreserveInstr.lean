@@ -20,9 +20,9 @@ Every `Instr` constructor has a preserve case (mirrored by
 `monitor`, `demonitor`, `makeFun`, `apply`, `loadFile`, `applyMfa`.
 
 Call-specials via `call_preserves` → helpers in `Step.Preserve`: `map_put/3`,
-`cons/2`, `Process.flag/2`, `Process.exit/2`, `ets_new/0`, `ets_new/2`,
-`ets_insert/3`, `ets_lookup/2`, `ets_delete/2`, `ets_match_object/2`,
-`ets_select/2`, `make_ref/0`; other MFAs use `builtin` +
+`cons/2`, `Process.flag/2`, `Process.exit/2`, `Process.hibernate/0`, `ets_new/0`, `ets_new/2`,
+`ets_insert/3`, `ets_lookup/2`, `ets_delete/2`, `ets_delete_object/2`,
+`ets_match_object/2`, `ets_select/2`, `ets_heir/2`, `make_ref/0`; other MFAs use `builtin` +
 `builtin_error_not_structural` / `floatBinop_ne_error`.
 
 See `AGENTS.md` (“Public proof surface”).
@@ -119,185 +119,210 @@ theorem call_preserves {s p frame} (H : StepInstrHyp s p frame)
               hs hp hfwf hres hstat htop hframe hip h
           · simp only [har, ↓reduceIte, ite_true] at h; cases h
         · simp [hex] at h
-          by_cases hetsn : funName = "ets_new/0"
-          · simp [hetsn] at h
+          by_cases hhib : funName = "Process.hibernate/0"
+          · simp [hhib] at h
             split at h
-            · exact etsNew_preserves s p frame dest
+            · exact processHibernate_preserves s p frame dest
                 hs hp hfwf hres hstat htop hframe hip h
             · cases h
-          · simp [hetsn] at h
-            by_cases hetsn2 : funName = "ets_new/2"
-            · simp [hetsn2] at h
-              by_cases har : (readArgs! frame argRegs).size = 2
-              · simp only [har, ↓reduceIte, ite_false] at h
-                exact etsNew2_preserves s p frame dest
-                  (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
+          · simp [hhib] at h
+            by_cases hetsn : funName = "ets_new/0"
+            · simp [hetsn] at h
+              split at h
+              · exact etsNew_preserves s p frame dest
                   hs hp hfwf hres hstat htop hframe hip h
-              · simp only [har, ↓reduceIte, ite_true] at h; cases h
-            · simp [hetsn2] at h
-              by_cases hetsi : funName = "ets_insert/3"
-              · simp [hetsi] at h
-                by_cases har : (readArgs! frame argRegs).size = 3
+              · cases h
+            · simp [hetsn] at h
+              by_cases hetsn2 : funName = "ets_new/2"
+              · simp [hetsn2] at h
+                by_cases har : (readArgs! frame argRegs).size = 2
                 · simp only [har, ↓reduceIte, ite_false] at h
-                  exact etsInsert_preserves s p frame dest
+                  exact etsNew2_preserves s p frame dest
                     (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
-                    (readArgs! frame argRegs)[2]!
                     hs hp hfwf hres hstat htop hframe hip h
                 · simp only [har, ↓reduceIte, ite_true] at h; cases h
-              · simp [hetsi] at h
-                by_cases hetsl : funName = "ets_lookup/2"
-                · simp [hetsl] at h
-                  by_cases har : (readArgs! frame argRegs).size = 2
+              · simp [hetsn2] at h
+                by_cases hetsi : funName = "ets_insert/3"
+                · simp [hetsi] at h
+                  by_cases har : (readArgs! frame argRegs).size = 3
                   · simp only [har, ↓reduceIte, ite_false] at h
-                    exact etsLookup_preserves s p frame dest
+                    exact etsInsert_preserves s p frame dest
                       (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
+                      (readArgs! frame argRegs)[2]!
                       hs hp hfwf hres hstat htop hframe hip h
                   · simp only [har, ↓reduceIte, ite_true] at h; cases h
-                · simp [hetsl] at h
-                  by_cases hetsd : funName = "ets_delete/2"
-                  · simp [hetsd] at h
+                · simp [hetsi] at h
+                  by_cases hetsl : funName = "ets_lookup/2"
+                  · simp [hetsl] at h
                     by_cases har : (readArgs! frame argRegs).size = 2
                     · simp only [har, ↓reduceIte, ite_false] at h
-                      exact etsDelete_preserves s p frame dest
+                      exact etsLookup_preserves s p frame dest
                         (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
                         hs hp hfwf hres hstat htop hframe hip h
                     · simp only [har, ↓reduceIte, ite_true] at h; cases h
-                  · simp [hetsd] at h
-                    by_cases hetsm : funName = "ets_match_object/2"
-                    · simp [hetsm] at h
+                  · simp [hetsl] at h
+                    by_cases hetsd : funName = "ets_delete/2"
+                    · simp [hetsd] at h
                       by_cases har : (readArgs! frame argRegs).size = 2
                       · simp only [har, ↓reduceIte, ite_false] at h
-                        exact etsMatchObject_preserves s p frame dest
+                        exact etsDelete_preserves s p frame dest
                           (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
                           hs hp hfwf hres hstat htop hframe hip h
                       · simp only [har, ↓reduceIte, ite_true] at h; cases h
-                    · simp [hetsm] at h
-                      by_cases hetss : funName = "ets_select/2"
-                      · simp [hetss] at h
+                    · simp [hetsd] at h
+                      by_cases hetsdo : funName = "ets_delete_object/2"
+                      · simp [hetsdo] at h
                         by_cases har : (readArgs! frame argRegs).size = 2
                         · simp only [har, ↓reduceIte, ite_false] at h
-                          exact etsSelect_preserves s p frame dest
+                          exact etsDeleteObject_preserves s p frame dest
                             (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
                             hs hp hfwf hres hstat htop hframe hip h
                         · simp only [har, ↓reduceIte, ite_true] at h; cases h
-                      · simp [hetss] at h
-                        by_cases hmref : funName = "make_ref/0"
-                        · simp [hmref] at h
-                          split at h
-                          · cases h
-                            let frame1 := setReg! frame dest (.reference s.nextRef)
-                            let frame2 := { frame1 with ip := frame1.ip + 1 }
-                            have hfwf2 : Frame.WF s.module frame2 :=
-                              bumpIp_frame _ _ (setReg!_WF _ _ _ _ hfwf)
-                                (by simpa [frame1, setReg!] using hip)
-                            have hs1 : State.WF (s.setCurrentProcess (State.setCurrentFrame p frame2)) :=
-                              apply_top_frame_preserves s p frame2 hs hp hres hstat htop hfwf2
-                                (by simp [frame2, frame1, setReg!, hframe])
-                                (by simp [frame2, frame1, setReg!, hframe])
-                            exact nextRef_preserves _ (s.nextRef + 1) hs1
-                          · exact nomatch h
-                        · simp [hmref] at h
-                          by_cases htu : isMakeTupleName funName = true
-                          · simp [htu] at h; cases h
-                            exact makeTuple_preserves s p frame dest (readArgs! frame argRegs)
-                              hs hp hfwf hres hstat htop hframe hip
-                          · simp [htu] at h
-                            by_cases hbi : isBuiltinName funName = true
-                            · simp [hbi] at h
-                              cases hb : builtin p.heap p.pid funName (readArgs! frame argRegs) with
-                              | error _ =>
-                                simp [hb] at h
-                              | badarg =>
-                                simp [hb] at h
-                                exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
-                              | ok v =>
-                                simp [hb] at h; cases h
-                                exact apply_top_frame_preserves s p
-                                  { setReg! frame dest v with ip := (setReg! frame dest v).ip + 1 }
-                                  hs hp hres hstat htop
-                                  (bumpIp_frame _ _ (setReg!_WF _ _ _ _ hfwf)
-                                    (by simpa [setReg!] using hip))
-                                  (by simp [setReg!, hframe]) (by simp [setReg!, hframe])
-                            · simp [hbi] at h
-                              have hresv : FunName.resolvable s.module funName := by
-                                simpa [Function.instrOk, hcode] using hio.2.2
-                              have hfndSome : (s.module.findFunction funName).isSome := by
-                                cases hresv with
-                                | inl hb => exact absurd hb hbi
-                                | inr hs => exact hs
-                              cases hff : s.module.findFunction funName with
-                              | none =>
-                                simp [hff, Option.isSome] at hfndSome
-                              | some callee =>
-                                simp [hff] at h
-                                by_cases har : callee.arity = (readArgs! frame argRegs).size
-                                · simp [har] at h
-                                  cases h
-                                  have hcallee : Function.WF s.module callee :=
-                                    Module.findFunction_WF hs.1 hff
-                                  let caller : Frame :=
-                                    { frame with ip := frame.ip + 1 }
-                                  have hcaller : Frame.WF s.module caller :=
-                                    bumpIp_frame _ _ hfwf hip
-                                  have hs1 : State.WF
-                                      (s.setCurrentProcess (State.setCurrentFrame p caller)) :=
-                                    apply_top_frame_preserves s p caller
-                                      hs hp hres hstat htop hcaller
-                                      (by simp [caller, hframe]) (by simp [caller, hframe])
-                                  let p1 := State.setCurrentFrame p caller
-                                  have hp1 : Process.WF s.module p1 := by
-                                    simpa [p1] using
-                                      setCurrentFrame_sameMeta_WF s.module p caller
-                                        hres hstat htop hp hcaller
-                                        (by simp [caller, hframe]) (by simp [caller, hframe])
-                                  have hres1 : p1.result = none := by
-                                    simp only [p1, State.setCurrentFrame, htop, ↓reduceDIte, hres]
-                                  have hstat1 : p1.status = .runnable := by
-                                    simp only [p1, State.setCurrentFrame, htop, ↓reduceDIte, hstat]
-                                  have hsz1 : p1.stack.size > 0 := by
-                                    simp only [p1, State.setCurrentFrame, htop, ↓reduceDIte]
-                                    simpa using htop
-                                  let newFrame : Frame := {
-                                    function := callee
-                                    regs := State.mkRegs callee.locals (readArgs! frame argRegs)
-                                    ip := 0
-                                    retDest := dest
-                                  }
-                                  have hnew : Frame.WF s.module newFrame := by
-                                    refine ⟨hcallee, ?_, ?_, ?_⟩
-                                    · simp [newFrame, mkRegs_size]
-                                    · exact hcallee.2.1
-                                    · have hname := Module.findFunction_name hff
-                                      simpa [newFrame, hname] using Option.isSome_of_eq_some hff
-                                  have hdest : dest < frame.function.locals := by
-                                    have hr : Instr.regsOk frame.function.locals
-                                        (Instr.call dest funName argRegs) = true := by
-                                      simpa [Function.instrOk] using hio.1
-                                    simp [Instr.regsOk] at hr
-                                    exact hr.1
-                                  have hret : newFrame.retDest <
-                                      (p1.stack[p1.stack.size - 1]!).function.locals := by
-                                    have htop1 : p1.stack[p1.stack.size - 1]! = caller := by
-                                      dsimp [p1, State.setCurrentFrame]
-                                      simp only [htop, ↓reduceDIte]
-                                      have hszs :
-                                          (p.stack.set (p.stack.size - 1) caller).size =
-                                            p.stack.size :=
-                                        Array.size_set _
-                                      have hlt : p.stack.size - 1 <
-                                          (p.stack.set (p.stack.size - 1) caller).size := by
-                                        simpa [hszs] using Nat.sub_one_lt_of_lt htop
-                                      rw [hszs,
-                                        getElem!_pos (p.stack.set (p.stack.size - 1) caller)
-                                          (p.stack.size - 1) hlt, Array.getElem_set_self]
-                                    simpa [newFrame, htop1, caller, hframe] using hdest
-                                  have hp2 : Process.WF s.module
-                                      { p1 with stack := p1.stack.push newFrame } :=
-                                    push_frame_process_WF s.module p1 newFrame
-                                      hres1 hstat1 hsz1 hp1 hnew hret
-                                  exact setCurrentProcess_WF s _ hs hp2
-                                · simp [har] at h
-                                  cases h
+                      · simp [hetsdo] at h
+                        by_cases hetsm : funName = "ets_match_object/2"
+                        · simp [hetsm] at h
+                          by_cases har : (readArgs! frame argRegs).size = 2
+                          · simp only [har, ↓reduceIte, ite_false] at h
+                            exact etsMatchObject_preserves s p frame dest
+                              (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
+                              hs hp hfwf hres hstat htop hframe hip h
+                          · simp only [har, ↓reduceIte, ite_true] at h; cases h
+                        · simp [hetsm] at h
+                          by_cases hetss : funName = "ets_select/2"
+                          · simp [hetss] at h
+                            by_cases har : (readArgs! frame argRegs).size = 2
+                            · simp only [har, ↓reduceIte, ite_false] at h
+                              exact etsSelect_preserves s p frame dest
+                                (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
+                                hs hp hfwf hres hstat htop hframe hip h
+                            · simp only [har, ↓reduceIte, ite_true] at h; cases h
+                          · simp [hetss] at h
+                            by_cases hetsh : funName = "ets_heir/2"
+                            · simp [hetsh] at h
+                              by_cases har : (readArgs! frame argRegs).size = 2
+                              · simp only [har, ↓reduceIte, ite_false] at h
+                                exact etsHeir_preserves s p frame dest
+                                  (readArgs! frame argRegs)[0]! (readArgs! frame argRegs)[1]!
+                                  hs hp hfwf hres hstat htop hframe hip h
+                              · simp only [har, ↓reduceIte, ite_true] at h; cases h
+                            · simp [hetsh] at h
+                              by_cases hmref : funName = "make_ref/0"
+                              · simp [hmref] at h
+                                split at h
+                                · cases h
+                                  let frame1 := setReg! frame dest (.reference s.nextRef)
+                                  let frame2 := { frame1 with ip := frame1.ip + 1 }
+                                  have hfwf2 : Frame.WF s.module frame2 :=
+                                    bumpIp_frame _ _ (setReg!_WF _ _ _ _ hfwf)
+                                      (by simpa [frame1, setReg!] using hip)
+                                  have hs1 : State.WF (s.setCurrentProcess (State.setCurrentFrame p frame2)) :=
+                                    apply_top_frame_preserves s p frame2 hs hp hres hstat htop hfwf2
+                                      (by simp [frame2, frame1, setReg!, hframe])
+                                      (by simp [frame2, frame1, setReg!, hframe])
+                                  exact nextRef_preserves _ (s.nextRef + 1) hs1
+                                · exact nomatch h
+                              · simp [hmref] at h
+                                by_cases htu : isMakeTupleName funName = true
+                                · simp [htu] at h; cases h
+                                  exact makeTuple_preserves s p frame dest (readArgs! frame argRegs)
+                                    hs hp hfwf hres hstat htop hframe hip
+                                · simp [htu] at h
+                                  by_cases hbi : isBuiltinName funName = true
+                                  · simp [hbi] at h
+                                    cases hb : builtin p.heap p.pid funName (readArgs! frame argRegs) with
+                                    | error _ =>
+                                      simp [hb] at h
+                                    | badarg =>
+                                      simp [hb] at h
+                                      exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+                                    | ok v =>
+                                      simp [hb] at h; cases h
+                                      exact apply_top_frame_preserves s p
+                                        { setReg! frame dest v with ip := (setReg! frame dest v).ip + 1 }
+                                        hs hp hres hstat htop
+                                        (bumpIp_frame _ _ (setReg!_WF _ _ _ _ hfwf)
+                                          (by simpa [setReg!] using hip))
+                                        (by simp [setReg!, hframe]) (by simp [setReg!, hframe])
+                                  · simp [hbi] at h
+                                    have hresv : FunName.resolvable s.module funName := by
+                                      simpa [Function.instrOk, hcode] using hio.2.2
+                                    have hfndSome : (s.module.findFunction funName).isSome := by
+                                      cases hresv with
+                                      | inl hb => exact absurd hb hbi
+                                      | inr hs => exact hs
+                                    cases hff : s.module.findFunction funName with
+                                    | none =>
+                                      simp [hff, Option.isSome] at hfndSome
+                                    | some callee =>
+                                      simp [hff] at h
+                                      by_cases har : callee.arity = (readArgs! frame argRegs).size
+                                      · simp [har] at h
+                                        cases h
+                                        have hcallee : Function.WF s.module callee :=
+                                          Module.findFunction_WF hs.1 hff
+                                        let caller : Frame :=
+                                          { frame with ip := frame.ip + 1 }
+                                        have hcaller : Frame.WF s.module caller :=
+                                          bumpIp_frame _ _ hfwf hip
+                                        have hs1 : State.WF
+                                            (s.setCurrentProcess (State.setCurrentFrame p caller)) :=
+                                          apply_top_frame_preserves s p caller
+                                            hs hp hres hstat htop hcaller
+                                            (by simp [caller, hframe]) (by simp [caller, hframe])
+                                        let p1 := State.setCurrentFrame p caller
+                                        have hp1 : Process.WF s.module p1 := by
+                                          simpa [p1] using
+                                            setCurrentFrame_sameMeta_WF s.module p caller
+                                              hres hstat htop hp hcaller
+                                              (by simp [caller, hframe]) (by simp [caller, hframe])
+                                        have hres1 : p1.result = none := by
+                                          simp only [p1, State.setCurrentFrame, htop, ↓reduceDIte, hres]
+                                        have hstat1 : p1.status = .runnable := by
+                                          simp only [p1, State.setCurrentFrame, htop, ↓reduceDIte, hstat]
+                                        have hsz1 : p1.stack.size > 0 := by
+                                          simp only [p1, State.setCurrentFrame, htop, ↓reduceDIte]
+                                          simpa using htop
+                                        let newFrame : Frame := {
+                                          function := callee
+                                          regs := State.mkRegs callee.locals (readArgs! frame argRegs)
+                                          ip := 0
+                                          retDest := dest
+                                        }
+                                        have hnew : Frame.WF s.module newFrame := by
+                                          refine ⟨hcallee, ?_, ?_, ?_⟩
+                                          · simp [newFrame, mkRegs_size]
+                                          · exact hcallee.2.1
+                                          · have hname := Module.findFunction_name hff
+                                            simpa [newFrame, hname] using Option.isSome_of_eq_some hff
+                                        have hdest : dest < frame.function.locals := by
+                                          have hr : Instr.regsOk frame.function.locals
+                                              (Instr.call dest funName argRegs) = true := by
+                                            simpa [Function.instrOk] using hio.1
+                                          simp [Instr.regsOk] at hr
+                                          exact hr.1
+                                        have hret : newFrame.retDest <
+                                            (p1.stack[p1.stack.size - 1]!).function.locals := by
+                                          have htop1 : p1.stack[p1.stack.size - 1]! = caller := by
+                                            dsimp [p1, State.setCurrentFrame]
+                                            simp only [htop, ↓reduceDIte]
+                                            have hszs :
+                                                (p.stack.set (p.stack.size - 1) caller).size =
+                                                  p.stack.size :=
+                                              Array.size_set _
+                                            have hlt : p.stack.size - 1 <
+                                                (p.stack.set (p.stack.size - 1) caller).size := by
+                                              simpa [hszs] using Nat.sub_one_lt_of_lt htop
+                                            rw [hszs,
+                                              getElem!_pos (p.stack.set (p.stack.size - 1) caller)
+                                                (p.stack.size - 1) hlt, Array.getElem_set_self]
+                                          simpa [newFrame, htop1, caller, hframe] using hdest
+                                        have hp2 : Process.WF s.module
+                                            { p1 with stack := p1.stack.push newFrame } :=
+                                          push_frame_process_WF s.module p1 newFrame
+                                            hres1 hstat1 hsz1 hp1 hnew hret
+                                        exact setCurrentProcess_WF s _ hs hp2
+                                      · simp [har] at h
+                                        cases h
 
 /-- `return_` case of `stepInstr_preserves`. -/
 theorem return_preserves {s p frame} (H : StepInstrHyp s p frame)
@@ -887,7 +912,7 @@ theorem recvDrop_preserves {s p frame} (H : StepInstrHyp s p frame)
 
 /-- `wait` case of `stepInstr_preserves`. -/
 theorem wait_preserves {s p frame} (H : StepInstrHyp s p frame)
-    (retry after : Label) (timeout : Option Nat) {s'}
+    (retry after : Label) (timeout : WaitTimeout) {s'}
     (hcode : frame.function.code[frame.ip]! = .wait retry after timeout)
     (h : stepInstr s p frame (.wait retry after timeout) = .ok s') :
     State.WF s' := by
@@ -935,31 +960,36 @@ theorem wait_preserves {s p frame} (H : StepInstrHyp s p frame)
         exact scheduleNext_preserves _ _ hsW (by simpa [pW, hd] using h)
     | none =>
       simp [hd] at h
-      cases hto : timeout with
-      | some n =>
-        cases n with
-        | zero =>
-          simp [hto] at h; cases h
-          let frame2 := { frame with ip := after }
-          have hfwf2 : Frame.WF s.module frame2 := setIp_frame _ _ _ hfwf hafter
-          exact apply_top_frame_preserves s p frame2 hs hp hres hstat htop hfwf2
-            (by simp [frame2, hframe]) (by simp [frame2, hframe])
-        | succ n =>
+      cases hr : resolveWaitTimeout frame timeout with
+      | error _ =>
+        simp [hr, Bind.bind, Except.bind] at h
+      | ok ticks? =>
+        simp [hr, Bind.bind, Except.bind] at h
+        cases hto : ticks? with
+        | some n =>
+          cases n with
+          | zero =>
+            simp [hto] at h; cases h
+            let frame2 := { frame with ip := after }
+            have hfwf2 : Frame.WF s.module frame2 := setIp_frame _ _ _ hfwf hafter
+            exact apply_top_frame_preserves s p frame2 hs hp hres hstat htop hfwf2
+              (by simp [frame2, hframe]) (by simp [frame2, hframe])
+          | succ n =>
+            simp [hto] at h
+            let pW :=
+              { p with status := .waiting, waitDeadline := some (s.clock + (n + 1)) }
+            have hpW0 := process_waiting_WF _ p hp hres hstat
+            have hpW : Process.WF s.module pW :=
+              process_set_waitDeadline_WF _ _ (some (s.clock + (n + 1))) hpW0
+            have hsW := setCurrentProcess_WF s pW hs hpW
+            exact scheduleNext_preserves _ _ hsW (by simpa [pW] using h)
+        | none =>
           simp [hto] at h
-          let pW :=
-            { p with status := .waiting, waitDeadline := some (s.clock + (n + 1)) }
+          let pW := State.clearWait { p with status := .waiting }
           have hpW0 := process_waiting_WF _ p hp hres hstat
-          have hpW : Process.WF s.module pW :=
-            process_set_waitDeadline_WF _ _ (some (s.clock + (n + 1))) hpW0
+          have hpW : Process.WF s.module pW := clearWait_WF _ _ hpW0
           have hsW := setCurrentProcess_WF s pW hs hpW
-          exact scheduleNext_preserves _ _ hsW (by simpa [pW] using h)
-      | none =>
-        simp [hto] at h
-        let pW := State.clearWait { p with status := .waiting }
-        have hpW0 := process_waiting_WF _ p hp hres hstat
-        have hpW : Process.WF s.module pW := clearWait_WF _ _ hpW0
-        have hsW := setCurrentProcess_WF s pW hs hpW
-        exact scheduleNext_preserves _ _ hsW (by simpa [pW, State.clearWait] using h)
+          exact scheduleNext_preserves _ _ hsW (by simpa [pW, State.clearWait] using h)
 
 /-- `link` case of `stepInstr_preserves`. -/
 theorem link_preserves {s p frame} (H : StepInstrHyp s p frame)

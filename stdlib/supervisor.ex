@@ -1,6 +1,15 @@
 defmodule Supervisor do
   # one_for_one / rest_for_one / one_for_all with a simple intensity window.
-  # children :: [{Mod, arg}, ...] in start order (Mod = GenServer callback atom).
+  # children :: [{Mod, arg} | {Mod, Fun, [arg]} | child_spec_map | internal_spec, ...]
+  # child_spec_map :: %{id, start: {Mod, arg} | {Mod, Fun, [arg]},
+  #                     restart?, shutdown?, significant?, type?}
+  # Child records: {pid, mod, arg, restart, shutdown, significant, type}
+  #   arg is the GenServer init arg, or {:mfa, fun, init_arg} for start MFA.
+  #
+  # restart: :permanent (default) | :temporary | :transient
+  # shutdown: :brutal_kill | int | :infinity (infinity wait budget = 500 ticks)
+  # significant: if true and child is dropped without restart → supervisor :shutdown
+  # type: :worker | :supervisor (accepted and carried; ignored for strategy)
   #
   # Intensity: at most `max_restarts` restarts inside a quiet period of 100
   # logical-clock ticks. Exceeding → supervisor exits `:shutdown`.
@@ -33,28 +42,125 @@ defmodule Supervisor do
       [] ->
         acc
 
-      [{mod, arg} | rest] ->
-        pid = GenServer.start(mod, arg)
-        _ = monitor(pid)
-        start_all(rest, append(acc, [{pid, mod, arg}]))
+      [child | rest] ->
+        case normalize_child(child) do
+          {mod, arg, restart, shutdown, significant, type} ->
+            pid = boot(mod, arg)
+            _ = monitor(pid)
+            rec = {pid, mod, arg, restart, shutdown, significant, type}
+            start_all(rest, append(acc, [rec]))
+        end
     end
+  end
+
+  # GenServer.start vs teaching MFA trampoline (arity-1 args list only).
+  def boot(mod, {:mfa, fun, a}) do
+    spawn(Supervisor, :run_mfa, [mod, fun, a])
+  end
+
+  def boot(mod, arg) do
+    GenServer.start(mod, arg)
+  end
+
+  def run_mfa(mod, fun, arg) do
+    apply(mod, fun, [arg])
+  end
+
+  def normalize_child({mod, arg}) do
+    {mod, arg, :permanent, 10, false, :worker}
+  end
+
+  def normalize_child({mod, arg, restart, shutdown, significant}) do
+    {mod, arg, restart, shutdown, significant, :worker}
+  end
+
+  def normalize_child({mod, arg, restart, shutdown, significant, type}) do
+    {mod, arg, restart, shutdown, significant, type}
+  end
+
+  def normalize_child(spec) do
+    case map_get(spec, :start) do
+      {mod, fun, args} ->
+        restart = default_restart(map_get(spec, :restart))
+        shutdown = default_shutdown(map_get(spec, :shutdown))
+        significant = default_significant(map_get(spec, :significant))
+        type = default_type(map_get(spec, :type))
+
+        case args do
+          [a] ->
+            {mod, {:mfa, fun, a}, restart, shutdown, significant, type}
+        end
+
+      {mod, arg} ->
+        restart = default_restart(map_get(spec, :restart))
+        shutdown = default_shutdown(map_get(spec, :shutdown))
+        significant = default_significant(map_get(spec, :significant))
+        type = default_type(map_get(spec, :type))
+        {mod, arg, restart, shutdown, significant, type}
+    end
+  end
+
+  def default_restart(nil) do
+    :permanent
+  end
+
+  def default_restart(r) do
+    r
+  end
+
+  def default_shutdown(nil) do
+    # Short default so restart teardown waits do not race client `call` timeouts.
+    10
+  end
+
+  def default_shutdown(s) do
+    s
+  end
+
+  def default_significant(nil) do
+    false
+  end
+
+  def default_significant(s) do
+    s
+  end
+
+  def default_type(nil) do
+    :worker
+  end
+
+  def default_type(t) do
+    t
   end
 
   def loop(kids, intensity, strategy, max_restarts) do
     receive do
-      {:DOWN, _ref, :process, pid, _reason} ->
+      {:DOWN, _ref, :process, pid, reason} ->
         case find_index(kids, pid, 0) do
           :none ->
             loop(kids, intensity, strategy, max_restarts)
 
           idx ->
-            next_i = intensity + 1
+            case nth(kids, idx) do
+              {_p, _m, _a, restart, _sh, significant, _t} ->
+                if should_restart(restart, reason) do
+                  next_i = intensity + 1
 
-            if next_i > max_restarts do
-              :shutdown
-            else
-              kids2 = restart_for(strategy, kids, idx)
-              loop(kids2, next_i, strategy, max_restarts)
+                  if next_i > max_restarts do
+                    :shutdown
+                  else
+                    kids2 = restart_for(strategy, kids, idx)
+                    loop(kids2, next_i, strategy, max_restarts)
+                  end
+                else
+                  kids2 = delete_at(kids, idx)
+
+                  if significant do
+                    :shutdown
+                  else
+                    loop(kids2, intensity, strategy, max_restarts)
+                  end
+                end
             end
         end
     after
@@ -63,12 +169,32 @@ defmodule Supervisor do
     end
   end
 
+  def should_restart(:permanent, _reason) do
+    true
+  end
+
+  def should_restart(:temporary, _reason) do
+    false
+  end
+
+  def should_restart(:transient, reason) do
+    if reason == :normal do
+      false
+    else
+      if reason == :shutdown do
+        false
+      else
+        true
+      end
+    end
+  end
+
   def restart_for(:one_for_one, kids, idx) do
     case nth(kids, idx) do
-      {pid, mod, arg} ->
-        new_pid = GenServer.start(mod, arg)
+      {_pid, mod, arg, restart, shutdown, significant, type} ->
+        new_pid = boot(mod, arg)
         _ = monitor(new_pid)
-        replace_at(kids, idx, {new_pid, mod, arg})
+        replace_at(kids, idx, {new_pid, mod, arg, restart, shutdown, significant, type})
 
       :none ->
         kids
@@ -100,14 +226,7 @@ defmodule Supervisor do
   end
 
   def shutdown_from(kids, idx) do
-    case drop(kids, idx) do
-      [] ->
-        :ok
-
-      [{pid, _m, _a} | rest] ->
-        _ = Process.exit(pid, :shutdown)
-        shutdown_list(rest)
-    end
+    shutdown_list(drop(kids, idx))
   end
 
   def shutdown_list(kids) do
@@ -115,9 +234,35 @@ defmodule Supervisor do
       [] ->
         :ok
 
-      [{pid, _m, _a} | rest] ->
-        _ = Process.exit(pid, :shutdown)
+      [child | rest] ->
+        _ = shutdown_child(child)
         shutdown_list(rest)
+    end
+  end
+
+  def shutdown_child({pid, _m, _a, _r, shutdown, _s, _t}) do
+    case shutdown do
+      :brutal_kill ->
+        _ = Process.exit(pid, :kill)
+        :ok
+
+      :infinity ->
+        _ = Process.exit(pid, :shutdown)
+
+        receive do
+        after
+          500 ->
+            :ok
+        end
+
+      n ->
+        _ = Process.exit(pid, :shutdown)
+
+        receive do
+        after
+          n ->
+            :ok
+        end
     end
   end
 
@@ -126,7 +271,7 @@ defmodule Supervisor do
       [] ->
         :none
 
-      [{p, _m, _a} | rest] ->
+      [{p, _m, _a, _r, _sh, _s, _t} | rest] ->
         if p == pid do
           i
         else
@@ -177,14 +322,22 @@ defmodule Supervisor do
     end
   end
 
-  def drop_specs(kids, n) do
-    case drop(kids, n) do
+  def delete_at(kids, i) do
+    case kids do
       [] ->
         []
 
-      [{_p, m, a} | rest] ->
-        [{m, a} | specs_only(rest)]
+      [h | t] ->
+        if i == 0 do
+          t
+        else
+          [h | delete_at(t, i - 1)]
+        end
     end
+  end
+
+  def drop_specs(kids, n) do
+    specs_only(drop(kids, n))
   end
 
   def specs_only(kids) do
@@ -192,8 +345,8 @@ defmodule Supervisor do
       [] ->
         []
 
-      [{_p, m, a} | rest] ->
-        [{m, a} | specs_only(rest)]
+      [{_p, m, a, r, sh, s, t} | rest] ->
+        [{m, a, r, sh, s, t} | specs_only(rest)]
     end
   end
 

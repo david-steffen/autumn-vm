@@ -1,0 +1,3843 @@
+{
+  "entry": "Main.main/0",
+  "modules": [
+    {
+      "functions": [
+        {
+          "arity": 1,
+          "code": [
+            {
+              "dest": 2,
+              "op": "is_tag",
+              "reg": 0,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 2,
+              "target": 3
+            },
+            {
+              "op": "jump",
+              "target": 16
+            },
+            {
+              "args": [
+                0
+              ],
+              "dest": 3,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 2
+              },
+              "op": "jump_if_eq",
+              "reg": 3,
+              "target": 6
+            },
+            {
+              "op": "jump",
+              "target": 2
+            },
+            {
+              "dest": 4,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 0
+            },
+            {
+              "dest": 5,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 0
+            },
+            {
+              "lit": {
+                "map": []
+              },
+              "op": "load_lit",
+              "reg": 6
+            },
+            {
+              "lit": {
+                "atom": "id"
+              },
+              "op": "load_lit",
+              "reg": 7
+            },
+            {
+              "args": [
+                6,
+                7,
+                4
+              ],
+              "dest": 8,
+              "fun": "map_put/3",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "atom": "start"
+              },
+              "op": "load_lit",
+              "reg": 9
+            },
+            {
+              "args": [
+                4,
+                5
+              ],
+              "dest": 10,
+              "fun": "make_tuple/2",
+              "op": "call"
+            },
+            {
+              "args": [
+                8,
+                9,
+                10
+              ],
+              "dest": 11,
+              "fun": "map_put/3",
+              "op": "call"
+            },
+            {
+              "dest": 1,
+              "op": "move",
+              "src": 11
+            },
+            {
+              "op": "jump",
+              "target": 18
+            },
+            {
+              "lit": {
+                "atom": "match_error"
+              },
+              "op": "load_lit",
+              "reg": 12
+            },
+            {
+              "op": "raise",
+              "reg": 12
+            },
+            {
+              "op": "return",
+              "reg": 1
+            }
+          ],
+          "locals": 13,
+          "name": "GenServer.child_spec/1"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "GenServer.server/2",
+              "op": "spawn"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "GenServer.start/2"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "GenServer.server/2",
+              "op": "spawn"
+            },
+            {
+              "op": "link",
+              "pid": 2
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "GenServer.start_link/2"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "lit": {
+                "atom": "init"
+              },
+              "op": "load_lit",
+              "reg": 2
+            },
+            {
+              "args": [
+                1
+              ],
+              "dest": 3,
+              "fun": 2,
+              "mod": 0,
+              "op": "apply_mfa"
+            },
+            {
+              "dest": 5,
+              "op": "is_tag",
+              "reg": 3,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 5,
+              "target": 5
+            },
+            {
+              "op": "jump",
+              "target": 16
+            },
+            {
+              "args": [
+                3
+              ],
+              "dest": 6,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 6,
+              "target": 8
+            },
+            {
+              "op": "jump",
+              "target": 4
+            },
+            {
+              "dest": 7,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "lit": {
+                "atom": "ok"
+              },
+              "op": "jump_if_eq",
+              "reg": 7,
+              "target": 11
+            },
+            {
+              "op": "jump",
+              "target": 4
+            },
+            {
+              "dest": 8,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 9,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "args": [
+                0,
+                8,
+                9
+              ],
+              "dest": 10,
+              "fun": "GenServer.after_ok/3",
+              "op": "call"
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 10
+            },
+            {
+              "op": "jump",
+              "target": 48
+            },
+            {
+              "dest": 11,
+              "op": "is_tag",
+              "reg": 3,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 11,
+              "target": 19
+            },
+            {
+              "op": "jump",
+              "target": 29
+            },
+            {
+              "args": [
+                3
+              ],
+              "dest": 12,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 2
+              },
+              "op": "jump_if_eq",
+              "reg": 12,
+              "target": 22
+            },
+            {
+              "op": "jump",
+              "target": 18
+            },
+            {
+              "dest": 13,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "lit": {
+                "atom": "ok"
+              },
+              "op": "jump_if_eq",
+              "reg": 13,
+              "target": 25
+            },
+            {
+              "op": "jump",
+              "target": 18
+            },
+            {
+              "dest": 14,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "args": [
+                0,
+                14
+              ],
+              "dest": 15,
+              "fun": "GenServer.loop/2",
+              "op": "call"
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 15
+            },
+            {
+              "op": "jump",
+              "target": 48
+            },
+            {
+              "dest": 16,
+              "op": "is_tag",
+              "reg": 3,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 16,
+              "target": 32
+            },
+            {
+              "op": "jump",
+              "target": 41
+            },
+            {
+              "args": [
+                3
+              ],
+              "dest": 17,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 2
+              },
+              "op": "jump_if_eq",
+              "reg": 17,
+              "target": 35
+            },
+            {
+              "op": "jump",
+              "target": 31
+            },
+            {
+              "dest": 18,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "lit": {
+                "atom": "stop"
+              },
+              "op": "jump_if_eq",
+              "reg": 18,
+              "target": 38
+            },
+            {
+              "op": "jump",
+              "target": 31
+            },
+            {
+              "dest": 19,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 19
+            },
+            {
+              "op": "jump",
+              "target": 48
+            },
+            {
+              "op": "jump",
+              "target": 43
+            },
+            {
+              "op": "jump",
+              "target": 46
+            },
+            {
+              "lit": {
+                "atom": "ok"
+              },
+              "op": "load_lit",
+              "reg": 20
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 20
+            },
+            {
+              "op": "jump",
+              "target": 48
+            },
+            {
+              "lit": {
+                "atom": "match_error"
+              },
+              "op": "load_lit",
+              "reg": 21
+            },
+            {
+              "op": "raise",
+              "reg": 21
+            },
+            {
+              "op": "return",
+              "reg": 4
+            }
+          ],
+          "locals": 22,
+          "name": "GenServer.server/2"
+        },
+        {
+          "arity": 3,
+          "code": [
+            {
+              "args": [
+                0,
+                1,
+                2
+              ],
+              "dest": 3,
+              "fun": "make_tuple/3",
+              "op": "call"
+            },
+            {
+              "dest": 5,
+              "op": "is_tag",
+              "reg": 3,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 5,
+              "target": 4
+            },
+            {
+              "op": "jump",
+              "target": 24
+            },
+            {
+              "args": [
+                3
+              ],
+              "dest": 6,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 6,
+              "target": 7
+            },
+            {
+              "op": "jump",
+              "target": 3
+            },
+            {
+              "dest": 7,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 8,
+              "op": "is_tag",
+              "reg": 7,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 8,
+              "target": 11
+            },
+            {
+              "op": "jump",
+              "target": 3
+            },
+            {
+              "args": [
+                7
+              ],
+              "dest": 9,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 2
+              },
+              "op": "jump_if_eq",
+              "reg": 9,
+              "target": 14
+            },
+            {
+              "op": "jump",
+              "target": 10
+            },
+            {
+              "dest": 10,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 7
+            },
+            {
+              "lit": {
+                "atom": "continue"
+              },
+              "op": "jump_if_eq",
+              "reg": 10,
+              "target": 17
+            },
+            {
+              "op": "jump",
+              "target": 10
+            },
+            {
+              "dest": 11,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 12,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 13,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 14,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "args": [
+                11,
+                14,
+                12
+              ],
+              "dest": 15,
+              "fun": "GenServer.continue/3",
+              "op": "call"
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 15
+            },
+            {
+              "op": "jump",
+              "target": 52
+            },
+            {
+              "dest": 16,
+              "op": "is_tag",
+              "reg": 3,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 16,
+              "target": 27
+            },
+            {
+              "op": "jump",
+              "target": 39
+            },
+            {
+              "args": [
+                3
+              ],
+              "dest": 17,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 17,
+              "target": 30
+            },
+            {
+              "op": "jump",
+              "target": 26
+            },
+            {
+              "dest": 18,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "lit": {
+                "atom": "hibernate"
+              },
+              "op": "jump_if_eq",
+              "reg": 18,
+              "target": 33
+            },
+            {
+              "op": "jump",
+              "target": 26
+            },
+            {
+              "dest": 19,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 20,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "args": [],
+              "dest": 21,
+              "fun": "Process.hibernate/0",
+              "op": "call"
+            },
+            {
+              "args": [
+                19,
+                20
+              ],
+              "dest": 22,
+              "fun": "GenServer.loop/2",
+              "op": "call"
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 22
+            },
+            {
+              "op": "jump",
+              "target": 52
+            },
+            {
+              "dest": 23,
+              "op": "is_tag",
+              "reg": 3,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 23,
+              "target": 42
+            },
+            {
+              "op": "jump",
+              "target": 50
+            },
+            {
+              "args": [
+                3
+              ],
+              "dest": 24,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 24,
+              "target": 45
+            },
+            {
+              "op": "jump",
+              "target": 41
+            },
+            {
+              "dest": 25,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 26,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "args": [
+                25,
+                26
+              ],
+              "dest": 27,
+              "fun": "GenServer.loop/2",
+              "op": "call"
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 27
+            },
+            {
+              "op": "jump",
+              "target": 52
+            },
+            {
+              "lit": {
+                "atom": "match_error"
+              },
+              "op": "load_lit",
+              "reg": 28
+            },
+            {
+              "op": "raise",
+              "reg": 28
+            },
+            {
+              "op": "return",
+              "reg": 4
+            }
+          ],
+          "locals": 29,
+          "name": "GenServer.after_ok/3"
+        },
+        {
+          "arity": 3,
+          "code": [
+            {
+              "args": [
+                0,
+                1,
+                2
+              ],
+              "dest": 3,
+              "fun": "GenServer.do_continue/3",
+              "op": "call"
+            },
+            {
+              "dest": 5,
+              "op": "is_tag",
+              "reg": 3,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 5,
+              "target": 4
+            },
+            {
+              "op": "jump",
+              "target": 15
+            },
+            {
+              "args": [
+                3
+              ],
+              "dest": 6,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 6,
+              "target": 7
+            },
+            {
+              "op": "jump",
+              "target": 3
+            },
+            {
+              "dest": 7,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "lit": {
+                "atom": "noreply"
+              },
+              "op": "jump_if_eq",
+              "reg": 7,
+              "target": 10
+            },
+            {
+              "op": "jump",
+              "target": 3
+            },
+            {
+              "dest": 8,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 9,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "args": [
+                0,
+                8,
+                9
+              ],
+              "dest": 10,
+              "fun": "GenServer.after_noreply/3",
+              "op": "call"
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 10
+            },
+            {
+              "op": "jump",
+              "target": 48
+            },
+            {
+              "dest": 11,
+              "op": "is_tag",
+              "reg": 3,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 11,
+              "target": 18
+            },
+            {
+              "op": "jump",
+              "target": 28
+            },
+            {
+              "args": [
+                3
+              ],
+              "dest": 12,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 2
+              },
+              "op": "jump_if_eq",
+              "reg": 12,
+              "target": 21
+            },
+            {
+              "op": "jump",
+              "target": 17
+            },
+            {
+              "dest": 13,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "lit": {
+                "atom": "noreply"
+              },
+              "op": "jump_if_eq",
+              "reg": 13,
+              "target": 24
+            },
+            {
+              "op": "jump",
+              "target": 17
+            },
+            {
+              "dest": 14,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "args": [
+                0,
+                14
+              ],
+              "dest": 15,
+              "fun": "GenServer.loop/2",
+              "op": "call"
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 15
+            },
+            {
+              "op": "jump",
+              "target": 48
+            },
+            {
+              "dest": 16,
+              "op": "is_tag",
+              "reg": 3,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 16,
+              "target": 31
+            },
+            {
+              "op": "jump",
+              "target": 41
+            },
+            {
+              "args": [
+                3
+              ],
+              "dest": 17,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 17,
+              "target": 34
+            },
+            {
+              "op": "jump",
+              "target": 30
+            },
+            {
+              "dest": 18,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "lit": {
+                "atom": "stop"
+              },
+              "op": "jump_if_eq",
+              "reg": 18,
+              "target": 37
+            },
+            {
+              "op": "jump",
+              "target": 30
+            },
+            {
+              "dest": 19,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 20,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 19
+            },
+            {
+              "op": "jump",
+              "target": 48
+            },
+            {
+              "op": "jump",
+              "target": 43
+            },
+            {
+              "op": "jump",
+              "target": 46
+            },
+            {
+              "lit": {
+                "atom": "undef"
+              },
+              "op": "load_lit",
+              "reg": 21
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 21
+            },
+            {
+              "op": "jump",
+              "target": 48
+            },
+            {
+              "lit": {
+                "atom": "match_error"
+              },
+              "op": "load_lit",
+              "reg": 22
+            },
+            {
+              "op": "raise",
+              "reg": 22
+            },
+            {
+              "op": "return",
+              "reg": 4
+            }
+          ],
+          "locals": 23,
+          "name": "GenServer.continue/3"
+        },
+        {
+          "arity": 3,
+          "code": [
+            {
+              "exc": 4,
+              "op": "enter_try",
+              "rescue": 6
+            },
+            {
+              "lit": {
+                "atom": "handle_continue"
+              },
+              "op": "load_lit",
+              "reg": 5
+            },
+            {
+              "args": [
+                1,
+                2
+              ],
+              "dest": 6,
+              "fun": 5,
+              "mod": 0,
+              "op": "apply_mfa"
+            },
+            {
+              "dest": 3,
+              "op": "move",
+              "src": 6
+            },
+            {
+              "op": "leave_try"
+            },
+            {
+              "op": "jump",
+              "target": 14
+            },
+            {
+              "lit": {
+                "atom": "undef"
+              },
+              "op": "jump_if_eq",
+              "reg": 4,
+              "target": 8
+            },
+            {
+              "op": "jump",
+              "target": 13
+            },
+            {
+              "lit": {
+                "atom": "stop"
+              },
+              "op": "load_lit",
+              "reg": 7
+            },
+            {
+              "lit": {
+                "atom": "undef"
+              },
+              "op": "load_lit",
+              "reg": 8
+            },
+            {
+              "args": [
+                7,
+                8,
+                2
+              ],
+              "dest": 9,
+              "fun": "make_tuple/3",
+              "op": "call"
+            },
+            {
+              "dest": 3,
+              "op": "move",
+              "src": 9
+            },
+            {
+              "op": "jump",
+              "target": 14
+            },
+            {
+              "op": "raise",
+              "reg": 4
+            },
+            {
+              "op": "return",
+              "reg": 3
+            }
+          ],
+          "locals": 10,
+          "name": "GenServer.do_continue/3"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "lit": {
+                "int": 0
+              },
+              "op": "load_lit",
+              "reg": 3
+            },
+            {
+              "dest": 4,
+              "empty": 217,
+              "index": 3,
+              "op": "recv_peek"
+            },
+            {
+              "dest": 5,
+              "op": "is_tag",
+              "reg": 4,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 5,
+              "target": 5
+            },
+            {
+              "op": "jump",
+              "target": 108
+            },
+            {
+              "args": [
+                4
+              ],
+              "dest": 6,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 4
+              },
+              "op": "jump_if_eq",
+              "reg": 6,
+              "target": 8
+            },
+            {
+              "op": "jump",
+              "target": 4
+            },
+            {
+              "dest": 7,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 4
+            },
+            {
+              "lit": {
+                "atom": "call"
+              },
+              "op": "jump_if_eq",
+              "reg": 7,
+              "target": 11
+            },
+            {
+              "op": "jump",
+              "target": 4
+            },
+            {
+              "dest": 8,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 4
+            },
+            {
+              "dest": 9,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 4
+            },
+            {
+              "dest": 10,
+              "index": 3,
+              "op": "get_tuple_elem",
+              "tuple": 4
+            },
+            {
+              "index": 3,
+              "op": "recv_drop"
+            },
+            {
+              "lit": {
+                "atom": "handle_call"
+              },
+              "op": "load_lit",
+              "reg": 11
+            },
+            {
+              "args": [
+                8,
+                9
+              ],
+              "dest": 12,
+              "fun": "make_tuple/2",
+              "op": "call"
+            },
+            {
+              "args": [
+                10,
+                12,
+                1
+              ],
+              "dest": 13,
+              "fun": 11,
+              "mod": 0,
+              "op": "apply_mfa"
+            },
+            {
+              "dest": 15,
+              "op": "is_tag",
+              "reg": 13,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 15,
+              "target": 21
+            },
+            {
+              "op": "jump",
+              "target": 34
+            },
+            {
+              "args": [
+                13
+              ],
+              "dest": 16,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 4
+              },
+              "op": "jump_if_eq",
+              "reg": 16,
+              "target": 24
+            },
+            {
+              "op": "jump",
+              "target": 20
+            },
+            {
+              "dest": 17,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "lit": {
+                "atom": "reply"
+              },
+              "op": "jump_if_eq",
+              "reg": 17,
+              "target": 27
+            },
+            {
+              "op": "jump",
+              "target": 20
+            },
+            {
+              "dest": 18,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "dest": 19,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "dest": 20,
+              "index": 3,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "args": [
+                8,
+                9,
+                18
+              ],
+              "dest": 21,
+              "fun": "GenServer.reply/3",
+              "op": "call"
+            },
+            {
+              "args": [
+                0,
+                19,
+                20
+              ],
+              "dest": 22,
+              "fun": "GenServer.after_noreply/3",
+              "op": "call"
+            },
+            {
+              "dest": 14,
+              "op": "move",
+              "src": 22
+            },
+            {
+              "op": "jump",
+              "target": 106
+            },
+            {
+              "dest": 23,
+              "op": "is_tag",
+              "reg": 13,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 23,
+              "target": 37
+            },
+            {
+              "op": "jump",
+              "target": 49
+            },
+            {
+              "args": [
+                13
+              ],
+              "dest": 24,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 4
+              },
+              "op": "jump_if_eq",
+              "reg": 24,
+              "target": 40
+            },
+            {
+              "op": "jump",
+              "target": 36
+            },
+            {
+              "dest": 25,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "lit": {
+                "atom": "stop"
+              },
+              "op": "jump_if_eq",
+              "reg": 25,
+              "target": 43
+            },
+            {
+              "op": "jump",
+              "target": 36
+            },
+            {
+              "dest": 26,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "dest": 27,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "dest": 28,
+              "index": 3,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "args": [
+                8,
+                9,
+                27
+              ],
+              "dest": 29,
+              "fun": "GenServer.reply/3",
+              "op": "call"
+            },
+            {
+              "dest": 14,
+              "op": "move",
+              "src": 26
+            },
+            {
+              "op": "jump",
+              "target": 106
+            },
+            {
+              "dest": 30,
+              "op": "is_tag",
+              "reg": 13,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 30,
+              "target": 52
+            },
+            {
+              "op": "jump",
+              "target": 64
+            },
+            {
+              "args": [
+                13
+              ],
+              "dest": 31,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 31,
+              "target": 55
+            },
+            {
+              "op": "jump",
+              "target": 51
+            },
+            {
+              "dest": 32,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "lit": {
+                "atom": "reply"
+              },
+              "op": "jump_if_eq",
+              "reg": 32,
+              "target": 58
+            },
+            {
+              "op": "jump",
+              "target": 51
+            },
+            {
+              "dest": 33,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "dest": 34,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "args": [
+                8,
+                9,
+                33
+              ],
+              "dest": 35,
+              "fun": "GenServer.reply/3",
+              "op": "call"
+            },
+            {
+              "args": [
+                0,
+                34
+              ],
+              "dest": 36,
+              "fun": "GenServer.loop/2",
+              "op": "call"
+            },
+            {
+              "dest": 14,
+              "op": "move",
+              "src": 36
+            },
+            {
+              "op": "jump",
+              "target": 106
+            },
+            {
+              "dest": 37,
+              "op": "is_tag",
+              "reg": 13,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 37,
+              "target": 67
+            },
+            {
+              "op": "jump",
+              "target": 78
+            },
+            {
+              "args": [
+                13
+              ],
+              "dest": 38,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 38,
+              "target": 70
+            },
+            {
+              "op": "jump",
+              "target": 66
+            },
+            {
+              "dest": 39,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "lit": {
+                "atom": "noreply"
+              },
+              "op": "jump_if_eq",
+              "reg": 39,
+              "target": 73
+            },
+            {
+              "op": "jump",
+              "target": 66
+            },
+            {
+              "dest": 40,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "dest": 41,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "args": [
+                0,
+                40,
+                41
+              ],
+              "dest": 42,
+              "fun": "GenServer.after_noreply/3",
+              "op": "call"
+            },
+            {
+              "dest": 14,
+              "op": "move",
+              "src": 42
+            },
+            {
+              "op": "jump",
+              "target": 106
+            },
+            {
+              "dest": 43,
+              "op": "is_tag",
+              "reg": 13,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 43,
+              "target": 81
+            },
+            {
+              "op": "jump",
+              "target": 91
+            },
+            {
+              "args": [
+                13
+              ],
+              "dest": 44,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 44,
+              "target": 84
+            },
+            {
+              "op": "jump",
+              "target": 80
+            },
+            {
+              "dest": 45,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "lit": {
+                "atom": "stop"
+              },
+              "op": "jump_if_eq",
+              "reg": 45,
+              "target": 87
+            },
+            {
+              "op": "jump",
+              "target": 80
+            },
+            {
+              "dest": 46,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "dest": 47,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "dest": 14,
+              "op": "move",
+              "src": 46
+            },
+            {
+              "op": "jump",
+              "target": 106
+            },
+            {
+              "dest": 48,
+              "op": "is_tag",
+              "reg": 13,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 48,
+              "target": 94
+            },
+            {
+              "op": "jump",
+              "target": 104
+            },
+            {
+              "args": [
+                13
+              ],
+              "dest": 49,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 2
+              },
+              "op": "jump_if_eq",
+              "reg": 49,
+              "target": 97
+            },
+            {
+              "op": "jump",
+              "target": 93
+            },
+            {
+              "dest": 50,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "lit": {
+                "atom": "noreply"
+              },
+              "op": "jump_if_eq",
+              "reg": 50,
+              "target": 100
+            },
+            {
+              "op": "jump",
+              "target": 93
+            },
+            {
+              "dest": 51,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "args": [
+                0,
+                51
+              ],
+              "dest": 52,
+              "fun": "GenServer.loop/2",
+              "op": "call"
+            },
+            {
+              "dest": 14,
+              "op": "move",
+              "src": 52
+            },
+            {
+              "op": "jump",
+              "target": 106
+            },
+            {
+              "lit": {
+                "atom": "match_error"
+              },
+              "op": "load_lit",
+              "reg": 53
+            },
+            {
+              "op": "raise",
+              "reg": 53
+            },
+            {
+              "dest": 2,
+              "op": "move",
+              "src": 14
+            },
+            {
+              "op": "jump",
+              "target": 219
+            },
+            {
+              "dest": 54,
+              "op": "is_tag",
+              "reg": 4,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 54,
+              "target": 111
+            },
+            {
+              "op": "jump",
+              "target": 165
+            },
+            {
+              "args": [
+                4
+              ],
+              "dest": 55,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 2
+              },
+              "op": "jump_if_eq",
+              "reg": 55,
+              "target": 114
+            },
+            {
+              "op": "jump",
+              "target": 110
+            },
+            {
+              "dest": 56,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 4
+            },
+            {
+              "lit": {
+                "atom": "cast"
+              },
+              "op": "jump_if_eq",
+              "reg": 56,
+              "target": 117
+            },
+            {
+              "op": "jump",
+              "target": 110
+            },
+            {
+              "dest": 57,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 4
+            },
+            {
+              "index": 3,
+              "op": "recv_drop"
+            },
+            {
+              "lit": {
+                "atom": "handle_cast"
+              },
+              "op": "load_lit",
+              "reg": 58
+            },
+            {
+              "args": [
+                57,
+                1
+              ],
+              "dest": 59,
+              "fun": 58,
+              "mod": 0,
+              "op": "apply_mfa"
+            },
+            {
+              "dest": 61,
+              "op": "is_tag",
+              "reg": 59,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 61,
+              "target": 124
+            },
+            {
+              "op": "jump",
+              "target": 135
+            },
+            {
+              "args": [
+                59
+              ],
+              "dest": 62,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 62,
+              "target": 127
+            },
+            {
+              "op": "jump",
+              "target": 123
+            },
+            {
+              "dest": 63,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 59
+            },
+            {
+              "lit": {
+                "atom": "noreply"
+              },
+              "op": "jump_if_eq",
+              "reg": 63,
+              "target": 130
+            },
+            {
+              "op": "jump",
+              "target": 123
+            },
+            {
+              "dest": 64,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 59
+            },
+            {
+              "dest": 65,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 59
+            },
+            {
+              "args": [
+                0,
+                64,
+                65
+              ],
+              "dest": 66,
+              "fun": "GenServer.after_noreply/3",
+              "op": "call"
+            },
+            {
+              "dest": 60,
+              "op": "move",
+              "src": 66
+            },
+            {
+              "op": "jump",
+              "target": 163
+            },
+            {
+              "dest": 67,
+              "op": "is_tag",
+              "reg": 59,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 67,
+              "target": 138
+            },
+            {
+              "op": "jump",
+              "target": 148
+            },
+            {
+              "args": [
+                59
+              ],
+              "dest": 68,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 68,
+              "target": 141
+            },
+            {
+              "op": "jump",
+              "target": 137
+            },
+            {
+              "dest": 69,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 59
+            },
+            {
+              "lit": {
+                "atom": "stop"
+              },
+              "op": "jump_if_eq",
+              "reg": 69,
+              "target": 144
+            },
+            {
+              "op": "jump",
+              "target": 137
+            },
+            {
+              "dest": 70,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 59
+            },
+            {
+              "dest": 71,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 59
+            },
+            {
+              "dest": 60,
+              "op": "move",
+              "src": 70
+            },
+            {
+              "op": "jump",
+              "target": 163
+            },
+            {
+              "dest": 72,
+              "op": "is_tag",
+              "reg": 59,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 72,
+              "target": 151
+            },
+            {
+              "op": "jump",
+              "target": 161
+            },
+            {
+              "args": [
+                59
+              ],
+              "dest": 73,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 2
+              },
+              "op": "jump_if_eq",
+              "reg": 73,
+              "target": 154
+            },
+            {
+              "op": "jump",
+              "target": 150
+            },
+            {
+              "dest": 74,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 59
+            },
+            {
+              "lit": {
+                "atom": "noreply"
+              },
+              "op": "jump_if_eq",
+              "reg": 74,
+              "target": 157
+            },
+            {
+              "op": "jump",
+              "target": 150
+            },
+            {
+              "dest": 75,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 59
+            },
+            {
+              "args": [
+                0,
+                75
+              ],
+              "dest": 76,
+              "fun": "GenServer.loop/2",
+              "op": "call"
+            },
+            {
+              "dest": 60,
+              "op": "move",
+              "src": 76
+            },
+            {
+              "op": "jump",
+              "target": 163
+            },
+            {
+              "lit": {
+                "atom": "match_error"
+              },
+              "op": "load_lit",
+              "reg": 77
+            },
+            {
+              "op": "raise",
+              "reg": 77
+            },
+            {
+              "dest": 2,
+              "op": "move",
+              "src": 60
+            },
+            {
+              "op": "jump",
+              "target": 219
+            },
+            {
+              "op": "jump",
+              "target": 167
+            },
+            {
+              "op": "jump",
+              "target": 213
+            },
+            {
+              "index": 3,
+              "op": "recv_drop"
+            },
+            {
+              "args": [
+                0,
+                4,
+                1
+              ],
+              "dest": 78,
+              "fun": "GenServer.do_info/3",
+              "op": "call"
+            },
+            {
+              "dest": 80,
+              "op": "is_tag",
+              "reg": 78,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 80,
+              "target": 172
+            },
+            {
+              "op": "jump",
+              "target": 183
+            },
+            {
+              "args": [
+                78
+              ],
+              "dest": 81,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 81,
+              "target": 175
+            },
+            {
+              "op": "jump",
+              "target": 171
+            },
+            {
+              "dest": 82,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 78
+            },
+            {
+              "lit": {
+                "atom": "noreply"
+              },
+              "op": "jump_if_eq",
+              "reg": 82,
+              "target": 178
+            },
+            {
+              "op": "jump",
+              "target": 171
+            },
+            {
+              "dest": 83,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 78
+            },
+            {
+              "dest": 84,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 78
+            },
+            {
+              "args": [
+                0,
+                83,
+                84
+              ],
+              "dest": 85,
+              "fun": "GenServer.after_noreply/3",
+              "op": "call"
+            },
+            {
+              "dest": 79,
+              "op": "move",
+              "src": 85
+            },
+            {
+              "op": "jump",
+              "target": 211
+            },
+            {
+              "dest": 86,
+              "op": "is_tag",
+              "reg": 78,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 86,
+              "target": 186
+            },
+            {
+              "op": "jump",
+              "target": 196
+            },
+            {
+              "args": [
+                78
+              ],
+              "dest": 87,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 87,
+              "target": 189
+            },
+            {
+              "op": "jump",
+              "target": 185
+            },
+            {
+              "dest": 88,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 78
+            },
+            {
+              "lit": {
+                "atom": "stop"
+              },
+              "op": "jump_if_eq",
+              "reg": 88,
+              "target": 192
+            },
+            {
+              "op": "jump",
+              "target": 185
+            },
+            {
+              "dest": 89,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 78
+            },
+            {
+              "dest": 90,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 78
+            },
+            {
+              "dest": 79,
+              "op": "move",
+              "src": 89
+            },
+            {
+              "op": "jump",
+              "target": 211
+            },
+            {
+              "dest": 91,
+              "op": "is_tag",
+              "reg": 78,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 91,
+              "target": 199
+            },
+            {
+              "op": "jump",
+              "target": 209
+            },
+            {
+              "args": [
+                78
+              ],
+              "dest": 92,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 2
+              },
+              "op": "jump_if_eq",
+              "reg": 92,
+              "target": 202
+            },
+            {
+              "op": "jump",
+              "target": 198
+            },
+            {
+              "dest": 93,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 78
+            },
+            {
+              "lit": {
+                "atom": "noreply"
+              },
+              "op": "jump_if_eq",
+              "reg": 93,
+              "target": 205
+            },
+            {
+              "op": "jump",
+              "target": 198
+            },
+            {
+              "dest": 94,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 78
+            },
+            {
+              "args": [
+                0,
+                94
+              ],
+              "dest": 95,
+              "fun": "GenServer.loop/2",
+              "op": "call"
+            },
+            {
+              "dest": 79,
+              "op": "move",
+              "src": 95
+            },
+            {
+              "op": "jump",
+              "target": 211
+            },
+            {
+              "lit": {
+                "atom": "match_error"
+              },
+              "op": "load_lit",
+              "reg": 96
+            },
+            {
+              "op": "raise",
+              "reg": 96
+            },
+            {
+              "dest": 2,
+              "op": "move",
+              "src": 79
+            },
+            {
+              "op": "jump",
+              "target": 219
+            },
+            {
+              "lit": {
+                "int": 1
+              },
+              "op": "load_lit",
+              "reg": 97
+            },
+            {
+              "args": [
+                3,
+                97
+              ],
+              "dest": 98,
+              "fun": "+/2",
+              "op": "call"
+            },
+            {
+              "dest": 3,
+              "op": "move",
+              "src": 98
+            },
+            {
+              "op": "jump",
+              "target": 1
+            },
+            {
+              "after": 218,
+              "op": "wait",
+              "retry": 1,
+              "timeout": null
+            },
+            {
+              "lit": null,
+              "op": "load_lit",
+              "reg": 2
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 99,
+          "name": "GenServer.loop/2"
+        },
+        {
+          "arity": 3,
+          "code": [
+            {
+              "args": [
+                0,
+                1,
+                2
+              ],
+              "dest": 3,
+              "fun": "make_tuple/3",
+              "op": "call"
+            },
+            {
+              "dest": 5,
+              "op": "is_tag",
+              "reg": 3,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 5,
+              "target": 4
+            },
+            {
+              "op": "jump",
+              "target": 24
+            },
+            {
+              "args": [
+                3
+              ],
+              "dest": 6,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 6,
+              "target": 7
+            },
+            {
+              "op": "jump",
+              "target": 3
+            },
+            {
+              "dest": 7,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 8,
+              "op": "is_tag",
+              "reg": 7,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 8,
+              "target": 11
+            },
+            {
+              "op": "jump",
+              "target": 3
+            },
+            {
+              "args": [
+                7
+              ],
+              "dest": 9,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 2
+              },
+              "op": "jump_if_eq",
+              "reg": 9,
+              "target": 14
+            },
+            {
+              "op": "jump",
+              "target": 10
+            },
+            {
+              "dest": 10,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 7
+            },
+            {
+              "lit": {
+                "atom": "continue"
+              },
+              "op": "jump_if_eq",
+              "reg": 10,
+              "target": 17
+            },
+            {
+              "op": "jump",
+              "target": 10
+            },
+            {
+              "dest": 11,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 12,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 13,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 14,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 13
+            },
+            {
+              "args": [
+                11,
+                14,
+                12
+              ],
+              "dest": 15,
+              "fun": "GenServer.continue/3",
+              "op": "call"
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 15
+            },
+            {
+              "op": "jump",
+              "target": 52
+            },
+            {
+              "dest": 16,
+              "op": "is_tag",
+              "reg": 3,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 16,
+              "target": 27
+            },
+            {
+              "op": "jump",
+              "target": 39
+            },
+            {
+              "args": [
+                3
+              ],
+              "dest": 17,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 17,
+              "target": 30
+            },
+            {
+              "op": "jump",
+              "target": 26
+            },
+            {
+              "dest": 18,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "lit": {
+                "atom": "hibernate"
+              },
+              "op": "jump_if_eq",
+              "reg": 18,
+              "target": 33
+            },
+            {
+              "op": "jump",
+              "target": 26
+            },
+            {
+              "dest": 19,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 20,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "args": [],
+              "dest": 21,
+              "fun": "Process.hibernate/0",
+              "op": "call"
+            },
+            {
+              "args": [
+                19,
+                20
+              ],
+              "dest": 22,
+              "fun": "GenServer.loop/2",
+              "op": "call"
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 22
+            },
+            {
+              "op": "jump",
+              "target": 52
+            },
+            {
+              "dest": 23,
+              "op": "is_tag",
+              "reg": 3,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 23,
+              "target": 42
+            },
+            {
+              "op": "jump",
+              "target": 50
+            },
+            {
+              "args": [
+                3
+              ],
+              "dest": 24,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 24,
+              "target": 45
+            },
+            {
+              "op": "jump",
+              "target": 41
+            },
+            {
+              "dest": 25,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 26,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "args": [
+                25,
+                26
+              ],
+              "dest": 27,
+              "fun": "GenServer.loop/2",
+              "op": "call"
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 27
+            },
+            {
+              "op": "jump",
+              "target": 52
+            },
+            {
+              "lit": {
+                "atom": "match_error"
+              },
+              "op": "load_lit",
+              "reg": 28
+            },
+            {
+              "op": "raise",
+              "reg": 28
+            },
+            {
+              "op": "return",
+              "reg": 4
+            }
+          ],
+          "locals": 29,
+          "name": "GenServer.after_noreply/3"
+        },
+        {
+          "arity": 3,
+          "code": [
+            {
+              "exc": 4,
+              "op": "enter_try",
+              "rescue": 6
+            },
+            {
+              "lit": {
+                "atom": "handle_info"
+              },
+              "op": "load_lit",
+              "reg": 5
+            },
+            {
+              "args": [
+                1,
+                2
+              ],
+              "dest": 6,
+              "fun": 5,
+              "mod": 0,
+              "op": "apply_mfa"
+            },
+            {
+              "dest": 3,
+              "op": "move",
+              "src": 6
+            },
+            {
+              "op": "leave_try"
+            },
+            {
+              "op": "jump",
+              "target": 13
+            },
+            {
+              "lit": {
+                "atom": "undef"
+              },
+              "op": "jump_if_eq",
+              "reg": 4,
+              "target": 8
+            },
+            {
+              "op": "jump",
+              "target": 12
+            },
+            {
+              "lit": {
+                "atom": "noreply"
+              },
+              "op": "load_lit",
+              "reg": 7
+            },
+            {
+              "args": [
+                7,
+                2
+              ],
+              "dest": 8,
+              "fun": "make_tuple/2",
+              "op": "call"
+            },
+            {
+              "dest": 3,
+              "op": "move",
+              "src": 8
+            },
+            {
+              "op": "jump",
+              "target": 13
+            },
+            {
+              "op": "raise",
+              "reg": 4
+            },
+            {
+              "op": "return",
+              "reg": 3
+            }
+          ],
+          "locals": 9,
+          "name": "GenServer.do_info/3"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [],
+              "dest": 2,
+              "fun": "self/0",
+              "op": "call"
+            },
+            {
+              "args": [],
+              "dest": 3,
+              "fun": "make_ref/0",
+              "op": "call"
+            },
+            {
+              "dest": 4,
+              "op": "monitor",
+              "pid": 0
+            },
+            {
+              "lit": {
+                "atom": "call"
+              },
+              "op": "load_lit",
+              "reg": 5
+            },
+            {
+              "args": [
+                5,
+                2,
+                3,
+                1
+              ],
+              "dest": 6,
+              "fun": "make_tuple/4",
+              "op": "call"
+            },
+            {
+              "msg": 6,
+              "op": "send",
+              "pid": 0
+            },
+            {
+              "lit": {
+                "int": 0
+              },
+              "op": "load_lit",
+              "reg": 8
+            },
+            {
+              "dest": 9,
+              "empty": 52,
+              "index": 8,
+              "op": "recv_peek"
+            },
+            {
+              "dest": 10,
+              "op": "is_tag",
+              "reg": 9,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 10,
+              "target": 11
+            },
+            {
+              "op": "jump",
+              "target": 26
+            },
+            {
+              "args": [
+                9
+              ],
+              "dest": 11,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 11,
+              "target": 14
+            },
+            {
+              "op": "jump",
+              "target": 10
+            },
+            {
+              "dest": 12,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 9
+            },
+            {
+              "lit": {
+                "atom": "reply"
+              },
+              "op": "jump_if_eq",
+              "reg": 12,
+              "target": 17
+            },
+            {
+              "op": "jump",
+              "target": 10
+            },
+            {
+              "dest": 13,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 9
+            },
+            {
+              "args": [
+                13,
+                3
+              ],
+              "dest": 14,
+              "fun": "==/2",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 14,
+              "target": 21
+            },
+            {
+              "op": "jump",
+              "target": 10
+            },
+            {
+              "dest": 15,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 9
+            },
+            {
+              "index": 8,
+              "op": "recv_drop"
+            },
+            {
+              "op": "demonitor",
+              "ref": 4
+            },
+            {
+              "dest": 7,
+              "op": "move",
+              "src": 15
+            },
+            {
+              "op": "jump",
+              "target": 56
+            },
+            {
+              "dest": 16,
+              "op": "is_tag",
+              "reg": 9,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 16,
+              "target": 29
+            },
+            {
+              "op": "jump",
+              "target": 48
+            },
+            {
+              "args": [
+                9
+              ],
+              "dest": 17,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 5
+              },
+              "op": "jump_if_eq",
+              "reg": 17,
+              "target": 32
+            },
+            {
+              "op": "jump",
+              "target": 28
+            },
+            {
+              "dest": 18,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 9
+            },
+            {
+              "lit": {
+                "atom": "DOWN"
+              },
+              "op": "jump_if_eq",
+              "reg": 18,
+              "target": 35
+            },
+            {
+              "op": "jump",
+              "target": 28
+            },
+            {
+              "dest": 19,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 9
+            },
+            {
+              "args": [
+                19,
+                4
+              ],
+              "dest": 20,
+              "fun": "==/2",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 20,
+              "target": 39
+            },
+            {
+              "op": "jump",
+              "target": 28
+            },
+            {
+              "dest": 21,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 9
+            },
+            {
+              "lit": {
+                "atom": "process"
+              },
+              "op": "jump_if_eq",
+              "reg": 21,
+              "target": 42
+            },
+            {
+              "op": "jump",
+              "target": 28
+            },
+            {
+              "dest": 22,
+              "index": 3,
+              "op": "get_tuple_elem",
+              "tuple": 9
+            },
+            {
+              "dest": 23,
+              "index": 4,
+              "op": "get_tuple_elem",
+              "tuple": 9
+            },
+            {
+              "index": 8,
+              "op": "recv_drop"
+            },
+            {
+              "lit": {
+                "int": 0
+              },
+              "op": "load_lit",
+              "reg": 24
+            },
+            {
+              "dest": 7,
+              "op": "move",
+              "src": 24
+            },
+            {
+              "op": "jump",
+              "target": 56
+            },
+            {
+              "lit": {
+                "int": 1
+              },
+              "op": "load_lit",
+              "reg": 25
+            },
+            {
+              "args": [
+                8,
+                25
+              ],
+              "dest": 26,
+              "fun": "+/2",
+              "op": "call"
+            },
+            {
+              "dest": 8,
+              "op": "move",
+              "src": 26
+            },
+            {
+              "op": "jump",
+              "target": 7
+            },
+            {
+              "after": 53,
+              "op": "wait",
+              "retry": 7,
+              "timeout": 500
+            },
+            {
+              "op": "demonitor",
+              "ref": 4
+            },
+            {
+              "lit": {
+                "int": 0
+              },
+              "op": "load_lit",
+              "reg": 27
+            },
+            {
+              "dest": 7,
+              "op": "move",
+              "src": 27
+            },
+            {
+              "op": "return",
+              "reg": 7
+            }
+          ],
+          "locals": 28,
+          "name": "GenServer.call/2"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "lit": {
+                "atom": "cast"
+              },
+              "op": "load_lit",
+              "reg": 2
+            },
+            {
+              "args": [
+                2,
+                1
+              ],
+              "dest": 3,
+              "fun": "make_tuple/2",
+              "op": "call"
+            },
+            {
+              "msg": 3,
+              "op": "send",
+              "pid": 0
+            },
+            {
+              "lit": {
+                "atom": "ok"
+              },
+              "op": "load_lit",
+              "reg": 4
+            },
+            {
+              "op": "return",
+              "reg": 4
+            }
+          ],
+          "locals": 5,
+          "name": "GenServer.cast/2"
+        },
+        {
+          "arity": 3,
+          "code": [
+            {
+              "lit": {
+                "atom": "reply"
+              },
+              "op": "load_lit",
+              "reg": 3
+            },
+            {
+              "args": [
+                3,
+                1,
+                2
+              ],
+              "dest": 4,
+              "fun": "make_tuple/3",
+              "op": "call"
+            },
+            {
+              "msg": 4,
+              "op": "send",
+              "pid": 0
+            },
+            {
+              "lit": {
+                "atom": "ok"
+              },
+              "op": "load_lit",
+              "reg": 5
+            },
+            {
+              "op": "return",
+              "reg": 5
+            }
+          ],
+          "locals": 6,
+          "name": "GenServer.reply/3"
+        }
+      ],
+      "name": "GenServer"
+    },
+    {
+      "functions": [
+        {
+          "arity": 1,
+          "code": [
+            {
+              "lit": {
+                "atom": "ok"
+              },
+              "op": "load_lit",
+              "reg": 1
+            },
+            {
+              "lit": {
+                "tuple": [
+                  {
+                    "atom": "continue"
+                  },
+                  {
+                    "atom": "bump"
+                  }
+                ]
+              },
+              "op": "load_lit",
+              "reg": 2
+            },
+            {
+              "args": [
+                1,
+                0,
+                2
+              ],
+              "dest": 3,
+              "fun": "make_tuple/3",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 3
+            }
+          ],
+          "locals": 4,
+          "name": "Counter.init/1"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "make_tuple/2",
+              "op": "call"
+            },
+            {
+              "dest": 4,
+              "op": "is_tag",
+              "reg": 2,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 4,
+              "target": 4
+            },
+            {
+              "op": "jump",
+              "target": 17
+            },
+            {
+              "args": [
+                2
+              ],
+              "dest": 5,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 2
+              },
+              "op": "jump_if_eq",
+              "reg": 5,
+              "target": 7
+            },
+            {
+              "op": "jump",
+              "target": 3
+            },
+            {
+              "dest": 6,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 2
+            },
+            {
+              "lit": {
+                "atom": "bump"
+              },
+              "op": "jump_if_eq",
+              "reg": 6,
+              "target": 10
+            },
+            {
+              "op": "jump",
+              "target": 3
+            },
+            {
+              "dest": 7,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 2
+            },
+            {
+              "lit": {
+                "atom": "noreply"
+              },
+              "op": "load_lit",
+              "reg": 8
+            },
+            {
+              "lit": {
+                "int": 2
+              },
+              "op": "load_lit",
+              "reg": 9
+            },
+            {
+              "args": [
+                7,
+                9
+              ],
+              "dest": 10,
+              "fun": "+/2",
+              "op": "call"
+            },
+            {
+              "args": [
+                8,
+                10
+              ],
+              "dest": 11,
+              "fun": "make_tuple/2",
+              "op": "call"
+            },
+            {
+              "dest": 3,
+              "op": "move",
+              "src": 11
+            },
+            {
+              "op": "jump",
+              "target": 19
+            },
+            {
+              "lit": {
+                "atom": "match_error"
+              },
+              "op": "load_lit",
+              "reg": 12
+            },
+            {
+              "op": "raise",
+              "reg": 12
+            },
+            {
+              "op": "return",
+              "reg": 3
+            }
+          ],
+          "locals": 13,
+          "name": "Counter.handle_continue/2"
+        },
+        {
+          "arity": 3,
+          "code": [
+            {
+              "args": [
+                0,
+                1,
+                2
+              ],
+              "dest": 3,
+              "fun": "make_tuple/3",
+              "op": "call"
+            },
+            {
+              "dest": 5,
+              "op": "is_tag",
+              "reg": 3,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 5,
+              "target": 4
+            },
+            {
+              "op": "jump",
+              "target": 16
+            },
+            {
+              "args": [
+                3
+              ],
+              "dest": 6,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 6,
+              "target": 7
+            },
+            {
+              "op": "jump",
+              "target": 3
+            },
+            {
+              "dest": 7,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "lit": {
+                "atom": "get"
+              },
+              "op": "jump_if_eq",
+              "reg": 7,
+              "target": 10
+            },
+            {
+              "op": "jump",
+              "target": 3
+            },
+            {
+              "dest": 8,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "dest": 9,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 3
+            },
+            {
+              "lit": {
+                "atom": "reply"
+              },
+              "op": "load_lit",
+              "reg": 10
+            },
+            {
+              "args": [
+                10,
+                9,
+                9
+              ],
+              "dest": 11,
+              "fun": "make_tuple/3",
+              "op": "call"
+            },
+            {
+              "dest": 4,
+              "op": "move",
+              "src": 11
+            },
+            {
+              "op": "jump",
+              "target": 18
+            },
+            {
+              "lit": {
+                "atom": "match_error"
+              },
+              "op": "load_lit",
+              "reg": 12
+            },
+            {
+              "op": "raise",
+              "reg": 12
+            },
+            {
+              "op": "return",
+              "reg": 4
+            }
+          ],
+          "locals": 13,
+          "name": "Counter.handle_call/3"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "lit": {
+                "atom": "noreply"
+              },
+              "op": "load_lit",
+              "reg": 2
+            },
+            {
+              "args": [
+                2,
+                1
+              ],
+              "dest": 3,
+              "fun": "make_tuple/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 3
+            }
+          ],
+          "locals": 4,
+          "name": "Counter.handle_cast/2"
+        },
+        {
+          "arity": 1,
+          "code": [
+            {
+              "lit": {
+                "atom": "Counter"
+              },
+              "op": "load_lit",
+              "reg": 1
+            },
+            {
+              "args": [
+                1,
+                0
+              ],
+              "dest": 2,
+              "fun": "make_tuple/2",
+              "op": "call"
+            },
+            {
+              "args": [
+                2
+              ],
+              "dest": 3,
+              "fun": "GenServer.child_spec/1",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 3
+            }
+          ],
+          "locals": 4,
+          "name": "Counter.child_spec/1"
+        }
+      ],
+      "name": "Counter"
+    },
+    {
+      "functions": [
+        {
+          "arity": 0,
+          "code": [
+            {
+              "lit": {
+                "atom": "Counter"
+              },
+              "op": "load_lit",
+              "reg": 0
+            },
+            {
+              "lit": {
+                "int": 0
+              },
+              "op": "load_lit",
+              "reg": 1
+            },
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "GenServer.start/2",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "atom": "get"
+              },
+              "op": "load_lit",
+              "reg": 3
+            },
+            {
+              "args": [
+                2,
+                3
+              ],
+              "dest": 4,
+              "fun": "GenServer.call/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 4
+            }
+          ],
+          "locals": 5,
+          "name": "Main.main/0"
+        }
+      ],
+      "name": "Main"
+    }
+  ],
+  "version": 19
+}

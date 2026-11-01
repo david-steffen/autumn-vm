@@ -241,8 +241,58 @@ Teaching subset (not full OTP). Objects are `{key, val}`.
 4. [x] `stdlib/ets.ex`; fixtures `ets_basic` (list lookup) / `ets_bag` → `2` / `ets_named` → `7` / `ets_select` → `5`; Mix goldens + smoke
 5. [x] Out of scope: `ordered_set`, non-empty guards, continuations, `delete_object`, ownership/heir
 
+## Phase 30 — Mix partial bitstring construct
+
+Close the Phase 28 Mix gap: Lean/JSON already accept partial `bitstring` lits; lowerer still emits aligned-only `<<…>>`.
+
+No new IR version if only Mix → existing `{"bitstring":{"bytes":[…],"trailing_bits":k}}` (v16).
+
+1. [x] Mix: integer segments with explicit `::size` / `::size(N)` for **N ∈ 1…7** on a trailing partial (and full bytes with `::8` / default); combine into one lit via Lean’s `Valid` / cleared unused low bits
+2. [x] Reject unsupported forms clearly (`::binary`, dynamic size, non-int value, mid-construct partial that isn’t last, size > 8 except via multi-byte — teaching: keep small)
+3. [x] Fixture `bitstring_partial.ex` + Mix golden + smoke (e.g. `is_bitstring` / `not is_binary` / equality against a known shape → small int)
+4. [x] Document Mix construct in `vm/IR.md` v16 section; AGENTS one-liner
+5. [x] Out of scope: binary **matching** / comprehensions, `::utf8` construct beyond today’s string chunks, non-literal sizes, `<>/2` of partials (still `:badarg`)
+
+## Phase 31 — Thin `use GenServer` + child_spec
+
+Demo surface on existing IR (no new opcodes). Teaching subset — not full OTP behaviours.
+
+1. [x] `GenServer.child_spec({mod, arg})` (and/or `child_spec(arg)` when used via `use`) → map `%{id: mod, start: {mod, arg}}` (Autumn-shaped; not full OTP `:start` MFA)
+2. [x] `Supervisor`: accept child_spec **maps** beside `{Mod, arg}` tuples; start via `GenServer.start` / `start_link` as today
+3. [x] Mix: expand bare `use GenServer` in a `defmodule` into an injected `def child_spec(arg)` (AST rewrite before lower — no general macro engine); unknown `use X` → clear error
+4. [x] Fixture: callback module with `use GenServer` + supervisor started from `[Counter.child_spec(0)]` (or map lit) → smoke int; Mix golden
+5. [x] Document in `AGENTS.md` / stdlib comments; smoke allowlist
+6. [x] Out of scope: `@behaviour` checking, `handle_continue` / `{:continue, _}`, full OTP child_spec keys (`:restart`, `:shutdown`, `:type`), `use GenServer, …` options, `def call` macro sugar
+
+## Phase 32 — ETS tails (IR v18)
+
+Teaching subset: select guards, `delete_object`, `ordered_set`, ownership/heir. Not full OTP.
+
+1. [x] IR.md v18 + Mix `needs_v18?` + Lean `versionOk*` / Decode
+2. [x] `EtsTable` owner/heir/alive; `:ordered_set` insert order; `deleteObject`; teaching `evalGuard`; `resolveTab` skips dead
+3. [x] Builtins `ets_delete_object/2` / `ets_heir/2`; owner on `ets_new`; `propagateExit` → heir transfer or kill; preserve/progress/`result_is_toTerm`
+4. [x] `stdlib/ets.ex`; fixtures `ets_guards` → `2` / `ets_delete_object` → `3` / `ets_ordered` → `1` / `ets_heir` → `42`; Mix goldens + smoke
+5. [x] Out of scope: `give_away`, private tables, rich match-spec BIFs, `first`/`next`/`slot`
+
+## Phase 33 — GenServer extras (teaching)
+
+No new IR version. Stdlib + Mix expand.
+
+1. [x] Mix: `@behaviour` / `@impl` strip; `use GenServer` options `restart:` / `shutdown:` / `significant:`; require `init/1` `handle_call/3` `handle_cast/2` `handle_continue/2`
+2. [x] GenServer: `{:continue, _}` / `:hibernate` (noop) return tails; `handle_continue` chain; stop returns reason
+3. [x] Supervisor: `:restart` permanent/temporary/transient; `:shutdown` brutal_kill vs exit; `:significant` drop ⇒ supervisor `:shutdown`; extended child records
+4. [x] Fixtures `genserver_continue` → `2` / `supervisor_temporary` → `1` / `supervisor_significant` → `1`; Mix tests; smoke
+5. [x] Out of scope: start MFA, `:type`, real hibernate, `@impl` name check, receive-after sleep on shutdown ms
+
+## Phase 34 — Pattern/receive polish + OTP gaps
+
+1. [x] Mix: tuple pattern arity via `tuple_size/1`; fixture `tuple_pattern_arity` → `3`; GenServer case simplified
+2. [x] IR v19 `WaitTimeout` lit|reg|infinity; after-only receive; variable after timeout; Supervisor shutdown wait
+3. [x] OTP gaps: start MFA (`{Mod,Fun,[arg]}`), `:type` carry, `Process.hibernate/0` + GenServer `:hibernate` tails
+4. [x] Fixtures `receive_after_var` → `1` / `genserver_hibernate` → `4` / `supervisor_shutdown_wait` → `4` / `supervisor_start_mfa` → `9`; ROADMAP/AGENTS/IR.md
+5. [x] Out of scope: true BEAM hibernate, nested supervisor `:type` ordering, dynamic MFA spawn from non-literal Mix args, rewriting historical v7 wait JSON
+
 ## Later (deprioritized)
 
-- Full `use GenServer` / `@behaviour`, `continue`, child_spec maps
 - Verified compiler — when started, design purity layers (`Except` / dispatcher / effectful result + law levels pure→concurrent) for compiled-program meaning; OTP-shaped Lean namespaces (`GenServer` / `Supervisor` lemmas) alongside stdlib (inspiration only)
 - Induction principles over IR functions if program-level laws appear

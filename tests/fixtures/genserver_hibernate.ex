@@ -1,0 +1,32 @@
+defmodule Counter do
+  @behaviour GenServer
+  use GenServer
+
+  @impl true
+  def init(n) do
+    {:ok, n, :hibernate}
+  end
+
+  @impl true
+  def handle_continue(_c, state) do
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_call(:get, _from, state) do
+    {:reply, state, state}
+  end
+
+  @impl true
+  def handle_cast(:bump, state) do
+    {:noreply, state + 1, :hibernate}
+  end
+end
+
+defmodule Main do
+  def main do
+    pid = GenServer.start(Counter, 3)
+    _ = GenServer.cast(pid, :bump)
+    GenServer.call(pid, :get)
+  end
+end

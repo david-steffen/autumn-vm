@@ -11,6 +11,13 @@ inductive Tag where
   | tuple | list | map | pid | ref | fun
   deriving Repr, BEq, Inhabited
 
+/-- IR v7/v19 `wait` timeout: infinity, immediate ticks, or register holding a non-neg int. -/
+inductive WaitTimeout where
+  | infinity
+  | lit (n : Nat)
+  | reg (r : Reg)
+  deriving Repr, BEq, Inhabited
+
 inductive Instr where
   | loadLit (reg : Reg) (lit : Term)
   | move (dest src : Reg)
@@ -37,8 +44,8 @@ inductive Instr where
   -- IR v7 selective receive
   | recvPeek (dest : Reg) (indexReg : Reg) (empty : Label)
   | recvDrop (indexReg : Reg)
-  /-- Park until message (`retry`) or logical-clock timeout (`after`). `none` timeout = infinity. -/
-  | wait (retry after : Label) (timeout : Option Nat)
+  /-- Park until message (`retry`) or logical-clock timeout (`after`). -/
+  | wait (retry after : Label) (timeout : WaitTimeout)
   -- IR v8 process links
   | link (pidReg : Reg)
   -- IR v9 monitors
@@ -124,9 +131,10 @@ def isBuiltinName (name : FunName) : Bool :=
   name == "map_size/1" || name == "map_get/2" || name == "map_put/3" ||
   name == "self/0" || name == "make_ref/0" || name == "<>/2" ||
   name == "cons/2" || name == "Process.flag/2" || name == "Process.exit/2" ||
+  name == "Process.hibernate/0" ||
   name == "ets_new/0" || name == "ets_new/2" || name == "ets_insert/3" ||
-  name == "ets_lookup/2" || name == "ets_delete/2" ||
-  name == "ets_match_object/2" || name == "ets_select/2" ||
+  name == "ets_lookup/2" || name == "ets_delete/2" || name == "ets_delete_object/2" ||
+  name == "ets_match_object/2" || name == "ets_select/2" || name == "ets_heir/2" ||
   isMakeTupleName name
 
 end Autumn

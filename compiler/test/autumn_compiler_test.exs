@@ -342,7 +342,7 @@ defmodule AutumnCompilerTest do
     assert {:ok, module} = AutumnCompiler.compile_files([gs, path])
     expected = expected_path |> File.read!() |> Jason.decode!()
     assert module == expected
-    assert module["version"] == 15
+    assert module["version"] >= 15
     code = Enum.flat_map(module["modules"], & &1["functions"]) |> Enum.flat_map(& &1["code"])
     assert Enum.any?(code, &(&1["op"] == "apply_mfa"))
     names = Enum.map(module["modules"], & &1["name"])
@@ -357,7 +357,7 @@ defmodule AutumnCompilerTest do
     assert {:ok, module} = AutumnCompiler.compile_files([gs, sup, path])
     expected = expected_path |> File.read!() |> Jason.decode!()
     assert module == expected
-    assert module["version"] == 15
+    assert module["version"] >= 15
     names = Enum.map(module["modules"], & &1["name"])
     assert "Supervisor" in names
     assert "CrashOnce" in names
@@ -410,6 +410,103 @@ defmodule AutumnCompilerTest do
     assert module == expected
   end
 
+  test "lowers genserver_use (use GenServer + child_spec)" do
+    gs = Path.join(@stdlib, "genserver.ex")
+    sup = Path.join(@stdlib, "supervisor.ex")
+    path = Path.join(@fixtures, "genserver_use.ex")
+    expected_path = Path.join(@fixtures, "genserver_use.bc.json")
+    assert {:ok, module} = AutumnCompiler.compile_files([gs, sup, path])
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+
+    funs = Enum.flat_map(module["modules"], & &1["functions"])
+    names = Enum.map(funs, & &1["name"])
+    assert "CrashOnce.child_spec/1" in names
+    assert "GenServer.child_spec/1" in names
+  end
+
+  test "rejects unknown use" do
+    src = """
+    defmodule Foo do
+      use Bar
+      def main, do: 1
+    end
+    """
+
+    assert {:error, msg} = AutumnCompiler.Lower.lower(Code.string_to_quoted!(src))
+    assert msg =~ "unsupported use"
+  end
+
+  test "requires handle_continue under @behaviour GenServer" do
+    src = """
+    defmodule Foo do
+      @behaviour GenServer
+      def init(x), do: {:ok, x}
+      def handle_call(_, _, s), do: {:reply, s, s}
+      def handle_cast(_, s), do: {:noreply, s}
+    end
+    """
+
+    assert {:error, msg} = AutumnCompiler.Lower.lower(Code.string_to_quoted!(src))
+    assert msg =~ "handle_continue/2"
+  end
+
+  test "rejects unknown use GenServer option" do
+    src = """
+    defmodule Foo do
+      use GenServer, hibernate_after: 1
+      def init(x), do: {:ok, x}
+      def handle_call(_, _, s), do: {:reply, s, s}
+      def handle_cast(_, s), do: {:noreply, s}
+      def handle_continue(_, s), do: {:noreply, s}
+    end
+    """
+
+    assert {:error, msg} = AutumnCompiler.Lower.lower(Code.string_to_quoted!(src))
+    assert msg =~ "unsupported use GenServer option"
+  end
+
+  test "lowers genserver_continue / supervisor_temporary / supervisor_significant" do
+    gs = Path.join(@stdlib, "genserver.ex")
+    sup = Path.join(@stdlib, "supervisor.ex")
+
+    for {stem, extras} <- [
+          {"genserver_continue", [gs]},
+          {"supervisor_temporary", [gs, sup]},
+          {"supervisor_significant", [gs, sup]}
+        ] do
+      path = Path.join(@fixtures, "#{stem}.ex")
+      expected_path = Path.join(@fixtures, "#{stem}.bc.json")
+      assert {:ok, module} = AutumnCompiler.compile_files(extras ++ [path])
+      expected = expected_path |> File.read!() |> Jason.decode!()
+      assert module == expected
+    end
+  end
+
+  test "lowers Phase 34 polish fixtures" do
+    gs = Path.join(@stdlib, "genserver.ex")
+    sup = Path.join(@stdlib, "supervisor.ex")
+
+    for {stem, extras} <- [
+          {"tuple_pattern_arity", []},
+          {"receive_after_var", []},
+          {"genserver_hibernate", [gs]},
+          {"supervisor_shutdown_wait", [gs, sup]},
+          {"supervisor_start_mfa", [gs, sup]}
+        ] do
+      path = Path.join(@fixtures, "#{stem}.ex")
+      expected_path = Path.join(@fixtures, "#{stem}.bc.json")
+      assert {:ok, module} = AutumnCompiler.compile_files(extras ++ [path])
+      expected = expected_path |> File.read!() |> Jason.decode!()
+      assert module == expected
+    end
+
+    recv = Path.join(@fixtures, "receive_after_var.bc.json") |> File.read!() |> Jason.decode!()
+    assert recv["version"] == 19
+    hib = Path.join(@fixtures, "genserver_hibernate.bc.json") |> File.read!() |> Jason.decode!()
+    assert hib["version"] == 19
+  end
+
   test "lowers ets_basic" do
     ets = Path.join(@stdlib, "ets.ex")
     path = Path.join(@fixtures, "ets_basic.ex")
@@ -425,7 +522,7 @@ defmodule AutumnCompilerTest do
     assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "ets_delete/2"))
   end
 
-  test "lowers ets_bag / ets_named / ets_select (IR v17)" do
+  test "lowers ets_bag / ets_named / ets_select (stdlib pulls IR v18)" do
     ets = Path.join(@stdlib, "ets.ex")
 
     for {stem, funs} <- [
@@ -438,7 +535,8 @@ defmodule AutumnCompilerTest do
       assert {:ok, module} = AutumnCompiler.compile_files([ets, path])
       expected = expected_path |> File.read!() |> Jason.decode!()
       assert module == expected
-      assert module["version"] == 17
+      # `stdlib/ets.ex` defines `delete_object` / `heir` → image needs v18.
+      assert module["version"] == 18
 
       code =
         module["modules"]
@@ -448,6 +546,41 @@ defmodule AutumnCompilerTest do
       for fun <- funs do
         assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == fun)),
                "#{stem} missing #{fun}"
+      end
+    end
+  end
+
+  test "lowers ets_guards / ets_delete_object / ets_ordered / ets_heir (IR v18)" do
+    ets = Path.join(@stdlib, "ets.ex")
+
+    for {stem, funs} <- [
+          {"ets_guards", ["ets_select/2"]},
+          {"ets_delete_object", ["ets_delete_object/2"]},
+          {"ets_ordered", ["ets_new/2"]},
+          {"ets_heir", ["ets_heir/2"]}
+        ] do
+      path = Path.join(@fixtures, "#{stem}.ex")
+      expected_path = Path.join(@fixtures, "#{stem}.bc.json")
+      assert {:ok, module} = AutumnCompiler.compile_files([ets, path])
+      expected = expected_path |> File.read!() |> Jason.decode!()
+      assert module == expected
+      assert module["version"] == 18
+
+      code =
+        module["modules"]
+        |> Enum.flat_map(& &1["functions"])
+        |> Enum.flat_map(& &1["code"])
+
+      for fun <- funs do
+        assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == fun)),
+               "#{stem} missing #{fun}"
+      end
+
+      if stem == "ets_ordered" do
+        assert Enum.any?(
+                 code,
+                 &(&1["op"] == "load_lit" && &1["lit"] == %{"atom" => "ordered_set"})
+               )
       end
     end
   end
@@ -465,6 +598,31 @@ defmodule AutumnCompilerTest do
     assert Enum.any?(code, &(&1["op"] == "load_lit" && match?(%{"string" => _}, &1["lit"])))
     assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "<>/2"))
     assert Enum.any?(code, &(&1["op"] == "is_tag" && &1["tag"] == "binary"))
+  end
+
+  test "lowers bitstring_partial (IR v16 Mix ::size)" do
+    path = Path.join(@fixtures, "bitstring_partial.ex")
+    expected_path = Path.join(@fixtures, "bitstring_partial.bc.json")
+    assert {:ok, module} = AutumnCompiler.compile_file(path)
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+    assert module["version"] == 16
+    code = Enum.flat_map(module["functions"], & &1["code"])
+
+    assert Enum.any?(
+             code,
+             &(&1["op"] == "load_lit" &&
+                 match?(%{"bitstring" => %{"bytes" => [96], "trailing_bits" => 5}}, &1["lit"]))
+           )
+
+    assert Enum.any?(
+             code,
+             &(&1["op"] == "load_lit" &&
+                 match?(
+                   %{"bitstring" => %{"bytes" => [1, 64], "trailing_bits" => 5}},
+                   &1["lit"]
+                 ))
+           )
   end
 
   test "lowers if_else / cond_main (Phase 7)" do

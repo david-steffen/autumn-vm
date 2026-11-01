@@ -86,6 +86,102 @@ theorem notifyExitPeer_preserves (s : State) (fromPid : Nat) (heap : Heap)
     State.WF (State.notifyExitPeer s fromPid heap reason peerPid) := by
   simpa [State.notifyExitPeer] using notifyExitMailbox_preserves s fromPid heap reason peerPid hs
 
+/-- `notifyEtsTransfer` only mutates one peer (or no-ops); preserves WF. -/
+theorem notifyEtsTransfer_preserves (s : State) (tid fromPid heirPid : Nat) (data : Term)
+    (hs : State.WF s) :
+    State.WF (State.notifyEtsTransfer s tid fromPid heirPid data) := by
+  cases hfnd : s.findProcessIdx heirPid with
+  | none => simp [State.notifyEtsTransfer, hfnd]; exact hs
+  | some idx =>
+    simp [State.notifyEtsTransfer, hfnd]
+    split
+    · rename_i hpeer
+      split
+      · exact hs
+      · let peer0 := s.processes[idx]'hpeer
+        have hpeer0 : Process.WF s.module peer0 := hs.2.2.2 idx hpeer
+        let allocated0 := Process.allocTerm peer0 data
+        have hp0 : Process.WF s.module allocated0.1 :=
+          Process.allocTerm_preserves_WF _ _ _ hpeer0
+        let allocated :=
+          Process.allocCompound allocated0.1 Node.tuple
+            #[.atom "ETS-TRANSFER", .int tid, .pid fromPid, allocated0.2]
+        have hpA : Process.WF s.module allocated.1 :=
+          Process.allocCompound_preserves_WF _ _ Node.tuple _ hp0
+        have hpW : Process.WF s.module
+            (let p1 := { allocated.1 with mailbox := allocated.1.mailbox.push allocated.2 }
+              if allocated.1.status == .waiting then State.wakeOnMessage p1 else p1) :=
+          process_wake_mailbox_WF _ allocated.1 allocated.2 hpA
+        change State.WF
+          { s with
+            processes :=
+              s.processes.set idx
+                (let p1 := { allocated.1 with mailbox := allocated.1.mailbox.push allocated.2 }
+                  if allocated.1.status == .waiting then State.wakeOnMessage p1 else p1)
+                hpeer }
+        exact processes_set_WF s idx _ hs hpeer hpW
+    · exact hs
+
+theorem etsOnOwnerExit.one_preserves (s : State) (fromPid i : Nat) (hs : State.WF s) :
+    State.WF (State.etsOnOwnerExit.one s fromPid i) := by
+  simp only [State.etsOnOwnerExit.one]
+  split
+  · split
+    · split
+      · split
+        · exact notifyEtsTransfer_preserves _ _ _ _ _ hs
+        · exact hs
+      · exact hs
+    · exact hs
+  · exact hs
+
+theorem etsOnOwnerExit.go_preserves (s : State) (fromPid : Nat) (idxs : List Nat)
+    (hs : State.WF s) :
+    State.WF (State.etsOnOwnerExit.go s fromPid idxs) := by
+  induction idxs generalizing s with
+  | nil => simp [State.etsOnOwnerExit.go]; exact hs
+  | cons i rest ih =>
+    simp [State.etsOnOwnerExit.go]
+    exact ih _ (etsOnOwnerExit.one_preserves s fromPid i hs)
+
+theorem etsOnOwnerExit_preserves (s : State) (fromPid : Nat) (hs : State.WF s) :
+    State.WF (State.etsOnOwnerExit s fromPid) := by
+  simpa [State.etsOnOwnerExit] using etsOnOwnerExit.go_preserves s fromPid _ hs
+
+theorem notifyEtsTransfer_result (s : State) (tid fromPid heirPid : Nat) (data : Term) :
+    (State.notifyEtsTransfer s tid fromPid heirPid data).result = s.result := by
+  cases hfnd : s.findProcessIdx heirPid with
+  | none => simp [State.notifyEtsTransfer, hfnd]
+  | some idx =>
+    simp only [State.notifyEtsTransfer, hfnd]
+    split
+    · split <;> rfl
+    · rfl
+
+theorem etsOnOwnerExit.one_result (s : State) (fromPid i : Nat) :
+    (State.etsOnOwnerExit.one s fromPid i).result = s.result := by
+  simp only [State.etsOnOwnerExit.one]
+  split
+  · split
+    · split
+      · split
+        · rw [notifyEtsTransfer_result]
+        · rfl
+      · rfl
+    · rfl
+  · rfl
+
+theorem etsOnOwnerExit.go_result (s : State) (fromPid : Nat) (idxs : List Nat) :
+    (State.etsOnOwnerExit.go s fromPid idxs).result = s.result := by
+  induction idxs generalizing s with
+  | nil => simp [State.etsOnOwnerExit.go]
+  | cons i rest ih =>
+    simp [State.etsOnOwnerExit.go, etsOnOwnerExit.one_result, ih]
+
+theorem etsOnOwnerExit_result (s : State) (fromPid : Nat) :
+    (State.etsOnOwnerExit s fromPid).result = s.result := by
+  simpa [State.etsOnOwnerExit] using etsOnOwnerExit.go_result s fromPid _
+
 theorem process_set_trapExit_WF (m : Module) (p : Process) (b : Bool)
     (hp : Process.WF m p) :
     Process.WF m { p with trapExit := b } := hp
@@ -269,9 +365,10 @@ theorem propagateExit_preserves (s : State) (exitedIdx : Nat) (reason : Value)
           s.processes.set exitedIdx
             { exited0 with links := #[], monitors := #[], monitoredBy := #[] } hlt }
     have hs1 : State.WF s1 := processes_set_WF s exitedIdx _ hs hlt hex
-    simpa [s1] using
+    have hs2 :=
       propagateExit.from_preserves s1.processes.size s1 exited0.pid exited0.heap reason
         exited0.links.toList exited0.monitoredBy.toList exited0.monitors.toList hs1
+    exact etsOnOwnerExit_preserves _ exited0.pid hs2
   · exact hs
 
 theorem forceExitPid_preserves (s : State) (pid : Nat) (reason : Value)
@@ -594,7 +691,8 @@ theorem propagateExit_result (s : State) (exitedIdx : Nat) (reason : Value) :
     (State.propagateExit s exitedIdx reason).result = s.result := by
   unfold State.propagateExit
   split
-  · rw [propagateExit.from_result]
+  · rename_i hlt
+    rw [etsOnOwnerExit_result, propagateExit.from_result]
   · rfl
 
 theorem forceExitPid_result (s : State) (pid : Nat) (reason : Value) :

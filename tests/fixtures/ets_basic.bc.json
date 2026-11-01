@@ -110,6 +110,26 @@
                 1
               ],
               "dest": 2,
+              "fun": "ets_delete_object/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "Ets.delete_object/2"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
               "fun": "ets_match_object/2",
               "op": "call"
             },
@@ -140,6 +160,26 @@
           ],
           "locals": 3,
           "name": "Ets.select/2"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "ets_heir/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "Ets.heir/2"
         }
       ],
       "name": "Ets"
@@ -320,5 +360,5 @@
       "name": "Main"
     }
   ],
-  "version": 17
+  "version": 18
 }

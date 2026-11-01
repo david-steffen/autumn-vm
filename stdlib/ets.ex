@@ -1,6 +1,6 @@
 defmodule Ets do
-  # Teaching ETS: set / bag / duplicate_bag, named tables, list lookup,
-  # match_object + select (empty-guard match-specs).
+  # Teaching ETS: set / bag / duplicate_bag / ordered_set, named tables,
+  # list lookup, match_object + select (teaching guards), delete_object, heir.
 
   def new do
     ets_new()
@@ -22,11 +22,19 @@ defmodule Ets do
     ets_delete(tab, key)
   end
 
+  def delete_object(tab, object) do
+    ets_delete_object(tab, object)
+  end
+
   def match_object(tab, pattern) do
     ets_match_object(tab, pattern)
   end
 
   def select(tab, match_spec) do
     ets_select(tab, match_spec)
+  end
+
+  def heir(tab, heir) do
+    ets_heir(tab, heir)
   end
 end

@@ -5,35 +5,57 @@ namespace Autumn
 
 namespace Ets
 
-/-- Parse `:set` / `:bag` / `:duplicate_bag`. -/
+/-- Parse `:set` / `:bag` / `:duplicate_bag` / `:ordered_set`. -/
 def kindOfAtom (s : String) : Option EtsKind :=
   if s == "set" then some .set
   else if s == "bag" then some .bag
   else if s == "duplicate_bag" then some .duplicateBag
+  else if s == "ordered_set" then some .orderedSet
   else none
 
-/-- Resolve tab id: non-neg int tid, or atom name. -/
+/-- Resolve tab id: non-neg int tid, or atom name (live tables only). -/
 def resolveTab (tables : Array EtsTable) (tab : Term) : Option Nat :=
   match tab with
   | .int n =>
     if n < 0 then none
     else
       let tid := n.toNat
-      if tid < tables.size then some tid else none
+      if h : tid < tables.size then
+        if tables[tid]'h |>.alive then some tid else none
+      else
+        none
   | .atom name =>
     (List.range tables.size).findSome? fun i =>
-      match tables[i]!.name with
-      | some n => if n == name then some i else none
-      | none => none
+      let t := tables[i]!
+      if t.alive then
+        match t.name with
+        | some n => if n == name then some i else none
+        | none => none
+      else
+        none
   | _ => none
 
-/-- True if some table already uses this atom name. -/
+/-- True if some **live** table already uses this atom name. -/
 def nameTaken (tables : Array EtsTable) (name : String) : Bool :=
-  tables.any fun t => t.name == some name
+  tables.any fun t => t.alive && t.name == some name
 
 /-- Object term for an entry. -/
 def objectOf (key val : Term) : Term :=
   .tuple #[key, val]
+
+/-- Insert into ordered_set: overwrite same key, keep `Term.lt` key order. -/
+def insertOrdered (entries : Array (Term × Term)) (key val : Term) : Array (Term × Term) :=
+  let rest := entries.filter (fun (k, _) => !(k == key))
+  let rec go (i : Nat) : Array (Term × Term) :=
+    if h : i < rest.size then
+      let (k, _) := rest[i]'h
+      if Term.lt key k then
+        rest.insertIdx! i (key, val)
+      else
+        go (i + 1)
+    else
+      rest.push (key, val)
+  go 0
 
 /-- Insert by table kind. -/
 def insertEntry (t : EtsTable) (key val : Term) : EtsTable :=
@@ -46,12 +68,31 @@ def insertEntry (t : EtsTable) (key val : Term) : EtsTable :=
     else { t with entries := t.entries.push (key, val) }
   | .duplicateBag =>
     { t with entries := t.entries.push (key, val) }
+  | .orderedSet =>
+    { t with entries := insertOrdered t.entries key val }
 
 def lookupValues (t : EtsTable) (key : Term) : Array Term :=
   t.entries.filterMap fun (k, v) => if k == key then some v else none
 
 def deleteKey (t : EtsTable) (key : Term) : EtsTable :=
   { t with entries := t.entries.filter (fun (k, _) => !(k == key)) }
+
+/-- Remove first exact `{key,val}` match (one object). -/
+def deleteObject (t : EtsTable) (key val : Term) : EtsTable :=
+  let rec go (i : Nat) (acc : Array (Term × Term)) : Array (Term × Term) :=
+    if h : i < t.entries.size then
+      let (k, v) := t.entries[i]'h
+      if k == key && v == val then
+        acc ++ t.entries.extract (i + 1) t.entries.size
+      else
+        go (i + 1) (acc.push (k, v))
+    else
+      acc
+  { t with entries := go 0 #[] }
+
+/-- Mark table dead after owner exit without heir. -/
+def killTable (t : EtsTable) : EtsTable :=
+  { t with alive := false, entries := #[], name := none, heir := none, owner := none }
 
 /-- Pattern variable index for `:"$1"` … `:"$9"`; `none` if not a `$N` atom. -/
 def patternVar? (s : String) : Option Nat :=
@@ -128,6 +169,82 @@ where
 def boundList (binds : Array (Option Term)) : Array Term :=
   binds.filterMap id
 
+/-- Resolve guard operand: literal or bound `$N`. -/
+def resolveOperand (t : Term) (binds : Array (Option Term)) : Option Term :=
+  match t with
+  | .atom s =>
+    match patternVar? s with
+    | some idx =>
+      if h : idx < binds.size then binds[idx] else none
+    | none => some t
+  | _ => some t
+
+/-- Compare two terms using ETS guard operators. -/
+def compareGuard (op : String) (a b : Term) : Option Bool :=
+  if op == "==" then some (a == b)
+  else if op == "=/=" then some (!(a == b))
+  else if op == "<" then some (Term.lt a b)
+  else if op == ">" then some (Term.lt b a)
+  else if op == "=<" then some (Term.lt a b || a == b)
+  else if op == ">=" then some (Term.lt b a || a == b)
+  else none
+
+def typeGuard (tag : String) (t : Term) : Option Bool :=
+  match tag with
+  | "is_atom" =>
+    some (match t with | .atom _ => true | _ => false)
+  | "is_integer" =>
+    some (match t with | .int _ => true | _ => false)
+  | "is_list" =>
+    some (match t with | .list _ => true | _ => false)
+  | "is_tuple" =>
+    some (match t with | .tuple _ => true | _ => false)
+  | "is_nil" =>
+    some (match t with | .nil => true | _ => false)
+  | "is_pid" =>
+    some (match t with | .pid _ => true | _ => false)
+  | _ => none
+
+/-- Evaluate one teaching match-spec guard. `none` = unsupported / unbound. -/
+partial def evalGuard (g : Term) (binds : Array (Option Term)) : Option Bool :=
+  match g with
+  | .tuple #[.atom op, a, b] =>
+    if op == "andalso" then
+      match evalGuard a binds with
+      | some false => some false
+      | some true => evalGuard b binds
+      | none => none
+    else if op == "orelse" then
+      match evalGuard a binds with
+      | some true => some true
+      | some false => evalGuard b binds
+      | none => none
+    else
+      match resolveOperand a binds, resolveOperand b binds with
+      | some va, some vb => compareGuard op va vb
+      | _, _ => none
+  | .tuple #[.atom "not", a] =>
+    match evalGuard a binds with
+    | some b => some (!b)
+    | none => none
+  | .tuple #[.atom tag, a] =>
+    match resolveOperand a binds with
+    | some va => typeGuard tag va
+    | none => none
+  | _ => none
+
+/-- All guards true; `none` if any guard is unsupported. -/
+def evalGuards (guards : Array Term) (binds : Array (Option Term)) : Option Bool :=
+  let rec go (i : Nat) : Option Bool :=
+    if h : i < guards.size then
+      match evalGuard (guards[i]'h) binds with
+      | none => none
+      | some false => some false
+      | some true => go (i + 1)
+    else
+      some true
+  go 0
+
 /-- Build a select/match result construct from bindings + whole object. -/
 partial def buildResult (body obj : Term) (binds : Array (Option Term)) : Option Term :=
   match body with
@@ -156,22 +273,27 @@ where
     else
       some acc
 
-/-- Parse one match-spec clause `{Head, [], [Body]}`. -/
-def parseClause (clause : Term) : Option (Term × Term) :=
+/-- Clause: head, guards list, body construct. -/
+structure Clause where
+  head : Term
+  guards : Array Term
+  body : Term
+  deriving Repr
+
+/-- Parse one match-spec clause `{Head, Guards, [Body]}`. -/
+def parseClause (clause : Term) : Option Clause :=
   match clause with
   | .tuple #[head, guards, bodyList] =>
     match guards, bodyList with
-    | .list #[], .list #[body] => some (head, body)
-    | .list #[], .list _ => none
-    | .list _, _ => none
+    | .list gs, .list #[body] => some { head, guards := gs, body }
     | _, _ => none
   | _ => none
 
 /-- Parse match-spec list; `none` = malformed. -/
-def parseSpec (spec : Term) : Option (Array (Term × Term)) :=
+def parseSpec (spec : Term) : Option (Array Clause) :=
   match spec with
   | .list clauses =>
-    let rec go (i : Nat) (acc : Array (Term × Term)) : Option (Array (Term × Term)) :=
+    let rec go (i : Nat) (acc : Array Clause) : Option (Array Clause) :=
       if h : i < clauses.size then
         match parseClause (clauses[i]'h) with
         | none => none
@@ -181,16 +303,29 @@ def parseSpec (spec : Term) : Option (Array (Term × Term)) :=
     go 0 #[]
   | _ => none
 
-/-- First matching clause for one object → result term. -/
-def selectObject (clauses : Array (Term × Term)) (obj : Term) : Option Term :=
-  let rec go (i : Nat) : Option Term :=
+/-- First matching clause for one object → result, or `.error` if a guard is bad. -/
+inductive SelectOne where
+  | miss
+  | hit (t : Term)
+  | badGuard
+  deriving Repr
+
+def selectObject (clauses : Array Clause) (obj : Term) : SelectOne :=
+  let rec go (i : Nat) : SelectOne :=
     if h : i < clauses.size then
-      let (head, body) := clauses[i]'h
-      match matchPattern head obj emptyBinds with
+      let c := clauses[i]'h
+      match matchPattern c.head obj emptyBinds with
       | none => go (i + 1)
-      | some binds => buildResult body obj binds
+      | some binds =>
+        match evalGuards c.guards binds with
+        | none => .badGuard
+        | some false => go (i + 1)
+        | some true =>
+          match buildResult c.body obj binds with
+          | none => go (i + 1)
+          | some t => .hit t
     else
-      none
+      .miss
   go 0
 
 /-- All objects matching `pattern` (as whole `{key,val}`). -/
@@ -201,10 +336,18 @@ def matchObject (t : EtsTable) (pattern : Term) : Array Term :=
     | some _ => some obj
     | none => none
 
-/-- `ets:select` teaching subset over table entries. -/
-def select (t : EtsTable) (clauses : Array (Term × Term)) : Array Term :=
-  t.entries.filterMap fun (k, v) =>
-    selectObject clauses (objectOf k v)
+/-- `ets:select` teaching subset; `none` = bad guard in a matching clause path. -/
+def select (t : EtsTable) (clauses : Array Clause) : Option (Array Term) :=
+  let rec go (i : Nat) (acc : Array Term) : Option (Array Term) :=
+    if h : i < t.entries.size then
+      let (k, v) := t.entries[i]'h
+      match selectObject clauses (objectOf k v) with
+      | .miss => go (i + 1) acc
+      | .hit r => go (i + 1) (acc.push r)
+      | .badGuard => none
+    else
+      some acc
+  go 0 #[]
 
 end Ets
 

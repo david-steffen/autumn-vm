@@ -9,18 +9,18 @@
             "int": 0
           },
           "op": "load_lit",
-          "reg": 1
+          "reg": 2
         },
         {
-          "dest": 2,
-          "empty": 43,
-          "index": 1,
+          "dest": 3,
+          "empty": 49,
+          "index": 2,
           "op": "recv_peek"
         },
         {
           "dest": 4,
           "op": "is_tag",
-          "reg": 2,
+          "reg": 3,
           "tag": "tuple"
         },
         {
@@ -33,17 +33,19 @@
         },
         {
           "op": "jump",
-          "target": 19
+          "target": 22
         },
         {
+          "args": [
+            3
+          ],
           "dest": 5,
-          "index": 1,
-          "op": "get_tuple_elem",
-          "tuple": 2
+          "fun": "tuple_size/1",
+          "op": "call"
         },
         {
           "lit": {
-            "atom": "add"
+            "int": 3
           },
           "op": "jump_if_eq",
           "reg": 5,
@@ -55,18 +57,36 @@
         },
         {
           "dest": 6,
-          "index": 0,
+          "index": 1,
           "op": "get_tuple_elem",
-          "tuple": 2
+          "tuple": 3
+        },
+        {
+          "lit": {
+            "atom": "add"
+          },
+          "op": "jump_if_eq",
+          "reg": 6,
+          "target": 11
+        },
+        {
+          "op": "jump",
+          "target": 4
         },
         {
           "dest": 7,
-          "index": 2,
+          "index": 0,
           "op": "get_tuple_elem",
-          "tuple": 2
+          "tuple": 3
         },
         {
-          "index": 1,
+          "dest": 8,
+          "index": 2,
+          "op": "get_tuple_elem",
+          "tuple": 3
+        },
+        {
+          "index": 2,
           "op": "recv_drop"
         },
         {
@@ -74,61 +94,61 @@
             "atom": "ok"
           },
           "op": "load_lit",
-          "reg": 8
+          "reg": 9
         },
         {
           "args": [
             0,
-            7
+            8
           ],
-          "dest": 9,
+          "dest": 10,
           "fun": "+/2",
           "op": "call"
         },
         {
           "args": [
-            8,
-            9
+            9,
+            10
           ],
-          "dest": 10,
+          "dest": 11,
           "fun": "make_tuple/2",
           "op": "call"
         },
         {
-          "msg": 10,
+          "msg": 11,
           "op": "send",
-          "pid": 6
+          "pid": 7
         },
         {
           "args": [
             0,
-            7
+            8
           ],
-          "dest": 11,
+          "dest": 12,
           "fun": "+/2",
           "op": "call"
         },
         {
           "args": [
-            11
+            12
           ],
-          "dest": 12,
+          "dest": 13,
           "fun": "Main.server/1",
           "op": "call"
         },
         {
-          "dest": 3,
+          "dest": 1,
           "op": "move",
-          "src": 12
+          "src": 13
         },
         {
           "op": "jump",
-          "target": 45
+          "target": 51
         },
         {
-          "dest": 13,
+          "dest": 14,
           "op": "is_tag",
-          "reg": 2,
+          "reg": 3,
           "tag": "tuple"
         },
         {
@@ -136,93 +156,59 @@
             "bool": true
           },
           "op": "jump_if_eq",
-          "reg": 13,
-          "target": 22
-        },
-        {
-          "op": "jump",
-          "target": 33
-        },
-        {
-          "dest": 14,
-          "index": 1,
-          "op": "get_tuple_elem",
-          "tuple": 2
-        },
-        {
-          "lit": {
-            "atom": "get"
-          },
-          "op": "jump_if_eq",
           "reg": 14,
           "target": 25
-        },
-        {
-          "op": "jump",
-          "target": 21
-        },
-        {
-          "dest": 15,
-          "index": 0,
-          "op": "get_tuple_elem",
-          "tuple": 2
-        },
-        {
-          "index": 1,
-          "op": "recv_drop"
-        },
-        {
-          "lit": {
-            "atom": "ok"
-          },
-          "op": "load_lit",
-          "reg": 16
-        },
-        {
-          "args": [
-            16,
-            0
-          ],
-          "dest": 17,
-          "fun": "make_tuple/2",
-          "op": "call"
-        },
-        {
-          "msg": 17,
-          "op": "send",
-          "pid": 15
-        },
-        {
-          "args": [
-            0
-          ],
-          "dest": 18,
-          "fun": "Main.server/1",
-          "op": "call"
-        },
-        {
-          "dest": 3,
-          "op": "move",
-          "src": 18
-        },
-        {
-          "op": "jump",
-          "target": 45
-        },
-        {
-          "lit": {
-            "atom": "stop"
-          },
-          "op": "jump_if_eq",
-          "reg": 2,
-          "target": 35
         },
         {
           "op": "jump",
           "target": 39
         },
         {
+          "args": [
+            3
+          ],
+          "dest": 15,
+          "fun": "tuple_size/1",
+          "op": "call"
+        },
+        {
+          "lit": {
+            "int": 2
+          },
+          "op": "jump_if_eq",
+          "reg": 15,
+          "target": 28
+        },
+        {
+          "op": "jump",
+          "target": 24
+        },
+        {
+          "dest": 16,
           "index": 1,
+          "op": "get_tuple_elem",
+          "tuple": 3
+        },
+        {
+          "lit": {
+            "atom": "get"
+          },
+          "op": "jump_if_eq",
+          "reg": 16,
+          "target": 31
+        },
+        {
+          "op": "jump",
+          "target": 24
+        },
+        {
+          "dest": 17,
+          "index": 0,
+          "op": "get_tuple_elem",
+          "tuple": 3
+        },
+        {
+          "index": 2,
           "op": "recv_drop"
         },
         {
@@ -230,32 +216,61 @@
             "atom": "ok"
           },
           "op": "load_lit",
-          "reg": 19
+          "reg": 18
         },
         {
-          "dest": 3,
+          "args": [
+            18,
+            0
+          ],
+          "dest": 19,
+          "fun": "make_tuple/2",
+          "op": "call"
+        },
+        {
+          "msg": 19,
+          "op": "send",
+          "pid": 17
+        },
+        {
+          "args": [
+            0
+          ],
+          "dest": 20,
+          "fun": "Main.server/1",
+          "op": "call"
+        },
+        {
+          "dest": 1,
           "op": "move",
-          "src": 19
+          "src": 20
+        },
+        {
+          "op": "jump",
+          "target": 51
+        },
+        {
+          "lit": {
+            "atom": "stop"
+          },
+          "op": "jump_if_eq",
+          "reg": 3,
+          "target": 41
         },
         {
           "op": "jump",
           "target": 45
         },
         {
-          "lit": {
-            "int": 1
-          },
-          "op": "load_lit",
-          "reg": 20
+          "index": 2,
+          "op": "recv_drop"
         },
         {
-          "args": [
-            1,
-            20
-          ],
-          "dest": 21,
-          "fun": "+/2",
-          "op": "call"
+          "lit": {
+            "atom": "ok"
+          },
+          "op": "load_lit",
+          "reg": 21
         },
         {
           "dest": 1,
@@ -264,10 +279,35 @@
         },
         {
           "op": "jump",
+          "target": 51
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 22
+        },
+        {
+          "args": [
+            2,
+            22
+          ],
+          "dest": 23,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "dest": 2,
+          "op": "move",
+          "src": 23
+        },
+        {
+          "op": "jump",
           "target": 1
         },
         {
-          "after": 44,
+          "after": 50,
           "op": "wait",
           "retry": 1,
           "timeout": null
@@ -275,14 +315,14 @@
         {
           "lit": null,
           "op": "load_lit",
-          "reg": 3
+          "reg": 1
         },
         {
           "op": "return",
-          "reg": 3
+          "reg": 1
         }
       ],
-      "locals": 22,
+      "locals": 24,
       "name": "Main.server/1"
     },
     {
@@ -326,18 +366,18 @@
             "int": 0
           },
           "op": "load_lit",
-          "reg": 6
+          "reg": 7
         },
         {
-          "dest": 7,
-          "empty": 38,
-          "index": 6,
+          "dest": 8,
+          "empty": 44,
+          "index": 7,
           "op": "recv_peek"
         },
         {
           "dest": 9,
           "op": "is_tag",
-          "reg": 7,
+          "reg": 8,
           "tag": "tuple"
         },
         {
@@ -350,17 +390,19 @@
         },
         {
           "op": "jump",
-          "target": 18
+          "target": 21
         },
         {
+          "args": [
+            8
+          ],
           "dest": 10,
-          "index": 0,
-          "op": "get_tuple_elem",
-          "tuple": 7
+          "fun": "tuple_size/1",
+          "op": "call"
         },
         {
           "lit": {
-            "atom": "ok"
+            "int": 2
           },
           "op": "jump_if_eq",
           "reg": 10,
@@ -372,12 +414,30 @@
         },
         {
           "dest": 11,
-          "index": 1,
+          "index": 0,
           "op": "get_tuple_elem",
-          "tuple": 7
+          "tuple": 8
         },
         {
-          "index": 6,
+          "lit": {
+            "atom": "ok"
+          },
+          "op": "jump_if_eq",
+          "reg": 11,
+          "target": 16
+        },
+        {
+          "op": "jump",
+          "target": 9
+        },
+        {
+          "dest": 12,
+          "index": 1,
+          "op": "get_tuple_elem",
+          "tuple": 8
+        },
+        {
+          "index": 7,
           "op": "recv_drop"
         },
         {
@@ -385,18 +445,18 @@
           "ref": 3
         },
         {
-          "dest": 8,
+          "dest": 6,
           "op": "move",
-          "src": 11
+          "src": 12
         },
         {
           "op": "jump",
-          "target": 41
+          "target": 47
         },
         {
-          "dest": 12,
+          "dest": 13,
           "op": "is_tag",
-          "reg": 7,
+          "reg": 8,
           "tag": "tuple"
         },
         {
@@ -404,40 +464,24 @@
             "bool": true
           },
           "op": "jump_if_eq",
-          "reg": 12,
-          "target": 21
-        },
-        {
-          "op": "jump",
-          "target": 34
-        },
-        {
-          "dest": 13,
-          "index": 0,
-          "op": "get_tuple_elem",
-          "tuple": 7
-        },
-        {
-          "lit": {
-            "atom": "DOWN"
-          },
-          "op": "jump_if_eq",
           "reg": 13,
           "target": 24
         },
         {
           "op": "jump",
-          "target": 20
+          "target": 40
         },
         {
+          "args": [
+            8
+          ],
           "dest": 14,
-          "index": 2,
-          "op": "get_tuple_elem",
-          "tuple": 7
+          "fun": "tuple_size/1",
+          "op": "call"
         },
         {
           "lit": {
-            "atom": "process"
+            "int": 5
           },
           "op": "jump_if_eq",
           "reg": 14,
@@ -445,28 +489,64 @@
         },
         {
           "op": "jump",
-          "target": 20
+          "target": 23
         },
         {
           "dest": 15,
-          "index": 1,
+          "index": 0,
           "op": "get_tuple_elem",
-          "tuple": 7
+          "tuple": 8
+        },
+        {
+          "lit": {
+            "atom": "DOWN"
+          },
+          "op": "jump_if_eq",
+          "reg": 15,
+          "target": 30
+        },
+        {
+          "op": "jump",
+          "target": 23
         },
         {
           "dest": 16,
-          "index": 3,
+          "index": 2,
           "op": "get_tuple_elem",
-          "tuple": 7
+          "tuple": 8
+        },
+        {
+          "lit": {
+            "atom": "process"
+          },
+          "op": "jump_if_eq",
+          "reg": 16,
+          "target": 33
+        },
+        {
+          "op": "jump",
+          "target": 23
         },
         {
           "dest": 17,
-          "index": 4,
+          "index": 1,
           "op": "get_tuple_elem",
-          "tuple": 7
+          "tuple": 8
         },
         {
-          "index": 6,
+          "dest": 18,
+          "index": 3,
+          "op": "get_tuple_elem",
+          "tuple": 8
+        },
+        {
+          "dest": 19,
+          "index": 4,
+          "op": "get_tuple_elem",
+          "tuple": 8
+        },
+        {
+          "index": 7,
           "op": "recv_drop"
         },
         {
@@ -474,32 +554,7 @@
             "int": 0
           },
           "op": "load_lit",
-          "reg": 18
-        },
-        {
-          "dest": 8,
-          "op": "move",
-          "src": 18
-        },
-        {
-          "op": "jump",
-          "target": 41
-        },
-        {
-          "lit": {
-            "int": 1
-          },
-          "op": "load_lit",
-          "reg": 19
-        },
-        {
-          "args": [
-            6,
-            19
-          ],
-          "dest": 20,
-          "fun": "+/2",
-          "op": "call"
+          "reg": 20
         },
         {
           "dest": 6,
@@ -508,10 +563,35 @@
         },
         {
           "op": "jump",
+          "target": 47
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 21
+        },
+        {
+          "args": [
+            7,
+            21
+          ],
+          "dest": 22,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "dest": 7,
+          "op": "move",
+          "src": 22
+        },
+        {
+          "op": "jump",
           "target": 6
         },
         {
-          "after": 39,
+          "after": 45,
           "op": "wait",
           "retry": 6,
           "timeout": 50
@@ -521,19 +601,19 @@
             "int": 0
           },
           "op": "load_lit",
-          "reg": 21
+          "reg": 23
         },
         {
-          "dest": 8,
+          "dest": 6,
           "op": "move",
-          "src": 21
+          "src": 23
         },
         {
           "op": "return",
-          "reg": 8
+          "reg": 6
         }
       ],
-      "locals": 22,
+      "locals": 24,
       "name": "Main.call_add/2"
     },
     {
@@ -623,18 +703,18 @@
             "int": 0
           },
           "op": "load_lit",
-          "reg": 10
+          "reg": 11
         },
         {
-          "dest": 11,
-          "empty": 44,
-          "index": 10,
+          "dest": 12,
+          "empty": 50,
+          "index": 11,
           "op": "recv_peek"
         },
         {
           "dest": 13,
           "op": "is_tag",
-          "reg": 11,
+          "reg": 12,
           "tag": "tuple"
         },
         {
@@ -647,17 +727,19 @@
         },
         {
           "op": "jump",
-          "target": 24
+          "target": 27
         },
         {
+          "args": [
+            12
+          ],
           "dest": 14,
-          "index": 0,
-          "op": "get_tuple_elem",
-          "tuple": 11
+          "fun": "tuple_size/1",
+          "op": "call"
         },
         {
           "lit": {
-            "atom": "ok"
+            "int": 2
           },
           "op": "jump_if_eq",
           "reg": 14,
@@ -669,12 +751,30 @@
         },
         {
           "dest": 15,
-          "index": 1,
+          "index": 0,
           "op": "get_tuple_elem",
-          "tuple": 11
+          "tuple": 12
         },
         {
-          "index": 10,
+          "lit": {
+            "atom": "ok"
+          },
+          "op": "jump_if_eq",
+          "reg": 15,
+          "target": 22
+        },
+        {
+          "op": "jump",
+          "target": 15
+        },
+        {
+          "dest": 16,
+          "index": 1,
+          "op": "get_tuple_elem",
+          "tuple": 12
+        },
+        {
+          "index": 11,
           "op": "recv_drop"
         },
         {
@@ -682,18 +782,18 @@
           "ref": 7
         },
         {
-          "dest": 12,
+          "dest": 10,
           "op": "move",
-          "src": 15
+          "src": 16
         },
         {
           "op": "jump",
-          "target": 47
+          "target": 53
         },
         {
-          "dest": 16,
+          "dest": 17,
           "op": "is_tag",
-          "reg": 11,
+          "reg": 12,
           "tag": "tuple"
         },
         {
@@ -701,40 +801,24 @@
             "bool": true
           },
           "op": "jump_if_eq",
-          "reg": 16,
-          "target": 27
-        },
-        {
-          "op": "jump",
-          "target": 40
-        },
-        {
-          "dest": 17,
-          "index": 0,
-          "op": "get_tuple_elem",
-          "tuple": 11
-        },
-        {
-          "lit": {
-            "atom": "DOWN"
-          },
-          "op": "jump_if_eq",
           "reg": 17,
           "target": 30
         },
         {
           "op": "jump",
-          "target": 26
+          "target": 46
         },
         {
+          "args": [
+            12
+          ],
           "dest": 18,
-          "index": 2,
-          "op": "get_tuple_elem",
-          "tuple": 11
+          "fun": "tuple_size/1",
+          "op": "call"
         },
         {
           "lit": {
-            "atom": "process"
+            "int": 5
           },
           "op": "jump_if_eq",
           "reg": 18,
@@ -742,28 +826,64 @@
         },
         {
           "op": "jump",
-          "target": 26
+          "target": 29
         },
         {
           "dest": 19,
-          "index": 1,
+          "index": 0,
           "op": "get_tuple_elem",
-          "tuple": 11
+          "tuple": 12
+        },
+        {
+          "lit": {
+            "atom": "DOWN"
+          },
+          "op": "jump_if_eq",
+          "reg": 19,
+          "target": 36
+        },
+        {
+          "op": "jump",
+          "target": 29
         },
         {
           "dest": 20,
-          "index": 3,
+          "index": 2,
           "op": "get_tuple_elem",
-          "tuple": 11
+          "tuple": 12
+        },
+        {
+          "lit": {
+            "atom": "process"
+          },
+          "op": "jump_if_eq",
+          "reg": 20,
+          "target": 39
+        },
+        {
+          "op": "jump",
+          "target": 29
         },
         {
           "dest": 21,
-          "index": 4,
+          "index": 1,
           "op": "get_tuple_elem",
-          "tuple": 11
+          "tuple": 12
         },
         {
-          "index": 10,
+          "dest": 22,
+          "index": 3,
+          "op": "get_tuple_elem",
+          "tuple": 12
+        },
+        {
+          "dest": 23,
+          "index": 4,
+          "op": "get_tuple_elem",
+          "tuple": 12
+        },
+        {
+          "index": 11,
           "op": "recv_drop"
         },
         {
@@ -771,32 +891,7 @@
             "int": 0
           },
           "op": "load_lit",
-          "reg": 22
-        },
-        {
-          "dest": 12,
-          "op": "move",
-          "src": 22
-        },
-        {
-          "op": "jump",
-          "target": 47
-        },
-        {
-          "lit": {
-            "int": 1
-          },
-          "op": "load_lit",
-          "reg": 23
-        },
-        {
-          "args": [
-            10,
-            23
-          ],
-          "dest": 24,
-          "fun": "+/2",
-          "op": "call"
+          "reg": 24
         },
         {
           "dest": 10,
@@ -805,10 +900,35 @@
         },
         {
           "op": "jump",
+          "target": 53
+        },
+        {
+          "lit": {
+            "int": 1
+          },
+          "op": "load_lit",
+          "reg": 25
+        },
+        {
+          "args": [
+            11,
+            25
+          ],
+          "dest": 26,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "dest": 11,
+          "op": "move",
+          "src": 26
+        },
+        {
+          "op": "jump",
           "target": 12
         },
         {
-          "after": 45,
+          "after": 51,
           "op": "wait",
           "retry": 12,
           "timeout": 50
@@ -818,22 +938,22 @@
             "int": 0
           },
           "op": "load_lit",
-          "reg": 25
+          "reg": 27
         },
         {
-          "dest": 12,
+          "dest": 10,
           "op": "move",
-          "src": 25
+          "src": 27
         },
         {
           "lit": {
             "atom": "stop"
           },
           "op": "load_lit",
-          "reg": 26
+          "reg": 28
         },
         {
-          "msg": 26,
+          "msg": 28,
           "op": "send",
           "pid": 1
         },
@@ -842,25 +962,25 @@
             3,
             5
           ],
-          "dest": 27,
+          "dest": 29,
           "fun": "+/2",
           "op": "call"
         },
         {
           "args": [
-            27,
-            12
+            29,
+            10
           ],
-          "dest": 28,
+          "dest": 30,
           "fun": "+/2",
           "op": "call"
         },
         {
           "op": "return",
-          "reg": 28
+          "reg": 30
         }
       ],
-      "locals": 29,
+      "locals": 31,
       "name": "Main.main/0"
     }
   ],

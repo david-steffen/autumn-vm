@@ -39,12 +39,12 @@
             "int": 0
           },
           "op": "load_lit",
-          "reg": 3
+          "reg": 4
         },
         {
-          "dest": 4,
+          "dest": 5,
           "empty": 17,
-          "index": 3,
+          "index": 4,
           "op": "recv_peek"
         },
         {
@@ -52,7 +52,7 @@
             "atom": "ping"
           },
           "op": "jump_if_eq",
-          "reg": 4,
+          "reg": 5,
           "target": 9
         },
         {
@@ -60,7 +60,7 @@
           "target": 13
         },
         {
-          "index": 3,
+          "index": 4,
           "op": "recv_drop"
         },
         {
@@ -71,7 +71,7 @@
           "reg": 6
         },
         {
-          "dest": 5,
+          "dest": 3,
           "op": "move",
           "src": 6
         },
@@ -88,7 +88,7 @@
         },
         {
           "args": [
-            3,
+            4,
             7
           ],
           "dest": 8,
@@ -96,7 +96,7 @@
           "op": "call"
         },
         {
-          "dest": 3,
+          "dest": 4,
           "op": "move",
           "src": 8
         },
@@ -113,7 +113,7 @@
         {
           "lit": null,
           "op": "load_lit",
-          "reg": 5
+          "reg": 3
         },
         {
           "dest": 9,

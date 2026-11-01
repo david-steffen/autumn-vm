@@ -1107,7 +1107,7 @@ theorem decodeInstr_encodeInstr (i : Instr) (hi : Instr.FloatFree i)
       Bind.bind, Pure.pure, Except.bind, Except.pure]
   | wait retry after timeout =>
     match timeout with
-    | none =>
+    | .infinity =>
       simp only [Encode.encodeInstr, toJson, List.cons_append, List.nil_append, Decode.decodeInstr]
       have hdist : [("op", Json.str "wait"), ("retry", (retry : Json)), ("after", (after : Json)),
           ("timeout", Json.null)].Pairwise (fun a b : String × Json => a.1 ≠ b.1) := by
@@ -1126,7 +1126,7 @@ theorem decodeInstr_encodeInstr (i : Instr) (hi : Instr.FloatFree i)
         "timeout" Json.null (by simp) hdist
       simp [Decode.field, hop, hretry, hafter, hto, asString_coe, asNat_coe,
         Bind.bind, Pure.pure, Except.bind, Except.pure]
-    | some n =>
+    | .lit n =>
       simp only [Encode.encodeInstr, toJson, List.cons_append, List.nil_append, Decode.decodeInstr]
       have hdist : [("op", Json.str "wait"), ("retry", (retry : Json)), ("after", (after : Json)),
           ("timeout", (n : Json))].Pairwise (fun a b : String × Json => a.1 ≠ b.1) := by
@@ -1143,18 +1143,66 @@ theorem decodeInstr_encodeInstr (i : Instr) (hi : Instr.FloatFree i)
       have hto := getObjVal?_of_mem [("op", Json.str "wait"), ("retry", (retry : Json)),
           ("after", (after : Json)), ("timeout", (n : Json))]
         "timeout" (n : Json) (by simp) hdist
+      have hnj : (n : Json) = Json.num (JsonNumber.fromNat n) := rfl
+      have hnoreg :
+          (Json.num (JsonNumber.fromNat n)).getObjVal? "reg" = .error "object expected" :=
+        rfl
+      simp [Decode.field, hop, hretry, hafter, hto, hnj, hnoreg, asString_coe, asNat_coe,
+        Bind.bind, Pure.pure, Except.bind, Except.pure]
+    | .reg r =>
+      let timeoutJ := Json.mkObj [("reg", (r : Json))]
+      have hdist : [("op", Json.str "wait"), ("retry", (retry : Json)), ("after", (after : Json)),
+          ("timeout", timeoutJ)].Pairwise
+          (fun a b : String × Json => a.1 ≠ b.1) := by
+        simp [List.pairwise_cons, timeoutJ]
+      have hop := getObjVal?_of_mem [("op", Json.str "wait"), ("retry", (retry : Json)),
+          ("after", (after : Json)), ("timeout", timeoutJ)]
+        "op" (Json.str "wait") (by simp) hdist
+      have hretry := getObjVal?_of_mem [("op", Json.str "wait"), ("retry", (retry : Json)),
+          ("after", (after : Json)), ("timeout", timeoutJ)]
+        "retry" (retry : Json) (by simp) hdist
+      have hafter := getObjVal?_of_mem [("op", Json.str "wait"), ("retry", (retry : Json)),
+          ("after", (after : Json)), ("timeout", timeoutJ)]
+        "after" (after : Json) (by simp) hdist
+      have hto := getObjVal?_of_mem [("op", Json.str "wait"), ("retry", (retry : Json)),
+          ("after", (after : Json)), ("timeout", timeoutJ)]
+        "timeout" timeoutJ (by simp) hdist
+      have hregdist : [("reg", (r : Json))].Pairwise
+          (fun a b : String × Json => a.1 ≠ b.1) := by simp [List.pairwise_cons]
+      have hreg : timeoutJ.getObjVal? "reg" = .ok (r : Json) :=
+        getObjVal?_of_mem [("reg", (r : Json))] "reg" (r : Json) (by simp) hregdist
+      -- Encode produces the same `mkObj` list as the hop/hto lemmas.
+      have henc :
+          Encode.encodeInstr (.wait retry after (.reg r)) =
+            Json.mkObj [("op", Json.str "wait"), ("retry", (retry : Json)),
+              ("after", (after : Json)), ("timeout", timeoutJ)] := by
+        simp [Encode.encodeInstr, toJson, timeoutJ]
+      rw [henc, Decode.decodeInstr]
       simp [Decode.field, hop, hretry, hafter, hto, asString_coe, asNat_coe,
         Bind.bind, Pure.pure, Except.bind, Except.pure]
+      -- Goal is `match Except.ok timeoutJ with ... = ok (wait … (reg r))`.
+      show (match timeoutJ.getObjVal? "reg" with
+          | Except.ok rv =>
+            match Decode.asNat rv with
+            | Except.error err => Except.error err
+            | Except.ok v => Except.ok (Instr.wait retry after (WaitTimeout.reg v))
+          | Except.error _ =>
+            match Decode.asNat timeoutJ with
+            | Except.error err => Except.error err
+            | Except.ok v => Except.ok (Instr.wait retry after (WaitTimeout.lit v))) =
+        Except.ok (Instr.wait retry after (WaitTimeout.reg r))
+      rw [hreg]
+      simp [asNat_coe, Bind.bind, Pure.pure, Except.bind, Except.pure]
 
 
 
 theorem versionOk_not_rejected (v : Nat) (h : Module.versionOk v) :
     (v != 1 && v != 2 && v != 3 && v != 4 && v != 5 && v != 6 && v != 7 && v != 8 &&
       v != 9 && v != 10 && v != 11 && v != 12 && v != 13 && v != 14 && v != 15 &&
-      v != 16 && v != 17) = false := by
+      v != 16 && v != 17 && v != 18 && v != 19) = false := by
   simp only [Module.versionOk] at h
   rcases h with
-    h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;> simp [h]
+    h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;> simp [h]
 
 theorem decodeFunction_encodeFunction (f : Function)
     (hf : Function.FloatFree f) (hfuel : Function.LitFuelOk f)

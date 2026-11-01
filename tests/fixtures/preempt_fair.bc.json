@@ -26,18 +26,18 @@
             "int": 0
           },
           "op": "load_lit",
-          "reg": 0
+          "reg": 1
         },
         {
-          "dest": 1,
-          "empty": 19,
-          "index": 0,
+          "dest": 2,
+          "empty": 22,
+          "index": 1,
           "op": "recv_peek"
         },
         {
           "dest": 3,
           "op": "is_tag",
-          "reg": 1,
+          "reg": 2,
           "tag": "tuple"
         },
         {
@@ -50,17 +50,19 @@
         },
         {
           "op": "jump",
-          "target": 15
+          "target": 18
         },
         {
+          "args": [
+            2
+          ],
           "dest": 4,
-          "index": 1,
-          "op": "get_tuple_elem",
-          "tuple": 1
+          "fun": "tuple_size/1",
+          "op": "call"
         },
         {
           "lit": {
-            "atom": "ping"
+            "int": 2
           },
           "op": "jump_if_eq",
           "reg": 4,
@@ -72,12 +74,30 @@
         },
         {
           "dest": 5,
-          "index": 0,
+          "index": 1,
           "op": "get_tuple_elem",
-          "tuple": 1
+          "tuple": 2
         },
         {
+          "lit": {
+            "atom": "ping"
+          },
+          "op": "jump_if_eq",
+          "reg": 5,
+          "target": 11
+        },
+        {
+          "op": "jump",
+          "target": 4
+        },
+        {
+          "dest": 6,
           "index": 0,
+          "op": "get_tuple_elem",
+          "tuple": 2
+        },
+        {
+          "index": 1,
           "op": "recv_drop"
         },
         {
@@ -85,56 +105,56 @@
             "atom": "pong"
           },
           "op": "load_lit",
-          "reg": 6
+          "reg": 7
         },
         {
-          "msg": 6,
+          "msg": 7,
           "op": "send",
-          "pid": 5
+          "pid": 6
         },
         {
           "lit": {
             "atom": "ok"
           },
           "op": "load_lit",
-          "reg": 7
+          "reg": 8
         },
         {
-          "dest": 2,
+          "dest": 0,
           "op": "move",
-          "src": 7
+          "src": 8
         },
         {
           "op": "jump",
-          "target": 21
+          "target": 24
         },
         {
           "lit": {
             "int": 1
           },
           "op": "load_lit",
-          "reg": 8
+          "reg": 9
         },
         {
           "args": [
-            0,
-            8
+            1,
+            9
           ],
-          "dest": 9,
+          "dest": 10,
           "fun": "+/2",
           "op": "call"
         },
         {
-          "dest": 0,
+          "dest": 1,
           "op": "move",
-          "src": 9
+          "src": 10
         },
         {
           "op": "jump",
           "target": 1
         },
         {
-          "after": 20,
+          "after": 23,
           "op": "wait",
           "retry": 1,
           "timeout": null
@@ -142,14 +162,14 @@
         {
           "lit": null,
           "op": "load_lit",
-          "reg": 2
+          "reg": 0
         },
         {
           "op": "return",
-          "reg": 2
+          "reg": 0
         }
       ],
-      "locals": 10,
+      "locals": 11,
       "name": "Main.helper/0"
     },
     {

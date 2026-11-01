@@ -2,7 +2,7 @@
 
 Versioned bytecode exchanged as JSON between the Mix lowerer and the Lean VM.
 
-Supported `version` values: `1` (literals/calls), `2` (lists, case ops, processes), `3` (`get_list_elem`, `list_size/1`), `4` (`get_list_rest` / cons patterns), `5` (maps), `6` (exceptions: `enter_try` / `leave_try` / `raise`), `7` (selective receive: `recv_peek` / `recv_drop` / `wait`), `8` (process links: `link`; exit signals), `9` (unique refs + process monitors: `monitor` / `demonitor`; DOWN signals), `10` (floats + strings as immediates), `11` (closures: `make_fun` / `apply`), `12` (first-class `modules[]`), `13` (`load_file` / dynamic install), `14` (`Process.flag/2` / `Process.exit/2`; durable drain + OTP-shaped `trap_exit`), `15` (dynamic MFA `apply_mfa` for OTP-shaped behaviours), `16` (aligned binaries / bitstrings), and `17` (richer ETS: kinds, named tables, match/select).
+Supported `version` values: `1` (literals/calls), `2` (lists, case ops, processes), `3` (`get_list_elem`, `list_size/1`), `4` (`get_list_rest` / cons patterns), `5` (maps), `6` (exceptions: `enter_try` / `leave_try` / `raise`), `7` (selective receive: `recv_peek` / `recv_drop` / `wait`), `8` (process links: `link`; exit signals), `9` (unique refs + process monitors: `monitor` / `demonitor`; DOWN signals), `10` (floats + strings as immediates), `11` (closures: `make_fun` / `apply`), `12` (first-class `modules[]`), `13` (`load_file` / dynamic install), `14` (`Process.flag/2` / `Process.exit/2`; durable drain + OTP-shaped `trap_exit`), `15` (dynamic MFA `apply_mfa` for OTP-shaped behaviours), `16` (aligned binaries / bitstrings), `17` (richer ETS: kinds, named tables, match/select), `18` (ETS tails: guards, `delete_object`, `ordered_set`, owner/heir), and `19` (`wait` timeout register + `Process.hibernate/0`).
 
 ## Module
 
@@ -101,7 +101,12 @@ Registers: dense `r0 .. r(locals-1)`. Params occupy `r0 .. r(arity-1)`.
 - `{"op":"recv_drop","index":1}` — remove `mailbox[index]` (int reg)
 - `{"op":"wait","retry":10,"after":20,"timeout":5}` — if the mailbox is non-empty, jump to `retry`. If a parked deadline is due, jump to `after`. Otherwise park until `send` wakes the process (re-executes `wait`) or the scheduler wakes it for timeout. `timeout` is clock ticks from now; `null`/omit means infinity; `0` jumps to `after` immediately.
 
-`receive` / `after` is lowered to a mailbox scan loop (`recv_peek` + pattern tests + `recv_drop`) plus `wait`. The machine `clock` advances on each step and jumps to the next deadline when every process is waiting with a finite timeout.
+`receive` / `after` is lowered to a mailbox scan loop (`recv_peek` + pattern tests + `recv_drop`) plus `wait`. Empty `do` (after-only) is allowed. The machine `clock` advances on each step and jumps to the next deadline when every process is waiting with a finite timeout.
+
+### v19 wait timeout register + hibernate
+
+- **`wait` timeout:** still a number (lit ticks) or `null`/omit (infinity); v19 also accepts `{"reg": R}` where register `R` holds a non-neg int (else type error). Mix emits the reg form for `receive … after t -> …` when `t` is not an integer literal.
+- **`Process.hibernate/0`:** teaching stand-in — run `Process.gc` on the current process and return `:ok` (GenServer `:hibernate` tails call it before `loop`). Mix bumps to v19 when either feature appears.
 
 ### v3 list patterns
 
@@ -172,7 +177,7 @@ When a process **exits**, each monitorer in its inbound monitor list receives `{
 
 - `Term.bitstring` / `Value.bitstring` are **immediates** (`Autumn.Term.Bitstring`: `bytes` + `trailingBits`). `trailingBits = 0` is an aligned **binary**; `1…7` is a partial bitstring with unused low bits cleared (`Valid`).
 - JSON: aligned `{"binary": [0–255, …]}`; partial `{"bitstring": {"bytes": […], "trailing_bits": k}}`.
-- Mix: `<<1, 2, "ab">>` (integer bytes + UTF-8 chunks) → `binary` lit; bumps image to v16. Partial segment construct/match is Lean-side / JSON for now.
+- Mix: `<<1, 2, "ab">>` (integer bytes + UTF-8 chunks) → `binary` lit; bumps image to v16. Integer segments with `::N` / `::size(N)` for **N ∈ 1…8** (default 8); a trailing partial (**N ∈ 1…7**) packs MSB-first into `{"bitstring":{"bytes":[…],"trailing_bits":k}}` with unused low bits cleared. Mid-construct partials, sizes outside 1…8, and `::binary` are rejected. Binary **matching** is out of scope.
 - `<>/2` also concatenates two **aligned** bitstrings → bitstring (`trailingBits ≠ 0` → `:badarg`). String↔binary mix → `:badarg`.
 - `is_binary/1` → `is_tag` `"binary"`: true for UTF-8 `string` **or** aligned bitstring (Elixir-like). `is_bitstring/1` → `"bitstring"`: true for `string` or any bitstring.
 - Tags: `binary` / `bitstring` added to `is_tag` (alongside `string`).
@@ -214,8 +219,15 @@ Teaching subset (not full OTP). Tables live in `State.etsTables`; tid = array in
 - **Named tables:** `ets_new/2` with an atom name; subsequent ops accept tid **int** or that **atom**. Anonymous name is `nil`. Duplicate name → `:badarg`.
 - **`ets_lookup/2`:** returns a **list of values** for the key (empty list if none) — OTP-shaped vs Phase 24 thin value-or-`nil`.
 - **`ets_match_object/2`:** pattern-match objects; wildcards atoms `:_` and `:"$1"`…`:"$9"`; returns list of `{key,val}`.
-- **`ets_select/2`:** match-spec = list of `{Head, Guards, Body}`. Teaching subset: **Guards must be `[]`**; Body is a one-element list whose construct may use `:'$_'` (whole object), `:'$$'` (ordered bindings list), `:'$N'`, or nested lit/tuple/list of those. Non-empty guards or malformed spec → `:badarg`.
-- Mix/`stdlib/ets.ex` bump image to v17 when any richer ETS MFA is used (`ets_new/2`, `ets_match_object/2`, `ets_select/2`). Plain `ets_new/0` / insert / lookup / delete stay available on older images.
+- **`ets_select/2`:** match-spec = list of `{Head, Guards, Body}`. Body is a one-element list (`:'$_'` / `:'$$'` / `:'$N'` / nested lit). v17 required empty Guards; v18 allows teaching guards (below).
+- Mix bumps to v17 for `ets_new/2` / `ets_match_object/2` / `ets_select/2`.
+
+### v18 ETS tails
+
+- **`:ordered_set`:** insert keeps keys sorted by `Term.lt` (overwrite same key like `:set`); match/select/lookup iterate in key order.
+- **Select guards:** each guard is a term over literals / `:"$N"`: comparisons `:'=='` `:'=/='` `:'<'` `:'>'` `:'=<'` `:'>='`; types `is_atom` `is_integer` `is_list` `is_tuple` `is_nil` `is_pid`; logic `:'not'` / `:'andalso'` / `:'orelse'`. Unsupported guard → `:badarg`.
+- **`ets_delete_object/2`:** `(tab, {key,val})` removes one exact matching entry.
+- **Owner / heir:** creator pid owns the table. `ets_heir/2` sets `{heirPid, data}` or `:none`. On owner exit: live heir → transfer ownership, clear heir, deliver `{:ETS-TRANSFER, tid, fromPid, data}` to heir mailbox; else mark table dead (`alive=false`, clear entries/name; tid slot kept). Ops on dead tid → `:badarg`. Mix bumps to v18 for `ets_delete_object/2` / `ets_heir/2` / `:ordered_set`.
 
 ## Builtins
 
@@ -237,13 +249,16 @@ Teaching subset (not full OTP). Tables live in `State.etsTables`; tid = array in
 | `make_tuple/N` | `N` args → new tuple (may GC; lowered for non-literal `{…}`) |
 | `Process.flag/2` | `(:trap_exit, bool)` → previous flag (v14; else `:badarg`) |
 | `Process.exit/2` | force-exit other / raise self (v14) |
+| `Process.hibernate/0` | GC current process → `:ok` (v19 teaching hibernate) |
 | `ets_new/0` | allocate anonymous `:set` table → tid (`int`) |
-| `ets_new/2` | `(name \| nil, :set\|:bag\|:duplicate_bag)` → tid (v17; dup name / bad type → `:badarg`) |
-| `ets_insert/3` | `(tab, key, val)` → `:true` (tab = tid or name atom; kind rules; unknown → `:badarg`) |
+| `ets_new/2` | `(name \| nil, :set\|:bag\|:duplicate_bag\|:ordered_set)` → tid (v17/v18; dup name / bad type → `:badarg`) |
+| `ets_insert/3` | `(tab, key, val)` → `:true` (tab = tid or name atom; kind rules; unknown/dead → `:badarg`) |
 | `ets_lookup/2` | `(tab, key)` → **list of values** (empty if none; v17 shape) |
 | `ets_delete/2` | `(tab, key)` → `:true` (drop all entries with key) |
+| `ets_delete_object/2` | `(tab, {key,val})` → `:true` (drop one exact object; v18) |
 | `ets_match_object/2` | `(tab, pattern)` → list of matching `{key,val}` (v17) |
-| `ets_select/2` | `(tab, match_spec)` → list of results (v17 teaching match-spec; bad spec → `:badarg`) |
+| `ets_select/2` | `(tab, match_spec)` → list of results (v17+; v18 teaching guards; bad spec → `:badarg`) |
+| `ets_heir/2` | `(tab, {pid, data} \| :none)` → `:true` (v18 owner-exit transfer) |
 
 Guard helpers `is_integer/1`, `is_float/1`, `is_atom/1`, `is_list/1`, `is_tuple/1`, `is_map/1`, `is_boolean/1`, `is_pid/1`, `is_nil/1`, `is_reference/1`, `is_binary/1` (string **or** aligned binary), `is_bitstring/1` (string or any bitstring), `is_function/1` (fun tag) lower to `is_tag` (not separate MFAs). Map patterns `%{lit_key => pat}` lower via `map_get/2` + value tests. Handler-stack bounds (`handlersWF`) are part of runnable/waiting `Process.WF`.
 

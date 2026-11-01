@@ -25,8 +25,10 @@ defmodule AutumnCompiler.Lower do
     {:ets_insert, 3} => "ets_insert/3",
     {:ets_lookup, 2} => "ets_lookup/2",
     {:ets_delete, 2} => "ets_delete/2",
+    {:ets_delete_object, 2} => "ets_delete_object/2",
     {:ets_match_object, 2} => "ets_match_object/2",
-    {:ets_select, 2} => "ets_select/2"
+    {:ets_select, 2} => "ets_select/2",
+    {:ets_heir, 2} => "ets_heir/2"
   }
 
   @type_guards %{
@@ -115,10 +117,10 @@ defmodule AutumnCompiler.Lower do
 
   defp lower_code_module({:defmodule, _meta, [alias_ast, [do: body]]}) do
     mod_name = module_name(alias_ast)
-    defs = flatten_block(body)
     reset_lifted!(mod_name)
 
-    with {:ok, groups} <- group_defs(defs),
+    with {:ok, defs} <- expand_module_body(flatten_block(body), mod_name),
+         {:ok, groups} <- group_defs(defs),
          {:ok, funs} <- lower_groups(groups, mod_name) do
       lifted = take_lifted!()
 
@@ -131,6 +133,193 @@ defmodule AutumnCompiler.Lower do
   end
 
   defp lower_code_module(_), do: {:error, "expected a defmodule"}
+
+  # Teaching `use GenServer` / `@behaviour` / `@impl` (no general macro engine).
+  defp expand_module_body(stmts, mod_name) do
+    init = %{defs: [], used?: false, gs_behaviour?: false, use_opts: []}
+
+    case Enum.reduce_while(stmts, {:ok, init}, fn stmt, {:ok, st} ->
+           expand_module_stmt(stmt, st, mod_name)
+         end) do
+      {:ok, st} ->
+        with :ok <- maybe_require_genserver_callbacks(st, mod_name) do
+          finalize_expanded_defs(st, mod_name)
+        end
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp expand_module_stmt({:use, _, [{:__aliases__, _, [:GenServer]}]}, st, mod_name) do
+    if st.used? do
+      {:halt, {:error, "duplicate use GenServer in module #{mod_name}"}}
+    else
+      {:cont, {:ok, %{st | used?: true}}}
+    end
+  end
+
+  defp expand_module_stmt({:use, _, [{:__aliases__, _, [:GenServer]}, opts]}, st, mod_name) do
+    if st.used? do
+      {:halt, {:error, "duplicate use GenServer in module #{mod_name}"}}
+    else
+      case parse_use_genserver_opts(opts) do
+        {:ok, use_opts} ->
+          {:cont, {:ok, %{st | used?: true, use_opts: use_opts}}}
+
+        {:error, _} = err ->
+          {:halt, err}
+      end
+    end
+  end
+
+  defp expand_module_stmt({:use, _, _} = stmt, _st, _mod_name) do
+    {:halt, {:error, "unsupported use: #{Macro.to_string(stmt)} (only use GenServer)"}}
+  end
+
+  defp expand_module_stmt(
+         {:@, _, [{:behaviour, _, [{:__aliases__, _, parts}]}]},
+         st,
+         _mod_name
+       )
+       when is_list(parts) and parts != [] do
+    gs? = parts == [:GenServer]
+    {:cont, {:ok, %{st | gs_behaviour?: st.gs_behaviour? or gs?}}}
+  end
+
+  defp expand_module_stmt({:@, _, [{:behaviour, _, _}]} = stmt, _st, _mod_name) do
+    {:halt, {:error, "unsupported @behaviour: #{Macro.to_string(stmt)}"}}
+  end
+
+  defp expand_module_stmt({:@, _, [{:impl, _, [flag]}]}, st, _mod_name)
+       when flag in [true, false] do
+    {:cont, {:ok, st}}
+  end
+
+  defp expand_module_stmt({:@, _, [{:impl, _, [{:__aliases__, _, [:GenServer]}]}]}, st, _mod_name) do
+    {:cont, {:ok, st}}
+  end
+
+  defp expand_module_stmt({:@, _, [{:impl, _, _}]} = stmt, _st, _mod_name) do
+    {:halt, {:error, "unsupported @impl: #{Macro.to_string(stmt)}"}}
+  end
+
+  defp expand_module_stmt({:@, _, _} = stmt, _st, _mod_name) do
+    {:halt, {:error, "unsupported module attribute: #{Macro.to_string(stmt)}"}}
+  end
+
+  defp expand_module_stmt(other, st, _mod_name) do
+    {:cont, {:ok, %{st | defs: st.defs ++ [other]}}}
+  end
+
+  defp parse_use_genserver_opts(opts) when is_list(opts) do
+    Enum.reduce_while(opts, {:ok, []}, fn
+      {:restart, v}, {:ok, acc} when v in [:permanent, :temporary, :transient] ->
+        {:cont, {:ok, Keyword.put(acc, :restart, v)}}
+
+      {:shutdown, :brutal_kill}, {:ok, acc} ->
+        {:cont, {:ok, Keyword.put(acc, :shutdown, :brutal_kill)}}
+
+      {:shutdown, :infinity}, {:ok, acc} ->
+        {:cont, {:ok, Keyword.put(acc, :shutdown, :infinity)}}
+
+      {:shutdown, n}, {:ok, acc} when is_integer(n) and n >= 0 ->
+        {:cont, {:ok, Keyword.put(acc, :shutdown, n)}}
+
+      {:significant, v}, {:ok, acc} when is_boolean(v) ->
+        {:cont, {:ok, Keyword.put(acc, :significant, v)}}
+
+      {:type, v}, {:ok, acc} when v in [:worker, :supervisor] ->
+        {:cont, {:ok, Keyword.put(acc, :type, v)}}
+
+      other, _ ->
+        {:halt, {:error, "unsupported use GenServer option: #{Macro.to_string(other)}"}}
+    end)
+  end
+
+  defp parse_use_genserver_opts(other) do
+    {:error, "use GenServer options must be a keyword list, got: #{Macro.to_string(other)}"}
+  end
+
+  defp maybe_require_genserver_callbacks(%{used?: false, gs_behaviour?: false}, _mod_name),
+    do: :ok
+
+  defp maybe_require_genserver_callbacks(%{defs: defs}, mod_name) do
+    required = [{:init, 1}, {:handle_call, 3}, {:handle_cast, 2}, {:handle_continue, 2}]
+
+    case Enum.find(required, fn {name, arity} -> not has_def?(defs, name, arity) end) do
+      nil ->
+        :ok
+
+      {name, arity} ->
+        {:error, "module #{mod_name} missing #{name}/#{arity} (required by GenServer behaviour)"}
+    end
+  end
+
+  defp finalize_expanded_defs(%{defs: defs, used?: false}, _mod_name), do: {:ok, defs}
+
+  defp finalize_expanded_defs(%{defs: defs, used?: true, use_opts: opts}, mod_name) do
+    if has_def?(defs, :child_spec, 1) do
+      {:ok, defs}
+    else
+      {:ok, defs ++ [injected_child_spec_def(mod_name, opts)]}
+    end
+  end
+
+  defp has_def?(defs, name, arity) do
+    Enum.any?(defs, fn
+      {:def, _, [{:when, _, [head, _]}, _]} -> def_head_match?(head, name, arity)
+      {:def, _, [head, _]} -> def_head_match?(head, name, arity)
+      _ -> false
+    end)
+  end
+
+  defp def_head_match?({fun, _, params}, name, arity)
+       when is_atom(fun) and is_list(params),
+       do: fun == name and length(params) == arity
+
+  defp def_head_match?({fun, _, nil}, name, 0) when is_atom(fun), do: fun == name
+  defp def_head_match?(_, _, _), do: false
+
+  # Build AST by hand: `quote do {unquote(:Atom), arg} end` becomes a keyword
+  # list when passed as a sole call arg; use explicit `{:{}, …}` tuple.
+  defp injected_child_spec_def(mod_name, opts) do
+    mod_atom = String.to_atom(mod_name)
+    arg = {:arg, [], nil}
+    pair = {:{}, [], [mod_atom, arg]}
+    m = {:m, [], nil}
+
+    base =
+      {:=, [],
+       [
+         m,
+         {{:., [], [{:__aliases__, [alias: false], [:GenServer]}, :child_spec]}, [], [pair]}
+       ]}
+
+    puts =
+      opts
+      |> Enum.reduce([], fn {key, val}, acc ->
+        acc ++
+          [
+            {:=, [],
+             [
+               m,
+               {:map_put, [], [m, key, val]}
+             ]}
+          ]
+      end)
+
+    body =
+      case puts do
+        [] ->
+          {{:., [], [{:__aliases__, [alias: false], [:GenServer]}, :child_spec]}, [], [pair]}
+
+        _ ->
+          {:__block__, [], [base | puts] ++ [m]}
+      end
+
+    {:def, [], [{:child_spec, [], [arg]}, [do: body]]}
+  end
 
   defp validate_code_modules([]) do
     {:error, "no modules to assemble"}
@@ -208,6 +397,8 @@ defmodule AutumnCompiler.Lower do
 
   defp module_version(funs) do
     cond do
+      needs_v19?(funs) -> 19
+      needs_v18?(funs) -> 18
       needs_v17?(funs) -> 17
       needs_v16?(funs) -> 16
       needs_v15?(funs) -> 15
@@ -225,6 +416,32 @@ defmodule AutumnCompiler.Lower do
       needs_v2?(funs) -> 2
       true -> 1
     end
+  end
+
+  defp needs_v19?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn
+        %{"op" => "wait", "timeout" => %{"reg" => _}} -> true
+        %{"op" => "call", "fun" => "Process.hibernate/0"} -> true
+        _ -> false
+      end)
+    end)
+  end
+
+  defp needs_v18?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn
+        %{"op" => "call", "fun" => fun}
+        when fun in ~w(ets_delete_object/2 ets_heir/2) ->
+          true
+
+        %{"op" => "load_lit", "lit" => %{"atom" => "ordered_set"}} ->
+          true
+
+        _ ->
+          false
+      end)
+    end)
   end
 
   defp needs_v17?(funs) do
@@ -598,11 +815,12 @@ defmodule AutumnCompiler.Lower do
   defp expr(s, env, next, code) when is_binary(s),
     do: emit_lit(%{"string" => s}, env, next, code)
 
-  # Aligned binary literal `<<…>>` (IR v16). Integer bytes + UTF-8 binary/string segments.
+  # Binary / partial bitstring literal `<<…>>` (IR v16). Integer segments size 1…8
+  # (default 8) + UTF-8 string chunks; trailing partial sizes 1…7 → `bitstring` lit.
   defp expr({:<<>>, _, segs}, env, next, code) when is_list(segs) do
-    case literal_binary_segments(segs) do
-      {:ok, bytes} -> emit_lit(%{"binary" => bytes}, env, next, code)
-      :error -> {:error, "unsupported binary segment in <<…>>"}
+    case literal_bitstring_lit(segs) do
+      {:ok, lit} -> emit_lit(lit, env, next, code)
+      {:error, msg} -> {:error, msg}
     end
   end
 
@@ -1369,39 +1587,95 @@ defmodule AutumnCompiler.Lower do
   end
 
   # receive do clauses after timeout -> body end
-  # Scan loop: recv_peek; pattern clauses with recv_drop on match; else idx++; wait.
+  # Empty `do` (after-only) allowed. Scan loop: recv_peek; clauses; else idx++; wait.
+  # Timeout may be a non-neg int lit or an expression (IR v19 `{"reg": R}`).
   defp lower_receive(opts, env, next, code) do
-    clauses = opts |> Keyword.get(:do, []) |> List.wrap()
+    clauses =
+      case Keyword.get(opts, :do, []) do
+        nil -> []
+        {:__block__, _, []} -> []
+        other -> List.wrap(other)
+      end
+
     after_clauses = opts |> Keyword.get(:after, []) |> List.wrap()
 
-    if clauses == [] do
-      {:error, "receive requires at least one clause"}
-    else
-      with {:ok, timeout_lit, after_body} <- parse_receive_after(after_clauses) do
-        lower_receive_loop(clauses, timeout_lit, after_body, env, next, code)
-      end
+    with {:ok, timeout, after_body} <- parse_receive_after(after_clauses) do
+      lower_receive_loop(clauses, timeout, after_body, env, next, code)
     end
   end
 
   defp parse_receive_after([]) do
     # Infinity — after label unused (points at end).
-    {:ok, nil, nil}
+    {:ok, :infinity, nil}
   end
 
   defp parse_receive_after([{:->, _, [[timeout], body]}])
        when is_integer(timeout) and timeout >= 0 do
-    {:ok, timeout, body}
+    {:ok, {:lit, timeout}, body}
+  end
+
+  defp parse_receive_after([{:->, _, [[timeout_expr], body]}]) do
+    {:ok, {:expr, timeout_expr}, body}
   end
 
   defp parse_receive_after(other) do
     {:error, "unsupported receive after: #{Macro.to_string(other)}"}
   end
 
-  defp lower_receive_loop(clauses, timeout_lit, after_body, env, next, code) do
+  defp lower_receive_loop(clauses, timeout, after_body, env, next, code) do
+    result_reg = next
+    next = next + 1
+
+    # After-only: no mailbox scan. `wait` retry == after so a non-empty mailbox
+    # (or wake) jumps straight to the after body instead of busy-spinning.
+    if clauses == [] do
+      lower_receive_after_only(timeout, after_body, env, next, code, result_reg)
+    else
+      lower_receive_with_clauses(clauses, timeout, after_body, env, next, code, result_reg)
+    end
+  end
+
+  defp lower_receive_after_only(timeout, after_body, env, next, code, result_reg) do
+    with {:ok, code, env, next, timeout_json} <- emit_wait_timeout(timeout, env, next, code) do
+      wait_idx = length(code)
+
+      code =
+        code ++
+          [
+            %{
+              "op" => "wait",
+              "retry" => 0,
+              "after" => 0,
+              "timeout" => timeout_json
+            }
+          ]
+
+      after_ip = length(code)
+
+      code =
+        List.update_at(code, wait_idx, fn %{"op" => "wait"} = i ->
+          %{i | "retry" => after_ip, "after" => after_ip}
+        end)
+
+      after_result =
+        if after_body == nil do
+          {:ok, code ++ [%{"op" => "load_lit", "reg" => result_reg, "lit" => nil}], env, next}
+        else
+          with {:ok, code, env, next, body_reg} <- expr(after_body, env, next, code) do
+            {:ok, code ++ [%{"op" => "move", "dest" => result_reg, "src" => body_reg}], env, next}
+          end
+        end
+
+      with {:ok, code, env, next} <- after_result do
+        {:ok, code, env, next, result_reg}
+      end
+    end
+  end
+
+  defp lower_receive_with_clauses(clauses, timeout, after_body, env, next, code, result_reg) do
     idx_reg = next
     msg_reg = next + 1
-    result_reg = next + 2
-    next = next + 3
+    next = next + 2
 
     code = code ++ [%{"op" => "load_lit", "reg" => idx_reg, "lit" => %{"int" => 0}}]
     scan_ip = length(code)
@@ -1443,49 +1717,60 @@ defmodule AutumnCompiler.Lower do
           %{i | "empty" => wait_ip}
         end)
 
-      # Placeholder after target; patched below.
-      wait_idx = length(code)
-
-      code =
-        code ++
-          [
-            %{
-              "op" => "wait",
-              "retry" => scan_ip,
-              "after" => 0,
-              "timeout" => timeout_lit
-            }
-          ]
-
-      after_ip = length(code)
-
-      code =
-        List.update_at(code, wait_idx, fn %{"op" => "wait"} = i ->
-          %{i | "after" => after_ip}
-        end)
-
-      after_result =
-        if after_body == nil do
-          # Infinity path should never land here; keep a defined value.
-          {:ok, code ++ [%{"op" => "load_lit", "reg" => result_reg, "lit" => nil}], env, next}
-        else
-          with {:ok, code, env, next, body_reg} <- expr(after_body, env, next, code) do
-            {:ok, code ++ [%{"op" => "move", "dest" => result_reg, "src" => body_reg}], env, next}
-          end
-        end
-
-      with {:ok, code, env, next} <- after_result do
-        end_ip = length(code)
+      with {:ok, code, env, next, timeout_json} <- emit_wait_timeout(timeout, env, next, code) do
+        wait_idx = length(code)
 
         code =
-          Enum.reduce(body_ends, code, fn idx, code ->
-            List.update_at(code, idx, fn %{"op" => "jump"} = j ->
-              %{j | "target" => end_ip}
-            end)
+          code ++
+            [
+              %{
+                "op" => "wait",
+                "retry" => scan_ip,
+                "after" => 0,
+                "timeout" => timeout_json
+              }
+            ]
+
+        after_ip = length(code)
+
+        code =
+          List.update_at(code, wait_idx, fn %{"op" => "wait"} = i ->
+            %{i | "after" => after_ip}
           end)
 
-        {:ok, code, env, next, result_reg}
+        after_result =
+          if after_body == nil do
+            {:ok, code ++ [%{"op" => "load_lit", "reg" => result_reg, "lit" => nil}], env, next}
+          else
+            with {:ok, code, env, next, body_reg} <- expr(after_body, env, next, code) do
+              {:ok, code ++ [%{"op" => "move", "dest" => result_reg, "src" => body_reg}], env,
+               next}
+            end
+          end
+
+        with {:ok, code, env, next} <- after_result do
+          end_ip = length(code)
+
+          code =
+            Enum.reduce(body_ends, code, fn idx, code ->
+              List.update_at(code, idx, fn %{"op" => "jump"} = j ->
+                %{j | "target" => end_ip}
+              end)
+            end)
+
+          {:ok, code, env, next, result_reg}
+        end
       end
+    end
+  end
+
+  defp emit_wait_timeout(:infinity, env, next, code), do: {:ok, code, env, next, nil}
+
+  defp emit_wait_timeout({:lit, n}, env, next, code), do: {:ok, code, env, next, n}
+
+  defp emit_wait_timeout({:expr, timeout_expr}, env, next, code) do
+    with {:ok, code, env, next, reg} <- expr(timeout_expr, env, next, code) do
+      {:ok, code, env, next, %{"reg" => reg}}
     end
   end
 
@@ -2008,7 +2293,9 @@ defmodule AutumnCompiler.Lower do
   end
 
   defp emit_pattern_test({:{}, _, elems}, scr, env, next, code) when is_list(elems) do
-    emit_compound_pattern_test("tuple", "get_tuple_elem", "tuple", elems, scr, env, next, code)
+    emit_compound_pattern_test("tuple", "get_tuple_elem", "tuple", elems, scr, env, next, code,
+      length_check: true
+    )
   end
 
   # `e in [lit, …]` or `e in lit` — or of literal equality tests (rescue tags).
@@ -2256,6 +2543,7 @@ defmodule AutumnCompiler.Lower do
       if length_check? do
         size_reg = next
         next = next + 1
+        size_fun = if tag == "tuple", do: "tuple_size/1", else: "list_size/1"
 
         code =
           code ++
@@ -2263,7 +2551,7 @@ defmodule AutumnCompiler.Lower do
               %{
                 "op" => "call",
                 "dest" => size_reg,
-                "fun" => "list_size/1",
+                "fun" => size_fun,
                 "args" => [scr]
               }
             ]
@@ -2743,9 +3031,9 @@ defmodule AutumnCompiler.Lower do
   defp lit_value({:%{}, _, pairs}) when is_list(pairs), do: literal_map(pairs)
 
   defp lit_value({:<<>>, _, segs}) when is_list(segs) do
-    case literal_binary_segments(segs) do
-      {:ok, bytes} -> {:ok, %{"binary" => bytes}}
-      :error -> :error
+    case literal_bitstring_lit(segs) do
+      {:ok, lit} -> {:ok, lit}
+      {:error, _} -> :error
     end
   end
 
@@ -2759,29 +3047,129 @@ defmodule AutumnCompiler.Lower do
   defp lit_value({a, b}), do: lit_value({:{}, [], [a, b]})
   defp lit_value(_), do: :error
 
-  # Aligned `<<…>>` only: integer bytes (default 8-bit) and UTF-8 binary/string chunks.
-  defp literal_binary_segments(segs) do
-    Enum.reduce_while(segs, {:ok, []}, fn seg, {:ok, acc} ->
-      case binary_segment_bytes(seg) do
-        {:ok, bytes} -> {:cont, {:ok, acc ++ bytes}}
-        :error -> {:halt, :error}
-      end
-    end)
+  # Pack `<<…>>` into IR v16 `binary` or partial `bitstring` lit (MSB-first).
+  defp literal_bitstring_lit(segs) do
+    case pack_bitstring_segments(segs) do
+      {:ok, bytes, 0} ->
+        {:ok, %{"binary" => bytes}}
+
+      {:ok, bytes, trailing} ->
+        {:ok, %{"bitstring" => %{"bytes" => bytes, "trailing_bits" => trailing}}}
+
+      {:error, _} = err ->
+        err
+    end
   end
 
-  defp binary_segment_bytes(n) when is_integer(n) and n >= 0 and n <= 255, do: {:ok, [n]}
-  defp binary_segment_bytes(bin) when is_binary(bin), do: {:ok, :binary.bin_to_list(bin)}
+  defp pack_bitstring_segments(segs) do
+    case Enum.reduce_while(segs, {:ok, [], :aligned}, fn seg, {:ok, bits, _align} ->
+           case bitstring_segment_bits(seg) do
+             {:ok, seg_bits, :bytes} ->
+               if rem(length(bits), 8) != 0 do
+                 {:halt,
+                  {:error,
+                   "partial bitstring segment must be last in <<…>> (cannot follow with bytes)"}}
+               else
+                 {:cont, {:ok, bits ++ seg_bits, :aligned}}
+               end
 
-  defp binary_segment_bytes({:"::", _, [n]}) when is_integer(n) and n >= 0 and n <= 255,
-    do: {:ok, [n]}
+             {:ok, seg_bits, :partial} ->
+               if rem(length(bits), 8) != 0 do
+                 {:halt, {:error, "only one trailing partial segment allowed in <<…>>"}}
+               else
+                 {:cont, {:ok, bits ++ seg_bits, :partial}}
+               end
 
-  defp binary_segment_bytes({:"::", _, [n, _spec]}) when is_integer(n) and n >= 0 and n <= 255,
-    do: {:ok, [n]}
+             {:error, _} = err ->
+               {:halt, err}
+           end
+         end) do
+      {:ok, bits, _} ->
+        pack_bits_to_bytes(bits)
 
-  defp binary_segment_bytes({:"::", _, [bin, _spec]}) when is_binary(bin),
-    do: {:ok, :binary.bin_to_list(bin)}
+      {:error, _} = err ->
+        err
+    end
+  end
 
-  defp binary_segment_bytes(_), do: :error
+  defp pack_bits_to_bytes([]) do
+    {:ok, [], 0}
+  end
+
+  defp pack_bits_to_bytes(bits) do
+    total = length(bits)
+    trailing = rem(8 - rem(total, 8), 8)
+    padded = bits ++ List.duplicate(0, trailing)
+
+    bytes =
+      padded
+      |> Enum.chunk_every(8)
+      |> Enum.map(fn chunk ->
+        Enum.reduce(chunk, 0, fn b, acc -> acc * 2 + b end)
+      end)
+
+    {:ok, bytes, trailing}
+  end
+
+  # Returns `{:ok, bits, :bytes | :partial}` — bits are MSB-first 0/1.
+  defp bitstring_segment_bits(n) when is_integer(n) and n >= 0 and n <= 255,
+    do: {:ok, int_to_bits(n, 8), :bytes}
+
+  defp bitstring_segment_bits(bin) when is_binary(bin) do
+    bits =
+      for <<b <- bin>>, bit <- int_to_bits(b, 8), do: bit
+
+    {:ok, bits, :bytes}
+  end
+
+  defp bitstring_segment_bits({:"::", _, [n]}) when is_integer(n) and n >= 0 and n <= 255,
+    do: {:ok, int_to_bits(n, 8), :bytes}
+
+  defp bitstring_segment_bits({:"::", _, [n, spec]}) when is_integer(n) do
+    case segment_size(spec) do
+      {:ok, size} when size >= 1 and size <= 8 ->
+        max = Bitwise.bsl(1, size)
+
+        if n < 0 or n >= max do
+          {:error, "integer #{n} does not fit in ::#{size} in <<…>>"}
+        else
+          kind = if size == 8, do: :bytes, else: :partial
+          {:ok, int_to_bits(n, size), kind}
+        end
+
+      {:ok, size} ->
+        {:error, "unsupported bitstring size #{size} in <<…>> (teaching subset: 1..8)"}
+
+      :error ->
+        {:error, "unsupported bitstring segment specifier in <<…>>"}
+    end
+  end
+
+  defp bitstring_segment_bits({:"::", _, [bin, spec]}) when is_binary(bin) do
+    case segment_size(spec) do
+      {:ok, 8} ->
+        bitstring_segment_bits(bin)
+
+      {:ok, _} ->
+        {:error, "string/binary chunks in <<…>> must be byte-sized (::8)"}
+
+      :error ->
+        # Bare `::binary` / unknown — reject
+        {:error, "unsupported bitstring segment specifier on string in <<…>>"}
+    end
+  end
+
+  defp bitstring_segment_bits(_),
+    do: {:error, "unsupported binary segment in <<…>>"}
+
+  defp segment_size(n) when is_integer(n), do: {:ok, n}
+  defp segment_size({:size, _, [n]}) when is_integer(n), do: {:ok, n}
+  defp segment_size({:size, _, n}) when is_integer(n), do: {:ok, n}
+  defp segment_size(_), do: :error
+
+  defp int_to_bits(n, size) do
+    for i <- (size - 1)..0//-1, do: Bitwise.band(Bitwise.bsr(n, i), 1)
+  end
 
   defp resolve_locals(fun, mod_name) do
     code =

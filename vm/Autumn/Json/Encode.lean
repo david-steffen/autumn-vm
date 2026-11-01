@@ -99,8 +99,10 @@ def encodeInstr : Instr → Json
       let base := [("op", Json.str "wait"), ("retry", toJson retry), ("after", toJson after)]
       let fields :=
         match timeout with
-        | none => base ++ [("timeout", Json.null)]
-        | some n => base ++ [("timeout", toJson n)]
+        | .infinity => base ++ [("timeout", Json.null)]
+        | .lit n => base ++ [("timeout", toJson n)]
+        | .reg r =>
+          base ++ [("timeout", Json.mkObj [("reg", toJson r)])]
       Json.mkObj fields
   | .enterTry rescueIp exc =>
       Json.mkObj [("op", "enter_try"), ("rescue", rescueIp), ("exc", exc)]

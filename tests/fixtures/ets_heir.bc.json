@@ -1,0 +1,479 @@
+{
+  "entry": "Main.main/0",
+  "modules": [
+    {
+      "functions": [
+        {
+          "arity": 0,
+          "code": [
+            {
+              "args": [],
+              "dest": 0,
+              "fun": "ets_new/0",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 0
+            }
+          ],
+          "locals": 1,
+          "name": "Ets.new/0"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "ets_new/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "Ets.new/2"
+        },
+        {
+          "arity": 3,
+          "code": [
+            {
+              "args": [
+                0,
+                1,
+                2
+              ],
+              "dest": 3,
+              "fun": "ets_insert/3",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 3
+            }
+          ],
+          "locals": 4,
+          "name": "Ets.insert/3"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "ets_lookup/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "Ets.lookup/2"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "ets_delete/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "Ets.delete/2"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "ets_delete_object/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "Ets.delete_object/2"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "ets_match_object/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "Ets.match_object/2"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "ets_select/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "Ets.select/2"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "ets_heir/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 3,
+          "name": "Ets.heir/2"
+        }
+      ],
+      "name": "Ets"
+    },
+    {
+      "functions": [
+        {
+          "arity": 1,
+          "code": [
+            {
+              "lit": {
+                "atom": "tab"
+              },
+              "op": "load_lit",
+              "reg": 1
+            },
+            {
+              "lit": {
+                "atom": "set"
+              },
+              "op": "load_lit",
+              "reg": 2
+            },
+            {
+              "args": [
+                1,
+                2
+              ],
+              "dest": 3,
+              "fun": "Ets.new/2",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "atom": "k"
+              },
+              "op": "load_lit",
+              "reg": 4
+            },
+            {
+              "lit": {
+                "int": 42
+              },
+              "op": "load_lit",
+              "reg": 5
+            },
+            {
+              "args": [
+                3,
+                4,
+                5
+              ],
+              "dest": 6,
+              "fun": "Ets.insert/3",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "atom": "payload"
+              },
+              "op": "load_lit",
+              "reg": 7
+            },
+            {
+              "args": [
+                0,
+                7
+              ],
+              "dest": 8,
+              "fun": "make_tuple/2",
+              "op": "call"
+            },
+            {
+              "args": [
+                3,
+                8
+              ],
+              "dest": 9,
+              "fun": "Ets.heir/2",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "atom": "ok"
+              },
+              "op": "load_lit",
+              "reg": 10
+            },
+            {
+              "op": "return",
+              "reg": 10
+            }
+          ],
+          "locals": 11,
+          "name": "Main.child/1"
+        },
+        {
+          "arity": 0,
+          "code": [
+            {
+              "args": [],
+              "dest": 0,
+              "fun": "self/0",
+              "op": "call"
+            },
+            {
+              "args": [
+                0
+              ],
+              "dest": 1,
+              "fun": "Main.child/1",
+              "op": "spawn"
+            },
+            {
+              "lit": {
+                "int": 0
+              },
+              "op": "load_lit",
+              "reg": 3
+            },
+            {
+              "dest": 4,
+              "empty": 28,
+              "index": 3,
+              "op": "recv_peek"
+            },
+            {
+              "dest": 5,
+              "op": "is_tag",
+              "reg": 4,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 5,
+              "target": 7
+            },
+            {
+              "op": "jump",
+              "target": 24
+            },
+            {
+              "args": [
+                4
+              ],
+              "dest": 6,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 4
+              },
+              "op": "jump_if_eq",
+              "reg": 6,
+              "target": 10
+            },
+            {
+              "op": "jump",
+              "target": 6
+            },
+            {
+              "dest": 7,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 4
+            },
+            {
+              "lit": {
+                "atom": "ETS-TRANSFER"
+              },
+              "op": "jump_if_eq",
+              "reg": 7,
+              "target": 13
+            },
+            {
+              "op": "jump",
+              "target": 6
+            },
+            {
+              "dest": 8,
+              "index": 3,
+              "op": "get_tuple_elem",
+              "tuple": 4
+            },
+            {
+              "lit": {
+                "atom": "payload"
+              },
+              "op": "jump_if_eq",
+              "reg": 8,
+              "target": 16
+            },
+            {
+              "op": "jump",
+              "target": 6
+            },
+            {
+              "dest": 9,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 4
+            },
+            {
+              "dest": 10,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 4
+            },
+            {
+              "index": 3,
+              "op": "recv_drop"
+            },
+            {
+              "lit": {
+                "atom": "k"
+              },
+              "op": "load_lit",
+              "reg": 11
+            },
+            {
+              "args": [
+                9,
+                11
+              ],
+              "dest": 12,
+              "fun": "Ets.lookup/2",
+              "op": "call"
+            },
+            {
+              "dest": 13,
+              "index": 0,
+              "list": 12,
+              "op": "get_list_elem"
+            },
+            {
+              "dest": 2,
+              "op": "move",
+              "src": 13
+            },
+            {
+              "op": "jump",
+              "target": 30
+            },
+            {
+              "lit": {
+                "int": 1
+              },
+              "op": "load_lit",
+              "reg": 14
+            },
+            {
+              "args": [
+                3,
+                14
+              ],
+              "dest": 15,
+              "fun": "+/2",
+              "op": "call"
+            },
+            {
+              "dest": 3,
+              "op": "move",
+              "src": 15
+            },
+            {
+              "op": "jump",
+              "target": 3
+            },
+            {
+              "after": 29,
+              "op": "wait",
+              "retry": 3,
+              "timeout": null
+            },
+            {
+              "lit": null,
+              "op": "load_lit",
+              "reg": 2
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 16,
+          "name": "Main.main/0"
+        }
+      ],
+      "name": "Main"
+    }
+  ],
+  "version": 18
+}

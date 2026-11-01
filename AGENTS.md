@@ -18,13 +18,13 @@ Elixir subset → versioned IR JSON → Lean 4 VM. The Mix lowerer emits bytecod
 | `ROADMAP.md` | Ordered backlog (“what’s next”) |
 | `tests/fixtures/` | Sample Elixir programs for lowering |
 | `stdlib/` | Thin library modules (`genserver.ex`, `supervisor.ex`, `ets.ex`); compile with `AutumnCompiler.compile_files/1` alongside app code |
-| `vm/Autumn/Ets.lean` | ETS table ops + teaching match/select (IR v17) |
+| `vm/Autumn/Ets.lean` | ETS table ops + match/select/guards/heir (IR v17–v18) |
 
-**Module atoms + `apply_mfa` (IR v15):** a bare alias like `Counter` lowers to atom `"Counter"` (no `Elixir.` prefix). `apply(mod, :init, [arg])` with a literal arg list emits `apply_mfa`, which looks up `"#{mod}.#{fun}/#{arity}"` in the loaded image. Stdlib `GenServer` dispatches `init` / `handle_call` / `handle_cast` / optional `handle_info` this way; missing `handle_info/2` → catchable `:undef` rescued as `{:noreply, state}`. Other missing MFA → catchable `:undef`. `Supervisor.start_link(children)` / `start_link(children, max_restarts)` is one_for_one with a quiet-period intensity window (period fixed at 100 logical ticks).
+**Module atoms + `apply_mfa` (IR v15):** a bare alias like `Counter` lowers to atom `"Counter"` (no `Elixir.` prefix). `apply(mod, :init, [arg])` with a literal arg list emits `apply_mfa`, which looks up `"#{mod}.#{fun}/#{arity}"` in the loaded image. Stdlib `GenServer` dispatches `init` / `handle_call` / `handle_cast` / `handle_continue` / optional `handle_info` this way; missing `handle_info/2` → catchable `:undef` rescued as `{:noreply, state}`; `continue` / `:hibernate` (`Process.hibernate/0` GC then loop) return tails supported. Other missing MFA → catchable `:undef`. `Supervisor.start_link(children)` / `start_link(children, max_restarts)` strategies with intensity window (period 100 ticks); child_spec maps may set `:restart` / `:shutdown` / `:significant` / `:type` (carried) and `:start` as `{Mod, arg}` or `{Mod, Fun, [arg]}` MFA. Mix: `use GenServer` (+ `restart:`/`shutdown:`/`significant:`/`type:`), `@behaviour GenServer`, `@impl` strip; requires `init/1` `handle_call/3` `handle_cast/2` `handle_continue/2`. Tuple patterns enforce arity via `tuple_size/1`. IR v19: `wait` timeout `{"reg":R}`; after-only `receive`; `Process.hibernate/0`.
 
-**Binaries (IR v16):** `Term.bitstring` immediate (`bytes` + `trailingBits`; `0` ⇒ aligned binary). Mix `<<1, 2, "ab">>` → `{"binary":[…]}`. UTF-8 `string` stays separate; `is_binary/1` matches string **or** aligned bitstring; `is_bitstring/1` matches string or any bitstring; `<>/2` appends aligned bitstrings. See `vm/IR.md` v16.
+**Binaries (IR v16):** `Term.bitstring` immediate (`bytes` + `trailingBits`; `0` ⇒ aligned binary). Mix `<<1, 2, "ab">>` → `{"binary":[…]}`; `<<n::k>>` / `::size(k)` for **k ∈ 1…8** (trailing partial → `bitstring` lit). UTF-8 `string` stays separate; `is_binary/1` matches string **or** aligned bitstring; `is_bitstring/1` matches string or any bitstring; `<>/2` appends aligned bitstrings. See `vm/IR.md` v16.
 
-**ETS (IR v17):** kinds `:set` / `:bag` / `:duplicate_bag`; `ets_new/2` named or anonymous (`nil`); tab id is tid **or** name atom; `lookup` → list of values; `match_object` / `select` with `:_` / `:"$N"` and empty-guard match-specs. See `vm/IR.md` v17; `stdlib/ets.ex`.
+**ETS (IR v17–v18):** kinds `:set` / `:bag` / `:duplicate_bag` / `:ordered_set`; `ets_new/2` named or anonymous (`nil`); tab id is tid **or** name atom; `lookup` → list of values; `match_object` / `select` with `:_` / `:"$N"`; v18 teaching select guards, `delete_object/2`, owner/heir (`ets_heir/2`, `{:ETS-TRANSFER, tid, from, data}` on owner exit). See `vm/IR.md` v17–v18; `stdlib/ets.ex`.
 
 ## Build & run
 
@@ -94,7 +94,7 @@ External / multi-step proofs should use the **named lemma API**, not unfold priv
 | Scheduler / links / EXIT | `State/Lemmas` barrel (`ProcessLemmas`, `SchedLemmas`, `LinkLemmas`) | raw `scheduleNext` / `signalLink` unfolds |
 | JSON ↔ IR | `Json/Lemmas` (`decode*_encode*`) | `JsonNumber.fromFloat?` / hand-rolled lit parsers |
 
-**Rule:** when adding an opcode or call-special builtin, land a matching preserve + progress lemma in the same PR (or a follow-up that blocks merge). The `stepInstr_*` dispatchers must case on every `Instr` constructor. Call-specials (`map_put/3`, `cons/2`, `Process.*`, `ets_*` including v17 `ets_new/2` / `ets_match_object/2` / `ets_select/2`, `make_ref/0`) keep helpers in `Step/Preserve` and are reached via `call_preserves` / `call_error_not_structural`.
+**Rule:** when adding an opcode or call-special builtin, land a matching preserve + progress lemma in the same PR (or a follow-up that blocks merge). The `stepInstr_*` dispatchers must case on every `Instr` constructor. Call-specials (`map_put/3`, `cons/2`, `Process.*`, `ets_*` including v17–v18 `ets_new/2` / `ets_match_object/2` / `ets_select/2` / `ets_delete_object/2` / `ets_heir/2`, `make_ref/0`) keep helpers in `Step/Preserve` and are reached via `call_preserves` / `call_error_not_structural`.
 
 ## Skills
 

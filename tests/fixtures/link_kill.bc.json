@@ -41,12 +41,12 @@
             "int": 0
           },
           "op": "load_lit",
-          "reg": 1
+          "reg": 2
         },
         {
-          "dest": 2,
+          "dest": 3,
           "empty": 14,
-          "index": 1,
+          "index": 2,
           "op": "recv_peek"
         },
         {
@@ -58,7 +58,7 @@
           "target": 10
         },
         {
-          "index": 1,
+          "index": 2,
           "op": "recv_drop"
         },
         {
@@ -69,7 +69,7 @@
           "reg": 4
         },
         {
-          "dest": 3,
+          "dest": 1,
           "op": "move",
           "src": 4
         },
@@ -86,7 +86,7 @@
         },
         {
           "args": [
-            1,
+            2,
             5
           ],
           "dest": 6,
@@ -94,7 +94,7 @@
           "op": "call"
         },
         {
-          "dest": 1,
+          "dest": 2,
           "op": "move",
           "src": 6
         },
@@ -116,13 +116,13 @@
           "reg": 7
         },
         {
-          "dest": 3,
+          "dest": 1,
           "op": "move",
           "src": 7
         },
         {
           "op": "return",
-          "reg": 3
+          "reg": 1
         }
       ],
       "locals": 8,
