@@ -17,9 +17,11 @@ Elixir subset → IR JSON (`format: 1`) → Lean 4 VM. The Mix lowerer emits byt
 | `vm/builtins.mfa` | Canonical builtin MFA inventory (Mix ↔ Lean sync) |
 | `vm/Autumn/Repl.lean` | Durable `autumn --repl` line protocol |
 | `ROADMAP.md` | Short backlog (“what’s next”); history is git |
+| `vm/MEANING.md` | Verified-compiler sketch (purity layers); not a second IR encyclopedia |
 | `tests/fixtures/` | Sample `.ex` programs + `.expect` / optional `.smoke.json` (no committed `.bc.json`) |
-| `stdlib/` | Thin library modules (`genserver.ex`, `supervisor.ex`, `ets.ex`); compile with `AutumnCompiler.compile_files/1` alongside app code |
+| `stdlib/` | Thin library modules (`genserver`, `supervisor`, `ets`, `agent`, `task`, `registry`, `enum`); compile with `AutumnCompiler.compile_files/1` alongside app code |
 | `vm/Autumn/Ets.lean` | ETS table ops + match/select/guards/heir |
+| `vm/Autumn/{Meaning,Obs,OTP,Meta}/` | Meaning layers, observational schedule laws, OTP stubs, `#eval` exploration |
 
 Feature semantics (GenServer, binaries, ETS, …): see [`vm/IR.md`](vm/IR.md) and stdlib module headers — not duplicated here.
 
@@ -67,6 +69,16 @@ autumn(5)> x + 10
 13
 autumn(6)> .bindings
 autumn(7)> .quit
+```
+
+Agent vignette (stdlib via multi-file load — compile Agent with GenServer first, or use a fixture smoke path). From Mix after `lake build`:
+
+```text
+autumn(1)> .load ../stdlib/genserver.ex
+autumn(2)> .load ../stdlib/agent.ex
+autumn(3)> .load ../tests/fixtures/agent_basic.ex
+autumn(4)> Main.main()
+50
 ```
 
 Expressions lower as `Repl.main/0` so a loaded `Main` is not overwritten. Mix replays simple `var = …` bindings across lines (RHS re-runs on later lines); Lean keeps modules and resets processes each `EVAL`. Dot commands: `.help`, `.bindings`, `.load`, `.clear`, `.quit`. Protocol: `EVAL`/`LOAD` JSON lines, `QUIT`.

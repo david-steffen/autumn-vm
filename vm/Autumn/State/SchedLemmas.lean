@@ -214,6 +214,28 @@ theorem scheduleNextWith_preserves (s : State) (fromIdx : Nat) (c : State.Schedu
       · rw [dif_neg hlt] at h
         exact scheduleNext_preserves _ fromIdx hs1 h
 
+/-- `scheduleNextWith` errors are always `noRunnable` (like `scheduleNext`). -/
+theorem scheduleNextWith_error_is_noRunnable (s : State) (fromIdx : Nat)
+    (c : State.ScheduleChoice) {e}
+    (h : State.scheduleNextWith s fromIdx c = .error e) : e = .noRunnable := by
+  cases c with
+  | roundRobin =>
+    exact scheduleNext_error_is_noRunnable s fromIdx (by simpa [State.scheduleNextWith] using h)
+  | prefer idx =>
+    simp only [State.scheduleNextWith] at h
+    by_cases hsz : s.processes.size = 0
+    · simp [hsz] at h; cases h; rfl
+    · rw [if_neg hsz] at h
+      by_cases hlt : idx < (State.wakeExpired s.processes s.clock).size
+      · rw [dif_pos hlt] at h
+        by_cases hrun :
+            State.processRunnable ((State.wakeExpired s.processes s.clock)[idx]'hlt) = true
+        · simp [hrun] at h
+        · rw [if_neg hrun] at h
+          exact scheduleNext_error_is_noRunnable _ fromIdx h
+      · rw [dif_neg hlt] at h
+        exact scheduleNext_error_is_noRunnable _ fromIdx h
+
 /-- Preferring a runnable index selects it. -/
 theorem scheduleNextWith_prefer_runnable (s : State) (fromIdx idx : Nat)
     (hne : 0 < s.processes.size) (hlt : idx < s.processes.size)

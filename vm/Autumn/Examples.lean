@@ -61,4 +61,35 @@ def tryRescueModule : Module :=
     }
   ]
 
+/-- Hand-built drain-siblings: entry returns `0` after spawning a short worker
+that must still be drained (matches `tests/fixtures/drain_siblings.ex`). -/
+def drainSiblingsModule : Module :=
+  Module.ofFunctions "Main.main/0" #[
+    {
+      name := "Main.worker/0"
+      arity := 0
+      locals := 2
+      code := #[
+        .loadLit 0 (.int 1),
+        .loadLit 1 (.int 1),
+        .call 0 "+/2" #[0, 1],
+        .loadLit 0 (.int 2),
+        .loadLit 1 (.int 2),
+        .call 0 "+/2" #[0, 1],
+        .loadLit 0 (.int 1),
+        .return_ 0
+      ]
+    },
+    {
+      name := "Main.main/0"
+      arity := 0
+      locals := 2
+      code := #[
+        .spawn 0 "Main.worker/0" #[],
+        .loadLit 0 (.int 0),
+        .return_ 0
+      ]
+    }
+  ]
+
 end Autumn

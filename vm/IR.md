@@ -160,7 +160,7 @@ Teaching subset (no new Instr — builtins only):
 - `bit_size/1` — `Term.bitstring` → int bit count; else catchable `:badarg` (UTF-8 `string` is **not** accepted).
 - `bs_get_integer/2` — `(bitstring, nbits)` MSB-first integer prefix; short / wrong type / negative `nbits` → `:badarg`.
 - `bs_drop/2` — `(bitstring, nbits)` → remaining bitstring (`Valid`); short / wrong type → `:badarg`.
-- Mix: `<<x::N, rest::binary>>` (literal `N ∈ 1…8`), exact lit `<<1,2>>`, and exact-size `<<x::N>>` in `case` / `=` / heads; miss → `:match_error`. Patterns apply to raw bitstrings only (exclude `string` via `is_tag`).
+- Mix: `<<x::N, rest::binary>>` (literal `N ∈ 1…32`), exact lit `<<1,2>>`, and exact-size `<<x::N>>` in `case` / `=` / heads; miss → `:match_error`. Sizes **9…32** lower as repeated 1…8-bit `bs_get_integer` chunks combined MSB-first (construct side stays **N ∈ 1…8**). Patterns apply to raw bitstrings only (exclude `string` via `is_tag`).
 - Out of scope: comprehensions, `::utf8` match, dynamic sizes, `<>/2` of partials, full BEAM binary syntax.
 
 ### Closures
@@ -191,6 +191,7 @@ Teaching subset (no new Instr — builtins only):
 - `{"op":"apply_mfa","dest":D,"mod":M,"fun":F,"args":[…]}` — `M` and `F` must be **atoms**; arity = `len(args)`. Looks up MFA `"#{mod}.#{fun}/#{arity}"` across `modules[]` and pushes a frame like `call`.
 - Catchable failures (`raiseValue`): non-atom mod/fun or arity mismatch → `:badarg`; missing MFA → `:undef`.
 - Mix: bare module alias `Counter` → atom `"Counter"`; `apply(mod, :init, [arg])` with a literal arg list → `apply_mfa`. Used by stdlib `GenServer` / `Supervisor` for OTP-shaped callback dispatch.
+- **Stdlib-only OTP** (no new opcodes): `Agent` (GenServer + closure messages), `Task` (`spawn` MFA trampoline + monitor/`await`; not `spawn_link` because Autumn link signals on normal exit), `Registry` unique keys (GenServer + ETS + `DOWN` cleanup). Compile with `stdlib/*.ex` via smoke `extras` / `compile_files`.
 
 ### ETS
 

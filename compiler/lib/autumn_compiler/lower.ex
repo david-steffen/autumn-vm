@@ -2752,25 +2752,7 @@ defmodule AutumnCompiler.Lower do
   end
 
   defp emit_bitstring_seg_test({:lit, value, size}, cur, fail_idx, env, next, code) do
-    size_reg = next
-    next = next + 1
-    val_reg = next
-    next = next + 1
-    drop_reg = next
-    next = next + 1
-
-    code =
-      code ++
-        [
-          %{"op" => "load_lit", "reg" => size_reg, "lit" => %{"int" => size}},
-          %{
-            "op" => "call",
-            "dest" => val_reg,
-            "fun" => "bs_get_integer/2",
-            "args" => [cur, size_reg]
-          }
-        ]
-
+    {:ok, code, next, val_reg, drop_reg} = emit_bs_get_chunked(cur, size, next, code)
     ok = length(code) + 2
 
     code =
@@ -2782,13 +2764,7 @@ defmodule AutumnCompiler.Lower do
             "reg" => val_reg,
             "lit" => %{"int" => value}
           },
-          %{"op" => "jump", "target" => fail_idx},
-          %{
-            "op" => "call",
-            "dest" => drop_reg,
-            "fun" => "bs_drop/2",
-            "args" => [cur, size_reg]
-          }
+          %{"op" => "jump", "target" => fail_idx}
         ]
 
     {:ok, code, env, next, drop_reg}
@@ -2888,33 +2864,69 @@ defmodule AutumnCompiler.Lower do
   end
 
   defp emit_bitstring_seg_bind({:var, name, size}, cur, env, next, code) do
-    size_reg = next
-    next = next + 1
-    val_reg = next
-    next = next + 1
-    drop_reg = next
-    next = next + 1
-
-    code =
-      code ++
-        [
-          %{"op" => "load_lit", "reg" => size_reg, "lit" => %{"int" => size}},
-          %{
-            "op" => "call",
-            "dest" => val_reg,
-            "fun" => "bs_get_integer/2",
-            "args" => [cur, size_reg]
-          },
-          %{
-            "op" => "call",
-            "dest" => drop_reg,
-            "fun" => "bs_drop/2",
-            "args" => [cur, size_reg]
-          }
-        ]
-
+    {:ok, code, next, val_reg, drop_reg} = emit_bs_get_chunked(cur, size, next, code)
     env = Map.put(env, name, val_reg)
     {:ok, code, env, next, drop_reg}
+  end
+
+  # Match sizes 1…32: emit repeated 1…8-bit `bs_get_integer` + combine (MSB-first).
+  defp match_bit_chunks(size) when size >= 1 and size <= 32 do
+    rem = rem(size, 8)
+    n8 = div(size, 8)
+    prefix = if rem == 0, do: [], else: [rem]
+    prefix ++ List.duplicate(8, n8)
+  end
+
+  defp emit_bs_get_chunked(cur, size, next, code) do
+    chunks = match_bit_chunks(size)
+    acc_reg = next
+    next = next + 1
+    code = code ++ [%{"op" => "load_lit", "reg" => acc_reg, "lit" => %{"int" => 0}}]
+
+    {code, next, acc_reg, cursor} =
+      Enum.reduce(chunks, {code, next, acc_reg, cur}, fn chunk, {code, next, acc, cursor} ->
+        size_reg = next
+        next = next + 1
+        part_reg = next
+        next = next + 1
+        shift_reg = next
+        next = next + 1
+        mul_reg = next
+        next = next + 1
+        sum_reg = next
+        next = next + 1
+        drop_reg = next
+        next = next + 1
+
+        code =
+          code ++
+            [
+              %{"op" => "load_lit", "reg" => size_reg, "lit" => %{"int" => chunk}},
+              %{
+                "op" => "call",
+                "dest" => part_reg,
+                "fun" => "bs_get_integer/2",
+                "args" => [cursor, size_reg]
+              },
+              %{
+                "op" => "load_lit",
+                "reg" => shift_reg,
+                "lit" => %{"int" => Bitwise.bsl(1, chunk)}
+              },
+              %{"op" => "call", "dest" => mul_reg, "fun" => "*/2", "args" => [acc, shift_reg]},
+              %{"op" => "call", "dest" => sum_reg, "fun" => "+/2", "args" => [mul_reg, part_reg]},
+              %{
+                "op" => "call",
+                "dest" => drop_reg,
+                "fun" => "bs_drop/2",
+                "args" => [cursor, size_reg]
+              }
+            ]
+
+        {code, next, sum_reg, drop_reg}
+      end)
+
+    {:ok, code, next, acc_reg, cursor}
   end
 
   defp classify_bitstring_pattern(segs) do
@@ -2970,7 +2982,7 @@ defmodule AutumnCompiler.Lower do
 
   defp classify_bitstring_match_seg({:"::", _, [n, spec]}) when is_integer(n) do
     case segment_size(spec) do
-      {:ok, size} when size >= 1 and size <= 8 ->
+      {:ok, size} when size >= 1 and size <= 32 ->
         max = Bitwise.bsl(1, size)
 
         if n < 0 or n >= max do
@@ -2980,7 +2992,7 @@ defmodule AutumnCompiler.Lower do
         end
 
       {:ok, size} ->
-        {:error, "unsupported bitstring pattern size #{size} (teaching subset: 1..8)"}
+        {:error, "unsupported bitstring pattern size #{size} (teaching subset: 1..32)"}
 
       :error ->
         {:error, "unsupported bitstring pattern segment specifier"}
@@ -2999,7 +3011,7 @@ defmodule AutumnCompiler.Lower do
 
       true ->
         case segment_size(spec) do
-          {:ok, size} when size >= 1 and size <= 8 ->
+          {:ok, size} when size >= 1 and size <= 32 ->
             if name == :_ do
               {:ok, {:var, :_, size}}
             else
@@ -3007,7 +3019,7 @@ defmodule AutumnCompiler.Lower do
             end
 
           {:ok, size} ->
-            {:error, "unsupported bitstring pattern size #{size} (teaching subset: 1..8)"}
+            {:error, "unsupported bitstring pattern size #{size} (teaching subset: 1..32)"}
 
           :error ->
             {:error, "unsupported bitstring pattern segment on variable"}

@@ -205,6 +205,206 @@ theorem run_preserves (fuel : Nat) (s : State) (hs : State.WF s) {t : Term}
         simp [hs'] at h
         exact ih s' (step_preserves s s' hs hs') h
 
+/-- `afterInstrWith` errors are never structural. -/
+theorem afterInstrWith_error_not_structural (choice : State.ScheduleChoice) (s : State)
+    {e : StepError} (h : afterInstrWith choice s = .error e) :
+    isStructuralError e = false := by
+  simp only [afterInstrWith] at h
+  split at h
+  · cases h
+  · split at h
+    · simp [scheduleNextWith_error_is_noRunnable _ _ choice h, isStructuralError]
+    · cases h
+
+/-- Progress: well-formed `stepScheduled` never fails structurally. -/
+theorem stepScheduled_progress (choices : List State.ScheduleChoice) (s : State)
+    (hs : State.WF s) (hr : s.result = none) {e : StepError}
+    (h : stepScheduled choices s = .error e) :
+    isStructuralError e = false := by
+  have hres : s.result.isSome = false := by simp [Option.isSome, hr]
+  have hcur := hs.2.2.1
+  simp only [stepScheduled, hres, ↓reduceIte, hcur, ↓reduceDIte] at h
+  by_cases hnr :
+      ((s.processes[s.current]).status != .runnable) = true ∨
+        (s.processes[s.current]).result.isSome = true
+  · have hpark : ((s.processes[s.current]).status != .runnable ||
+        (s.processes[s.current]).result.isSome) = true := by
+      cases hnr with
+      | inl hp => simp [hp]
+      | inr hp => simp [hp]
+    simp [hpark] at h
+    cases hpop : State.popChoice choices with
+    | mk c rest0 =>
+      simp only [hpop] at h
+      split at h
+      · rename_i e' hsch
+        cases h
+        simp [scheduleNextWith_error_is_noRunnable s s.current c hsch, isStructuralError]
+      · cases h
+  · have hpark : ((s.processes[s.current]).status != .runnable ||
+        (s.processes[s.current]).result.isSome) = false := by
+      cases hst : (s.processes[s.current]).status != .runnable <;>
+        cases hr' : (s.processes[s.current]).result.isSome <;>
+          simp_all
+    simp [hpark] at h
+    have hp := hs.2.2.2 s.current hcur
+    have ⟨hrun, hnone⟩ := status_runnable_of_not_deschedule _ _ hnr
+    have hsz := runnable_stack_pos hp hrun hnone
+    have hempty : ¬((s.processes[s.current]).stack = #[]) := by
+      intro heq
+      have hsz0 : (s.processes[s.current]).stack.size = 0 := by simp [heq]
+      exact (Nat.ne_of_gt hsz) hsz0
+    simp [hempty] at h
+    have hfwf := runnable_top_WF hp hrun hnone
+    have hipok :
+        ¬(((s.processes[s.current]).stack[
+            (s.processes[s.current]).stack.size - 1]!).function.code.size ≤
+          ((s.processes[s.current]).stack[
+            (s.processes[s.current]).stack.size - 1]!).ip) := by
+      have := hfwf.2.2.1; omega
+    simp [hipok] at h
+    split at h
+    · rename_i e' hsi
+      cases h
+      exact stepInstr_error_not_structural _ _ _ _ hsi
+    · rename_i s1 hsi
+      cases hpop : State.popChoice choices with
+      | mk c rest0 =>
+        simp only [hpop] at h
+        split at h
+        · rename_i e' hai
+          cases h
+          exact afterInstrWith_error_not_structural c s1 hai
+        · cases h
+
+/-- Multi-step dual of `stepScheduled_preserves`. -/
+theorem runScheduled_preserves (fuel : Nat) (choices : List State.ScheduleChoice)
+    (s : State) (hs : State.WF s) {t : Term}
+    (h : runScheduled fuel choices s = .ok t) :
+    ∃ s', State.WF s' ∧ s'.result = some t := by
+  induction fuel generalizing s choices with
+  | zero =>
+    simp [runScheduled] at h
+  | succ fuel ih =>
+    simp [runScheduled] at h
+    cases hr : s.result with
+    | some v =>
+      simp [hr] at h
+      cases h
+      exact ⟨s, hs, by simp [hr]⟩
+    | none =>
+      simp [hr] at h
+      cases hs' : stepScheduled choices s with
+      | error _ =>
+        simp [hs'] at h
+      | ok pair =>
+        rcases pair with ⟨s', rest⟩
+        simp [hs'] at h
+        exact ih rest s' (stepScheduled_preserves choices s hs hs') h
+
+/-- Well-formed states never fail `runScheduled` structurally (only fuel or non-structural). -/
+theorem runScheduled_progress (fuel : Nat) (choices : List State.ScheduleChoice)
+    (s : State) (hs : State.WF s) {e : StepError}
+    (h : runScheduled fuel choices s = .error e) :
+    e = .typeError "out of fuel" ∨ isStructuralError e = false := by
+  induction fuel generalizing s choices with
+  | zero =>
+    simp [runScheduled] at h
+    left; cases h; rfl
+  | succ fuel ih =>
+    simp [runScheduled] at h
+    cases hr : s.result with
+    | some _ =>
+      simp [hr] at h
+      exact nomatch h
+    | none =>
+      simp [hr] at h
+      cases hs' : stepScheduled choices s with
+      | error e' =>
+        simp [hs'] at h
+        cases h
+        right
+        exact stepScheduled_progress choices s hs hr hs'
+      | ok pair =>
+        rcases pair with ⟨s', rest⟩
+        simp [hs'] at h
+        exact ih rest s' (stepScheduled_preserves choices s hs hs') h
+
+/-- Empty choice tape: `stepScheduled` agrees with ordinary `step`. -/
+theorem stepScheduled_nil_eq_step (s : State) :
+    stepScheduled ([] : List State.ScheduleChoice) s =
+      match step s with
+      | .ok s' => .ok (s', [])
+      | .error e => .error e := by
+  by_cases hdone : s.result.isSome = true
+  · simp [stepScheduled, step, hdone]
+  · have hr : s.result = none := by
+      cases hx : s.result with
+      | none => rfl
+      | some _ => simp [Option.isSome, hx] at hdone
+    have hres : s.result.isSome = false := by simp [Option.isSome, hr]
+    by_cases hcur : s.current < s.processes.size
+    · simp only [stepScheduled, step, hres, ↓reduceIte, hcur, ↓reduceDIte]
+      by_cases hpark :
+          ((s.processes[s.current]).status != .runnable ||
+            (s.processes[s.current]).result.isSome) = true
+      · cases hsch : State.scheduleNext s s.current with
+        | error e =>
+          simp [hpark, State.popChoice, scheduleNextWith_roundRobin, hsch]
+        | ok s' =>
+          simp [hpark, State.popChoice, scheduleNextWith_roundRobin, hsch]
+      · simp [hpark]
+        by_cases hempty : (s.processes[s.current]).stack = #[]
+        · simp [hempty]
+        · simp [hempty]
+          by_cases hip :
+              ((s.processes[s.current]).stack[
+                (s.processes[s.current]).stack.size - 1]!).function.code.size ≤
+              ((s.processes[s.current]).stack[
+                (s.processes[s.current]).stack.size - 1]!).ip
+          · simp [hip]
+          · have hip' :
+                ¬(((s.processes[s.current]).stack[
+                    (s.processes[s.current]).stack.size - 1]!).function.code.size ≤
+                  ((s.processes[s.current]).stack[
+                    (s.processes[s.current]).stack.size - 1]!).ip) := hip
+            simp [hip']
+            cases hsi :
+                stepInstr s (s.processes[s.current])
+                  ((s.processes[s.current]).stack[
+                    (s.processes[s.current]).stack.size - 1]!)
+                  (((s.processes[s.current]).stack[
+                      (s.processes[s.current]).stack.size - 1]!).function.code[
+                    ((s.processes[s.current]).stack[
+                      (s.processes[s.current]).stack.size - 1]!).ip]!) with
+            | error e =>
+              simp [hsi]
+            | ok s1 =>
+              simp [hsi, State.popChoice, afterInstrWith_roundRobin]
+              cases hai : afterInstr s1 with
+              | error e => simp [hai]
+              | ok s2 => simp [hai]
+    · have hcur' : ¬(s.current < s.processes.size) := hcur
+      simp [stepScheduled, step, hres, hcur']
+
+/-- Empty choice tape: `runScheduled` agrees with ordinary `run`. -/
+theorem runScheduled_nil_eq_run (fuel : Nat) (s : State) :
+    runScheduled fuel ([] : List State.ScheduleChoice) s = run fuel s := by
+  induction fuel generalizing s with
+  | zero =>
+    simp [runScheduled, run]
+  | succ fuel ih =>
+    simp only [runScheduled, run]
+    cases s.result with
+    | some _ => rfl
+    | none =>
+      rw [stepScheduled_nil_eq_step]
+      cases step s with
+      | error _ => rfl
+      | ok s' =>
+        change runScheduled fuel [] s' = run fuel s'
+        exact ih s'
+
 /-- If `initial` succeeds, a successful `runModule` witnesses a WF state with that result. -/
 theorem runModule_preserves (m : Module) (fuel cap : Nat)
     (hm : Module.WF m) (hcap : 0 < cap) {t : Term}

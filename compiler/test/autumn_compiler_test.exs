@@ -491,6 +491,41 @@ defmodule AutumnCompilerTest do
     assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "bs_drop/2"))
   end
 
+  test "lowers bitstring_wide (match sizes 9..32 via chunks)" do
+    path = Path.join(@fixtures, "bitstring_wide.ex")
+    assert {:ok, module} = AutumnCompiler.compile_file(path)
+    code = all_code(module)
+    gets = Enum.count(code, &(&1["op"] == "call" && &1["fun"] == "bs_get_integer/2"))
+    assert gets >= 3
+  end
+
+  test "rejects unsupported bitstring match forms" do
+    src = """
+    defmodule Main do
+      def main do
+        <<x::utf8>> = <<1>>
+        x
+      end
+    end
+    """
+
+    assert {:error, msg} = AutumnCompiler.Lower.lower(Code.string_to_quoted!(src))
+    assert msg =~ "unsupported"
+
+    src2 = """
+    defmodule Main do
+      def main do
+        n = 8
+        <<x::size(n)>> = <<1>>
+        x
+      end
+    end
+    """
+
+    assert {:error, msg2} = AutumnCompiler.Lower.lower(Code.string_to_quoted!(src2))
+    assert msg2 =~ "unsupported"
+  end
+
   test "lowers if_else / cond_main" do
     path = Path.join(@fixtures, "if_else.ex")
     assert {:ok, module} = AutumnCompiler.compile_file(path)
