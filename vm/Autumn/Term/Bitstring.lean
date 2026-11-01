@@ -107,5 +107,56 @@ def ofBytesTrailing? (bytes : ByteArray) (trailing : Nat) : Option Bitstring :=
     let cleared := UInt8.ofNat ((last.toNat / (2 ^ trailing)) * (2 ^ trailing))
     some ⟨bytes.set! (bytes.size - 1) cleared, trailing⟩
 
+/-- MSB-first bit list of length `bitSize b` (each entry `0` or `1`). -/
+def toBits (b : Bitstring) : Array Nat :=
+  Id.run do
+    let total := bitSize b
+    let mut bits : Array Nat := Array.empty
+    let mut i := 0
+    while i < total do
+      let byteIdx := i / 8
+      let bitInByte := 7 - i % 8
+      let byte := (b.bytes.get! byteIdx).toNat
+      bits := bits.push ((byte >>> bitInByte) % 2)
+      i := i + 1
+    return bits
+
+/-- Pack MSB-first `0`/`1` bits into a `Valid` bitstring (`none` on bad bits). -/
+def ofBits? (bits : Array Nat) : Option Bitstring :=
+  Id.run do
+    for b in bits do
+      if b ≠ 0 && b ≠ 1 then return none
+    if bits.size = 0 then
+      return some (ofBytes ByteArray.empty)
+    let trailing := (8 - bits.size % 8) % 8
+    let mut padded := bits
+    let mut t := 0
+    while t < trailing do
+      padded := padded.push 0
+      t := t + 1
+    let mut out := ByteArray.empty
+    let mut i := 0
+    while i < padded.size do
+      let mut acc := 0
+      let mut j := 0
+      while j < 8 do
+        acc := acc * 2 + padded[i + j]!
+        j := j + 1
+      out := out.push (UInt8.ofNat acc)
+      i := i + 8
+    return ofBytesTrailing? out trailing
+
+/-- Take the high `n` bits as an integer (MSB-first). `none` if `n > bitSize`. -/
+def getInteger? (b : Bitstring) (n : Nat) : Option Int :=
+  if n > bitSize b then none
+  else
+    let bits := (toBits b).extract 0 n
+    some (Int.ofNat (bits.foldl (fun acc bit => acc * 2 + bit) 0))
+
+/-- Drop the high `n` bits; remainder repacked `Valid`. `none` if `n > bitSize`. -/
+def drop? (b : Bitstring) (n : Nat) : Option Bitstring :=
+  if n > bitSize b then none
+  else ofBits? ((toBits b).extract n (bitSize b))
+
 end Bitstring
 end Autumn.Term

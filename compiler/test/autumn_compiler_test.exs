@@ -522,7 +522,7 @@ defmodule AutumnCompilerTest do
     assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "ets_delete/2"))
   end
 
-  test "lowers ets_bag / ets_named / ets_select (stdlib pulls IR v18)" do
+  test "lowers ets_bag / ets_named / ets_select (stdlib pulls IR v21)" do
     ets = Path.join(@stdlib, "ets.ex")
 
     for {stem, funs} <- [
@@ -535,8 +535,8 @@ defmodule AutumnCompilerTest do
       assert {:ok, module} = AutumnCompiler.compile_files([ets, path])
       expected = expected_path |> File.read!() |> Jason.decode!()
       assert module == expected
-      # `stdlib/ets.ex` defines `delete_object` / `heir` → image needs v18.
-      assert module["version"] == 18
+      # `stdlib/ets.ex` defines `delete_object` / `heir` / `first` / `next` / `give_away` → v21.
+      assert module["version"] == 21
 
       code =
         module["modules"]
@@ -550,7 +550,7 @@ defmodule AutumnCompilerTest do
     end
   end
 
-  test "lowers ets_guards / ets_delete_object / ets_ordered / ets_heir (IR v18)" do
+  test "lowers ets_guards / ets_delete_object / ets_ordered / ets_heir (IR v21 via stdlib)" do
     ets = Path.join(@stdlib, "ets.ex")
 
     for {stem, funs} <- [
@@ -564,7 +564,7 @@ defmodule AutumnCompilerTest do
       assert {:ok, module} = AutumnCompiler.compile_files([ets, path])
       expected = expected_path |> File.read!() |> Jason.decode!()
       assert module == expected
-      assert module["version"] == 18
+      assert module["version"] == 21
 
       code =
         module["modules"]
@@ -623,6 +623,20 @@ defmodule AutumnCompilerTest do
                    &1["lit"]
                  ))
            )
+  end
+
+  test "lowers binary_match (IR v20 bitstring patterns)" do
+    path = Path.join(@fixtures, "binary_match.ex")
+    expected_path = Path.join(@fixtures, "binary_match.bc.json")
+    assert {:ok, module} = AutumnCompiler.compile_file(path)
+    expected = expected_path |> File.read!() |> Jason.decode!()
+    assert module == expected
+    assert module["version"] == 20
+    code = Enum.flat_map(module["functions"], & &1["code"])
+
+    assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "bit_size/1"))
+    assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "bs_get_integer/2"))
+    assert Enum.any?(code, &(&1["op"] == "call" && &1["fun"] == "bs_drop/2"))
   end
 
   test "lowers if_else / cond_main (Phase 7)" do

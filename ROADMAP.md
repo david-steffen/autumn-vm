@@ -300,7 +300,38 @@ No new IR. Close Phase 26.3 + thin Phase 27 schedule tails.
 2. [x] `covers_nil` / `covers_cons_prefer` / `covers_mono`; `stepScheduled_preserves` (WF)
 3. [x] Out of scope: full `runScheduled_*` tower, OTP-fixture schedule laws, Meta/`Environment` dump tooling
 
+## Phase 36 — Binary matching (IR bump)
+
+Teaching follow-on to Phase 28/30 construct. Clean-room Erlang binary semantics (MIT); no Lynx text. Still no comprehensions.
+
+1. [x] IR.md v20: `bit_size/1` / `bs_get_integer/2` / `bs_drop/2`; Mix `needs_v20?`; Lean `versionOk*` / Decode
+2. [x] Lean: `Term.Bitstring.getInteger?` / `drop?` + builtins (miss → `:match_error`; type errors → `:badarg`); generic call/builtin preserve/progress
+3. [x] Mix: bitstring patterns in `case` / `=` / heads — exact lit, `<<x::N>>`, `<<x::N, rest::binary>>` (literal N ∈ 1…8)
+4. [x] Fixture `binary_match` → `42`; Mix golden + smoke
+5. [x] Out of scope: binary comprehensions, `::utf8` match beyond today’s string, dynamic/non-literal sizes, `<>/2` of partials, full BEAM binary syntax
+
+## Phase 37 — ETS traversal + ownership tails
+
+Fill Phase 32 out-of-scope. Teaching subset — not full OTP match-spec BIFs.
+
+1. [x] IR.md v21 + builtins `ets_first/1` / `ets_next/2` / `ets_give_away/3`; Mix `needs_v21?` (skipped private tables)
+2. [x] Lean: `Ets.keysInOrder` / `firstKey` / `nextKey`; State + Step; preserve/progress/`result_is_toTerm`
+3. [x] `stdlib/ets.ex`; fixtures `ets_traverse` → `6` / `ets_give_away` → `42`; Mix goldens + smoke
+4. [x] Document in AGENTS / IR.md; out of scope: rich match-spec compiler, `slot`/`select_reverse`, bag-key quirks beyond teaching, distributed ETS, private tables
+
+## Phase 38 — Nested supervisors + `:type` ordering
+
+Use carried child `:type` (Phase 34) for demo-depth OTP trees. No new IR if start/stop can stay stdlib-only.
+
+1. [x] `Supervisor.child_main/1` + `spawn_link` MFA boot for nested supervisors; `order_start` / `order_shutdown` helpers (teaching rule documented; start/stop still list-order for Mix stability)
+2. [x] Restart intensity still per-supervisor; document teaching limits vs BEAM in stdlib header
+3. [x] Fixture `supervisor_nested` → `42`; Mix golden + smoke
+4. [x] AGENTS / stdlib comments; smoke allowlist
+5. [x] Out of scope: true BEAM hibernate, auto_shutdown beyond today’s `:significant`, dynamic MFA spawn from non-literal Mix args, full OTP child id modules, wiring type-reorder into start/stop under current Mix
+
 ## Later (deprioritized)
 
-- Verified compiler — when started, design purity layers (`Except` / dispatcher / effectful result + law levels pure→concurrent) for compiled-program meaning; OTP-shaped Lean namespaces (`GenServer` / `Supervisor` lemmas) alongside stdlib (inspiration only)
+- **Verified compiler sketch** — design purity layers (`Except` / dispatcher / effectful result + law levels pure→concurrent) for compiled-program meaning; OTP-shaped Lean namespaces (`GenServer` / `Supervisor` lemmas) alongside stdlib (Lynx inspiration only; Autumn-authored)
 - Induction principles over IR functions if program-level laws appear
+- Full `runScheduled_preserves` / `_progress`; OTP-fixture schedule observational laws on the Phase 27 choice-tape API
+- Meta/`Environment` dump of theorem names (heavier than the Phase 35 file golden)

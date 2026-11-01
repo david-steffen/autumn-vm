@@ -3505,6 +3505,41 @@
           "name": "Supervisor.start_link/3"
         },
         {
+          "arity": 1,
+          "code": [
+            {
+              "lit": {
+                "atom": "one_for_one"
+              },
+              "op": "load_lit",
+              "reg": 1
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "load_lit",
+              "reg": 2
+            },
+            {
+              "args": [
+                0,
+                1,
+                2
+              ],
+              "dest": 3,
+              "fun": "Supervisor.server/3",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 3
+            }
+          ],
+          "locals": 4,
+          "name": "Supervisor.child_main/1"
+        },
+        {
           "arity": 3,
           "code": [
             {
@@ -3834,6 +3869,694 @@
           "name": "Supervisor.start_all/2"
         },
         {
+          "arity": 1,
+          "code": [
+            {
+              "lit": {
+                "atom": "worker"
+              },
+              "op": "load_lit",
+              "reg": 1
+            },
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "Supervisor.filter_specs/2",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "atom": "supervisor"
+              },
+              "op": "load_lit",
+              "reg": 3
+            },
+            {
+              "args": [
+                0,
+                3
+              ],
+              "dest": 4,
+              "fun": "Supervisor.filter_specs/2",
+              "op": "call"
+            },
+            {
+              "args": [
+                2,
+                4
+              ],
+              "dest": 5,
+              "fun": "Supervisor.append/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 5
+            }
+          ],
+          "locals": 6,
+          "name": "Supervisor.order_start/1"
+        },
+        {
+          "arity": 1,
+          "code": [
+            {
+              "lit": {
+                "atom": "worker"
+              },
+              "op": "load_lit",
+              "reg": 1
+            },
+            {
+              "args": [
+                0,
+                1
+              ],
+              "dest": 2,
+              "fun": "Supervisor.filter_kids/2",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "atom": "supervisor"
+              },
+              "op": "load_lit",
+              "reg": 3
+            },
+            {
+              "args": [
+                0,
+                3
+              ],
+              "dest": 4,
+              "fun": "Supervisor.filter_kids/2",
+              "op": "call"
+            },
+            {
+              "args": [
+                2,
+                4
+              ],
+              "dest": 5,
+              "fun": "Supervisor.append/2",
+              "op": "call"
+            },
+            {
+              "op": "return",
+              "reg": 5
+            }
+          ],
+          "locals": 6,
+          "name": "Supervisor.order_shutdown/1"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "lit": {
+                "list": []
+              },
+              "op": "jump_if_eq",
+              "reg": 0,
+              "target": 2
+            },
+            {
+              "op": "jump",
+              "target": 5
+            },
+            {
+              "lit": {
+                "list": []
+              },
+              "op": "load_lit",
+              "reg": 3
+            },
+            {
+              "dest": 2,
+              "op": "move",
+              "src": 3
+            },
+            {
+              "op": "jump",
+              "target": 47
+            },
+            {
+              "dest": 4,
+              "op": "is_tag",
+              "reg": 0,
+              "tag": "list"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 4,
+              "target": 8
+            },
+            {
+              "op": "jump",
+              "target": 45
+            },
+            {
+              "args": [
+                0
+              ],
+              "dest": 5,
+              "fun": "list_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 0
+              },
+              "op": "jump_if_eq",
+              "reg": 5,
+              "target": 11
+            },
+            {
+              "op": "jump",
+              "target": 12
+            },
+            {
+              "op": "jump",
+              "target": 7
+            },
+            {
+              "dest": 6,
+              "index": 0,
+              "list": 0,
+              "op": "get_list_rest"
+            },
+            {
+              "op": "jump",
+              "target": 15
+            },
+            {
+              "op": "jump",
+              "target": 7
+            },
+            {
+              "dest": 7,
+              "index": 0,
+              "list": 0,
+              "op": "get_list_elem"
+            },
+            {
+              "dest": 8,
+              "index": 0,
+              "list": 0,
+              "op": "get_list_rest"
+            },
+            {
+              "args": [
+                7
+              ],
+              "dest": 9,
+              "fun": "Supervisor.normalize_child/1",
+              "op": "call"
+            },
+            {
+              "dest": 11,
+              "op": "is_tag",
+              "reg": 9,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 11,
+              "target": 21
+            },
+            {
+              "op": "jump",
+              "target": 41
+            },
+            {
+              "args": [
+                9
+              ],
+              "dest": 12,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 6
+              },
+              "op": "jump_if_eq",
+              "reg": 12,
+              "target": 24
+            },
+            {
+              "op": "jump",
+              "target": 20
+            },
+            {
+              "dest": 13,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 9
+            },
+            {
+              "dest": 14,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 9
+            },
+            {
+              "dest": 15,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 9
+            },
+            {
+              "dest": 16,
+              "index": 3,
+              "op": "get_tuple_elem",
+              "tuple": 9
+            },
+            {
+              "dest": 17,
+              "index": 4,
+              "op": "get_tuple_elem",
+              "tuple": 9
+            },
+            {
+              "dest": 18,
+              "index": 5,
+              "op": "get_tuple_elem",
+              "tuple": 9
+            },
+            {
+              "args": [
+                18,
+                1
+              ],
+              "dest": 20,
+              "fun": "==/2",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "bool": false
+              },
+              "op": "jump_if_eq",
+              "reg": 20,
+              "target": 37
+            },
+            {
+              "lit": null,
+              "op": "jump_if_eq",
+              "reg": 20,
+              "target": 37
+            },
+            {
+              "args": [
+                8,
+                1
+              ],
+              "dest": 21,
+              "fun": "Supervisor.filter_specs/2",
+              "op": "call"
+            },
+            {
+              "args": [
+                7,
+                21
+              ],
+              "dest": 22,
+              "fun": "cons/2",
+              "op": "call"
+            },
+            {
+              "dest": 19,
+              "op": "move",
+              "src": 22
+            },
+            {
+              "op": "jump",
+              "target": 39
+            },
+            {
+              "args": [
+                8,
+                1
+              ],
+              "dest": 23,
+              "fun": "Supervisor.filter_specs/2",
+              "op": "call"
+            },
+            {
+              "dest": 19,
+              "op": "move",
+              "src": 23
+            },
+            {
+              "dest": 10,
+              "op": "move",
+              "src": 19
+            },
+            {
+              "op": "jump",
+              "target": 43
+            },
+            {
+              "lit": {
+                "atom": "match_error"
+              },
+              "op": "load_lit",
+              "reg": 24
+            },
+            {
+              "op": "raise",
+              "reg": 24
+            },
+            {
+              "dest": 2,
+              "op": "move",
+              "src": 10
+            },
+            {
+              "op": "jump",
+              "target": 47
+            },
+            {
+              "lit": {
+                "atom": "match_error"
+              },
+              "op": "load_lit",
+              "reg": 25
+            },
+            {
+              "op": "raise",
+              "reg": 25
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 26,
+          "name": "Supervisor.filter_specs/2"
+        },
+        {
+          "arity": 2,
+          "code": [
+            {
+              "lit": {
+                "list": []
+              },
+              "op": "jump_if_eq",
+              "reg": 0,
+              "target": 2
+            },
+            {
+              "op": "jump",
+              "target": 5
+            },
+            {
+              "lit": {
+                "list": []
+              },
+              "op": "load_lit",
+              "reg": 3
+            },
+            {
+              "dest": 2,
+              "op": "move",
+              "src": 3
+            },
+            {
+              "op": "jump",
+              "target": 47
+            },
+            {
+              "dest": 4,
+              "op": "is_tag",
+              "reg": 0,
+              "tag": "list"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 4,
+              "target": 8
+            },
+            {
+              "op": "jump",
+              "target": 45
+            },
+            {
+              "args": [
+                0
+              ],
+              "dest": 5,
+              "fun": "list_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 0
+              },
+              "op": "jump_if_eq",
+              "reg": 5,
+              "target": 11
+            },
+            {
+              "op": "jump",
+              "target": 12
+            },
+            {
+              "op": "jump",
+              "target": 7
+            },
+            {
+              "dest": 6,
+              "index": 0,
+              "list": 0,
+              "op": "get_list_rest"
+            },
+            {
+              "op": "jump",
+              "target": 15
+            },
+            {
+              "op": "jump",
+              "target": 7
+            },
+            {
+              "dest": 7,
+              "index": 0,
+              "list": 0,
+              "op": "get_list_elem"
+            },
+            {
+              "dest": 8,
+              "index": 0,
+              "list": 0,
+              "op": "get_list_rest"
+            },
+            {
+              "dest": 10,
+              "op": "is_tag",
+              "reg": 7,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 10,
+              "target": 20
+            },
+            {
+              "op": "jump",
+              "target": 41
+            },
+            {
+              "args": [
+                7
+              ],
+              "dest": 11,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 7
+              },
+              "op": "jump_if_eq",
+              "reg": 11,
+              "target": 23
+            },
+            {
+              "op": "jump",
+              "target": 19
+            },
+            {
+              "dest": 12,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 7
+            },
+            {
+              "dest": 13,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 7
+            },
+            {
+              "dest": 14,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 7
+            },
+            {
+              "dest": 15,
+              "index": 3,
+              "op": "get_tuple_elem",
+              "tuple": 7
+            },
+            {
+              "dest": 16,
+              "index": 4,
+              "op": "get_tuple_elem",
+              "tuple": 7
+            },
+            {
+              "dest": 17,
+              "index": 5,
+              "op": "get_tuple_elem",
+              "tuple": 7
+            },
+            {
+              "dest": 18,
+              "index": 6,
+              "op": "get_tuple_elem",
+              "tuple": 7
+            },
+            {
+              "args": [
+                18,
+                1
+              ],
+              "dest": 20,
+              "fun": "==/2",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "bool": false
+              },
+              "op": "jump_if_eq",
+              "reg": 20,
+              "target": 37
+            },
+            {
+              "lit": null,
+              "op": "jump_if_eq",
+              "reg": 20,
+              "target": 37
+            },
+            {
+              "args": [
+                8,
+                1
+              ],
+              "dest": 21,
+              "fun": "Supervisor.filter_kids/2",
+              "op": "call"
+            },
+            {
+              "args": [
+                7,
+                21
+              ],
+              "dest": 22,
+              "fun": "cons/2",
+              "op": "call"
+            },
+            {
+              "dest": 19,
+              "op": "move",
+              "src": 22
+            },
+            {
+              "op": "jump",
+              "target": 39
+            },
+            {
+              "args": [
+                8,
+                1
+              ],
+              "dest": 23,
+              "fun": "Supervisor.filter_kids/2",
+              "op": "call"
+            },
+            {
+              "dest": 19,
+              "op": "move",
+              "src": 23
+            },
+            {
+              "dest": 9,
+              "op": "move",
+              "src": 19
+            },
+            {
+              "op": "jump",
+              "target": 43
+            },
+            {
+              "lit": {
+                "atom": "match_error"
+              },
+              "op": "load_lit",
+              "reg": 24
+            },
+            {
+              "op": "raise",
+              "reg": 24
+            },
+            {
+              "dest": 2,
+              "op": "move",
+              "src": 9
+            },
+            {
+              "op": "jump",
+              "target": 47
+            },
+            {
+              "lit": {
+                "atom": "match_error"
+              },
+              "op": "load_lit",
+              "reg": 25
+            },
+            {
+              "op": "raise",
+              "reg": 25
+            },
+            {
+              "op": "return",
+              "reg": 2
+            }
+          ],
+          "locals": 26,
+          "name": "Supervisor.filter_kids/2"
+        },
+        {
           "arity": 2,
           "code": [
             {
@@ -3861,7 +4584,7 @@
             },
             {
               "op": "jump",
-              "target": 24
+              "target": 27
             },
             {
               "args": [
@@ -3947,13 +4670,25 @@
             },
             {
               "dest": 10,
-              "index": 0,
+              "index": 1,
               "op": "get_tuple_elem",
-              "tuple": 2
+              "tuple": 6
+            },
+            {
+              "lit": {
+                "atom": "child_main"
+              },
+              "op": "jump_if_eq",
+              "reg": 10,
+              "target": 20
+            },
+            {
+              "op": "jump",
+              "target": 10
             },
             {
               "dest": 11,
-              "index": 1,
+              "index": 0,
               "op": "get_tuple_elem",
               "tuple": 2
             },
@@ -3961,23 +4696,25 @@
               "dest": 12,
               "index": 1,
               "op": "get_tuple_elem",
-              "tuple": 11
+              "tuple": 2
             },
             {
               "dest": 13,
               "index": 2,
               "op": "get_tuple_elem",
-              "tuple": 11
+              "tuple": 12
             },
             {
               "args": [
-                10,
-                12,
                 13
               ],
               "dest": 14,
-              "fun": "Supervisor.run_mfa/3",
+              "fun": "Supervisor.child_main/1",
               "op": "spawn"
+            },
+            {
+              "op": "link",
+              "pid": 14
             },
             {
               "dest": 3,
@@ -3986,7 +4723,7 @@
             },
             {
               "op": "jump",
-              "target": 37
+              "target": 63
             },
             {
               "dest": 15,
@@ -4000,11 +4737,11 @@
               },
               "op": "jump_if_eq",
               "reg": 15,
-              "target": 27
+              "target": 30
             },
             {
               "op": "jump",
-              "target": 35
+              "target": 50
             },
             {
               "args": [
@@ -4020,59 +4757,202 @@
               },
               "op": "jump_if_eq",
               "reg": 16,
-              "target": 30
+              "target": 33
             },
             {
               "op": "jump",
-              "target": 26
+              "target": 29
             },
             {
               "dest": 17,
-              "index": 0,
+              "index": 1,
               "op": "get_tuple_elem",
               "tuple": 2
             },
             {
               "dest": 18,
+              "op": "is_tag",
+              "reg": 17,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 18,
+              "target": 37
+            },
+            {
+              "op": "jump",
+              "target": 29
+            },
+            {
+              "args": [
+                17
+              ],
+              "dest": 19,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 3
+              },
+              "op": "jump_if_eq",
+              "reg": 19,
+              "target": 40
+            },
+            {
+              "op": "jump",
+              "target": 36
+            },
+            {
+              "dest": 20,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 17
+            },
+            {
+              "lit": {
+                "atom": "mfa"
+              },
+              "op": "jump_if_eq",
+              "reg": 20,
+              "target": 43
+            },
+            {
+              "op": "jump",
+              "target": 36
+            },
+            {
+              "dest": 21,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 2
+            },
+            {
+              "dest": 22,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 2
+            },
+            {
+              "dest": 23,
+              "index": 1,
+              "op": "get_tuple_elem",
+              "tuple": 22
+            },
+            {
+              "dest": 24,
+              "index": 2,
+              "op": "get_tuple_elem",
+              "tuple": 22
+            },
+            {
+              "args": [
+                21,
+                23,
+                24
+              ],
+              "dest": 25,
+              "fun": "Supervisor.run_mfa/3",
+              "op": "spawn"
+            },
+            {
+              "dest": 3,
+              "op": "move",
+              "src": 25
+            },
+            {
+              "op": "jump",
+              "target": 63
+            },
+            {
+              "dest": 26,
+              "op": "is_tag",
+              "reg": 2,
+              "tag": "tuple"
+            },
+            {
+              "lit": {
+                "bool": true
+              },
+              "op": "jump_if_eq",
+              "reg": 26,
+              "target": 53
+            },
+            {
+              "op": "jump",
+              "target": 61
+            },
+            {
+              "args": [
+                2
+              ],
+              "dest": 27,
+              "fun": "tuple_size/1",
+              "op": "call"
+            },
+            {
+              "lit": {
+                "int": 2
+              },
+              "op": "jump_if_eq",
+              "reg": 27,
+              "target": 56
+            },
+            {
+              "op": "jump",
+              "target": 52
+            },
+            {
+              "dest": 28,
+              "index": 0,
+              "op": "get_tuple_elem",
+              "tuple": 2
+            },
+            {
+              "dest": 29,
               "index": 1,
               "op": "get_tuple_elem",
               "tuple": 2
             },
             {
               "args": [
-                17,
-                18
+                28,
+                29
               ],
-              "dest": 19,
+              "dest": 30,
               "fun": "GenServer.start/2",
               "op": "call"
             },
             {
               "dest": 3,
               "op": "move",
-              "src": 19
+              "src": 30
             },
             {
               "op": "jump",
-              "target": 37
+              "target": 63
             },
             {
               "lit": {
                 "atom": "match_error"
               },
               "op": "load_lit",
-              "reg": 20
+              "reg": 31
             },
             {
               "op": "raise",
-              "reg": 20
+              "reg": 31
             },
             {
               "op": "return",
               "reg": 3
             }
           ],
-          "locals": 21,
+          "locals": 32,
           "name": "Supervisor.boot/2"
         },
         {

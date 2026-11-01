@@ -546,6 +546,36 @@ def etsHeir (s : State) (tid : Nat) (heirT : Term) : Option State :=
   else
     none
 
+/-- IR v21 `ets_first/1` — first key or `"$end_of_table"`. -/
+def etsFirst (s : State) (tid : Nat) : Option Term :=
+  if h : tid < s.etsTables.size then
+    if !(s.etsTables[tid]'h).alive then none
+    else some (Ets.firstKey (s.etsTables[tid]'h))
+  else
+    none
+
+/-- IR v21 `ets_next/2` — next key after `key` or `"$end_of_table"`. -/
+def etsNext (s : State) (tid : Nat) (key : Term) : Option Term :=
+  if h : tid < s.etsTables.size then
+    if !(s.etsTables[tid]'h).alive then none
+    else some (Ets.nextKey (s.etsTables[tid]'h) key)
+  else
+    none
+
+/-- IR v21 `ets_give_away/3` — owner transfers table; delivers `ETS-TRANSFER`. -/
+def etsGiveAway (s : State) (tid : Nat) (fromPid toPid : Nat) (data : Term) :
+    Option State :=
+  if h : tid < s.etsTables.size then
+    if !(s.etsTables[tid]'h).alive then none
+    else if (s.etsTables[tid]'h).owner != some fromPid then none
+    else if !processLive s toPid then none
+    else
+      let t1 := { (s.etsTables[tid]'h) with owner := some toPid, heir := none }
+      let s := { s with etsTables := s.etsTables.set tid t1 h }
+      some (notifyEtsTransfer s tid fromPid toPid data)
+  else
+    none
+
 /-- Drop the current process's monitor for `refId` and flush a pending DOWN
 (OTP `demonitor(Ref, [:flush])` — Autumn always flushes). No-op if absent. -/
 def demonitorWith (s : State) (refId : Nat) : Except StepError State :=

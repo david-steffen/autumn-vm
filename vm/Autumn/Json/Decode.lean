@@ -267,7 +267,7 @@ def decodeModule (j : Json) : Except StepError Module := do
       version != 6 && version != 7 && version != 8 && version != 9 && version != 10 &&
       version != 11 && version != 12 && version != 13 && version != 14 &&
       version != 15 && version != 16 && version != 17 && version != 18 &&
-      version != 19 then
+      version != 19 && version != 20 && version != 21 then
     err s!"unsupported IR version: {version}"
   let entry ← asString (← field j "entry")
   match j.getObjVal? "modules" with

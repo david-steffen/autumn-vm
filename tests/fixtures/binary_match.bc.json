@@ -1,0 +1,310 @@
+{
+  "entry": "Main.main/0",
+  "functions": [
+    {
+      "arity": 0,
+      "code": [
+        {
+          "lit": {
+            "binary": [
+              40,
+              2
+            ]
+          },
+          "op": "load_lit",
+          "reg": 0
+        },
+        {
+          "dest": 1,
+          "op": "is_tag",
+          "reg": 0,
+          "tag": "string"
+        },
+        {
+          "lit": {
+            "bool": false
+          },
+          "op": "jump_if_eq",
+          "reg": 1,
+          "target": 4
+        },
+        {
+          "op": "jump",
+          "target": 21
+        },
+        {
+          "dest": 2,
+          "op": "is_tag",
+          "reg": 0,
+          "tag": "bitstring"
+        },
+        {
+          "lit": {
+            "bool": true
+          },
+          "op": "jump_if_eq",
+          "reg": 2,
+          "target": 7
+        },
+        {
+          "op": "jump",
+          "target": 3
+        },
+        {
+          "args": [
+            0
+          ],
+          "dest": 3,
+          "fun": "bit_size/1",
+          "op": "call"
+        },
+        {
+          "lit": {
+            "int": 8
+          },
+          "op": "load_lit",
+          "reg": 4
+        },
+        {
+          "args": [
+            3,
+            4
+          ],
+          "dest": 5,
+          "fun": ">=/2",
+          "op": "call"
+        },
+        {
+          "lit": {
+            "bool": true
+          },
+          "op": "jump_if_eq",
+          "reg": 5,
+          "target": 12
+        },
+        {
+          "op": "jump",
+          "target": 3
+        },
+        {
+          "lit": {
+            "int": 8
+          },
+          "op": "load_lit",
+          "reg": 6
+        },
+        {
+          "args": [
+            0,
+            6
+          ],
+          "dest": 7,
+          "fun": "bs_drop/2",
+          "op": "call"
+        },
+        {
+          "dest": 8,
+          "op": "is_tag",
+          "reg": 7,
+          "tag": "binary"
+        },
+        {
+          "lit": {
+            "bool": true
+          },
+          "op": "jump_if_eq",
+          "reg": 8,
+          "target": 17
+        },
+        {
+          "op": "jump",
+          "target": 3
+        },
+        {
+          "lit": {
+            "int": 8
+          },
+          "op": "load_lit",
+          "reg": 9
+        },
+        {
+          "args": [
+            0,
+            9
+          ],
+          "dest": 10,
+          "fun": "bs_get_integer/2",
+          "op": "call"
+        },
+        {
+          "args": [
+            0,
+            9
+          ],
+          "dest": 11,
+          "fun": "bs_drop/2",
+          "op": "call"
+        },
+        {
+          "op": "jump",
+          "target": 23
+        },
+        {
+          "lit": {
+            "atom": "match_error"
+          },
+          "op": "load_lit",
+          "reg": 12
+        },
+        {
+          "op": "raise",
+          "reg": 12
+        },
+        {
+          "dest": 13,
+          "op": "is_tag",
+          "reg": 11,
+          "tag": "string"
+        },
+        {
+          "lit": {
+            "bool": false
+          },
+          "op": "jump_if_eq",
+          "reg": 13,
+          "target": 26
+        },
+        {
+          "op": "jump",
+          "target": 40
+        },
+        {
+          "dest": 14,
+          "op": "is_tag",
+          "reg": 11,
+          "tag": "bitstring"
+        },
+        {
+          "lit": {
+            "bool": true
+          },
+          "op": "jump_if_eq",
+          "reg": 14,
+          "target": 29
+        },
+        {
+          "op": "jump",
+          "target": 25
+        },
+        {
+          "args": [
+            11
+          ],
+          "dest": 15,
+          "fun": "bit_size/1",
+          "op": "call"
+        },
+        {
+          "lit": {
+            "int": 8
+          },
+          "op": "load_lit",
+          "reg": 16
+        },
+        {
+          "args": [
+            15,
+            16
+          ],
+          "dest": 17,
+          "fun": "==/2",
+          "op": "call"
+        },
+        {
+          "lit": {
+            "bool": true
+          },
+          "op": "jump_if_eq",
+          "reg": 17,
+          "target": 34
+        },
+        {
+          "op": "jump",
+          "target": 25
+        },
+        {
+          "lit": {
+            "int": 8
+          },
+          "op": "load_lit",
+          "reg": 18
+        },
+        {
+          "args": [
+            11,
+            18
+          ],
+          "dest": 19,
+          "fun": "bs_drop/2",
+          "op": "call"
+        },
+        {
+          "lit": {
+            "int": 8
+          },
+          "op": "load_lit",
+          "reg": 20
+        },
+        {
+          "args": [
+            11,
+            20
+          ],
+          "dest": 21,
+          "fun": "bs_get_integer/2",
+          "op": "call"
+        },
+        {
+          "args": [
+            11,
+            20
+          ],
+          "dest": 22,
+          "fun": "bs_drop/2",
+          "op": "call"
+        },
+        {
+          "op": "jump",
+          "target": 42
+        },
+        {
+          "lit": {
+            "atom": "match_error"
+          },
+          "op": "load_lit",
+          "reg": 23
+        },
+        {
+          "op": "raise",
+          "reg": 23
+        },
+        {
+          "args": [
+            10,
+            21
+          ],
+          "dest": 24,
+          "fun": "+/2",
+          "op": "call"
+        },
+        {
+          "op": "return",
+          "reg": 24
+        }
+      ],
+      "locals": 25,
+      "name": "Main.main/0"
+    }
+  ],
+  "version": 20
+}

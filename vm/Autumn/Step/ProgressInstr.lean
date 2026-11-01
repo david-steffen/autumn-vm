@@ -201,33 +201,71 @@ theorem call_error_not_structural
                                   · exact nomatch herr
                               · simp only [har, ↓reduceIte, ite_true] at herr; cases herr; rfl
                             · simp [hetsh] at herr
-                              by_cases hmref : funName = "make_ref/0"
-                              · simp [hmref] at herr
-                                split at herr
-                                · exact nomatch herr
-                                · cases herr; rfl
-                              · simp [hmref] at herr
-                                by_cases htu : isMakeTupleName funName = true
-                                · simp [htu] at herr; exact nomatch herr
-                                · simp [htu] at herr
-                                  by_cases hbi : isBuiltinName funName = true
-                                  · simp [hbi] at herr
-                                    cases hb : builtin p.heap p.pid funName
-                                        (readArgs! frame argRegs) with
-                                    | ok v => simp [hb] at herr; exact nomatch herr
-                                    | badarg =>
-                                      simp [hb] at herr
-                                      exact raiseValue_error_not_structural _ _ _ _ herr
-                                    | error e' =>
-                                      simp [hb] at herr
-                                      cases herr
-                                      exact builtin_error_not_structural hb
-                                  · simp [hbi] at herr
+                              by_cases hetsf : funName = "ets_first/1"
+                              · simp [hetsf] at herr
+                                by_cases har : (readArgs! frame argRegs).size = 1
+                                · simp only [har, ↓reduceIte, ite_false] at herr
+                                  simp [etsFirst] at herr
+                                  split at herr
+                                  · exact raiseValue_error_not_structural _ _ _ _ herr
+                                  · split at herr
+                                    · exact raiseValue_error_not_structural _ _ _ _ herr
+                                    · exact nomatch herr
+                                · simp only [har, ↓reduceIte, ite_true] at herr; cases herr; rfl
+                              · simp [hetsf] at herr
+                                by_cases hetsn : funName = "ets_next/2"
+                                · simp [hetsn] at herr
+                                  by_cases har : (readArgs! frame argRegs).size = 2
+                                  · simp only [har, ↓reduceIte, ite_false] at herr
+                                    simp [etsNext] at herr
                                     split at herr
+                                    · exact raiseValue_error_not_structural _ _ _ _ herr
                                     · split at herr
+                                      · exact raiseValue_error_not_structural _ _ _ _ herr
+                                      · exact nomatch herr
+                                  · simp only [har, ↓reduceIte, ite_true] at herr; cases herr; rfl
+                                · simp [hetsn] at herr
+                                  by_cases hetsg : funName = "ets_give_away/3"
+                                  · simp [hetsg] at herr
+                                    by_cases har : (readArgs! frame argRegs).size = 3
+                                    · simp only [har, ↓reduceIte, ite_false] at herr
+                                      simp [etsGiveAway] at herr
+                                      split at herr
+                                      · exact raiseValue_error_not_structural _ _ _ _ herr
+                                      · split at herr
+                                        · split at herr
+                                          · exact raiseValue_error_not_structural _ _ _ _ herr
+                                          · exact nomatch herr
+                                        · exact raiseValue_error_not_structural _ _ _ _ herr
+                                    · simp only [har, ↓reduceIte, ite_true] at herr; cases herr; rfl
+                                  · simp [hetsg] at herr
+                                    by_cases hmref : funName = "make_ref/0"
+                                    · simp [hmref] at herr
+                                      split at herr
                                       · exact nomatch herr
                                       · cases herr; rfl
-                                    · cases herr; rfl
+                                    · simp [hmref] at herr
+                                      by_cases htu : isMakeTupleName funName = true
+                                      · simp [htu] at herr; exact nomatch herr
+                                      · simp [htu] at herr
+                                        by_cases hbi : isBuiltinName funName = true
+                                        · simp [hbi] at herr
+                                          cases hb : builtin p.heap p.pid funName
+                                              (readArgs! frame argRegs) with
+                                          | ok v => simp [hb] at herr; exact nomatch herr
+                                          | badarg =>
+                                            simp [hb] at herr
+                                            exact raiseValue_error_not_structural _ _ _ _ herr
+                                          | error e' =>
+                                            simp [hb] at herr
+                                            cases herr
+                                            exact builtin_error_not_structural hb
+                                        · simp [hbi] at herr
+                                          split at herr
+                                          · split at herr
+                                            · exact nomatch herr
+                                            · cases herr; rfl
+                                          · cases herr; rfl
 
 /-- `return_` case of `stepInstr_error_not_structural`. -/
 theorem return_error_not_structural

@@ -19,6 +19,9 @@ defmodule AutumnCompiler.Lower do
     {:self, 0} => "self/0",
     {:make_ref, 0} => "make_ref/0",
     {:<>, 2} => "<>/2",
+    {:bit_size, 1} => "bit_size/1",
+    {:bs_get_integer, 2} => "bs_get_integer/2",
+    {:bs_drop, 2} => "bs_drop/2",
     {:cons, 2} => "cons/2",
     {:ets_new, 0} => "ets_new/0",
     {:ets_new, 2} => "ets_new/2",
@@ -28,7 +31,10 @@ defmodule AutumnCompiler.Lower do
     {:ets_delete_object, 2} => "ets_delete_object/2",
     {:ets_match_object, 2} => "ets_match_object/2",
     {:ets_select, 2} => "ets_select/2",
-    {:ets_heir, 2} => "ets_heir/2"
+    {:ets_heir, 2} => "ets_heir/2",
+    {:ets_first, 1} => "ets_first/1",
+    {:ets_next, 2} => "ets_next/2",
+    {:ets_give_away, 3} => "ets_give_away/3"
   }
 
   @type_guards %{
@@ -397,6 +403,8 @@ defmodule AutumnCompiler.Lower do
 
   defp module_version(funs) do
     cond do
+      needs_v21?(funs) -> 21
+      needs_v20?(funs) -> 20
       needs_v19?(funs) -> 19
       needs_v18?(funs) -> 18
       needs_v17?(funs) -> 17
@@ -416,6 +424,32 @@ defmodule AutumnCompiler.Lower do
       needs_v2?(funs) -> 2
       true -> 1
     end
+  end
+
+  defp needs_v21?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn
+        %{"op" => "call", "fun" => fun}
+        when fun in ~w(ets_first/1 ets_next/2 ets_give_away/3) ->
+          true
+
+        _ ->
+          false
+      end)
+    end)
+  end
+
+  defp needs_v20?(funs) do
+    Enum.any?(funs, fn f ->
+      Enum.any?(f["code"], fn
+        %{"op" => "call", "fun" => fun}
+        when fun in ~w(bit_size/1 bs_get_integer/2 bs_drop/2) ->
+          true
+
+        _ ->
+          false
+      end)
+    end)
   end
 
   defp needs_v19?(funs) do
@@ -2308,6 +2342,11 @@ defmodule AutumnCompiler.Lower do
     emit_map_pattern_test(pairs, scr, env, next, code)
   end
 
+  # Bitstring patterns `<<…>>` (IR v20 teaching subset).
+  defp emit_pattern_test({:<<>>, _, segs}, scr, env, next, code) when is_list(segs) do
+    emit_bitstring_pattern_test(segs, scr, env, next, code)
+  end
+
   # Empty list / fixed-length list / cons [… | t] patterns.
   defp emit_pattern_test(elems, scr, env, next, code) when is_list(elems) do
     case split_list_pattern(elems) do
@@ -2693,6 +2732,10 @@ defmodule AutumnCompiler.Lower do
     emit_map_pattern_binds(pairs, scr, env, next, code)
   end
 
+  defp emit_pattern_binds({:<<>>, _, segs}, scr, env, next, code) when is_list(segs) do
+    emit_bitstring_pattern_binds(segs, scr, env, next, code)
+  end
+
   defp emit_pattern_binds(elems, scr, env, next, code) when is_list(elems) do
     case split_list_pattern(elems) do
       {:error, _} = err ->
@@ -2759,6 +2802,470 @@ defmodule AutumnCompiler.Lower do
       end
     end
   end
+
+  defp emit_bitstring_pattern_test(segs, scr, env, next, code) do
+    case classify_bitstring_pattern(segs) do
+      {:exact, jlit} ->
+        matched = length(code) + 2
+
+        code =
+          code ++
+            [
+              %{"op" => "jump_if_eq", "target" => matched, "reg" => scr, "lit" => jlit},
+              %{"op" => "jump", "target" => 0}
+            ]
+
+        {:ok, code, env, next, length(code) - 1}
+
+      {:ok, parsed} ->
+        emit_bitstring_match_test(parsed, scr, env, next, code)
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp emit_bitstring_match_test(parsed, scr, env, next, code) do
+    fixed_bits =
+      parsed
+      |> Enum.reject(&match?({:rest, _}, &1))
+      |> Enum.map(fn
+        {:lit, _, size} -> size
+        {:var, _, size} -> size
+      end)
+      |> Enum.sum()
+
+    has_rest = Enum.any?(parsed, &match?({:rest, _}, &1))
+
+    # Exclude UTF-8 string (is_tag bitstring is true for string).
+    str_reg = next
+    next = next + 1
+    code = code ++ [%{"op" => "is_tag", "dest" => str_reg, "reg" => scr, "tag" => "string"}]
+    not_string = length(code) + 2
+
+    code =
+      code ++
+        [
+          %{
+            "op" => "jump_if_eq",
+            "target" => not_string,
+            "reg" => str_reg,
+            "lit" => %{"bool" => false}
+          },
+          %{"op" => "jump", "target" => 0}
+        ]
+
+    fail_idx = length(code) - 1
+
+    # Require raw bitstring.
+    tag_reg = next
+    next = next + 1
+    code = code ++ [%{"op" => "is_tag", "dest" => tag_reg, "reg" => scr, "tag" => "bitstring"}]
+    is_bs = length(code) + 2
+
+    code =
+      code ++
+        [
+          %{
+            "op" => "jump_if_eq",
+            "target" => is_bs,
+            "reg" => tag_reg,
+            "lit" => %{"bool" => true}
+          },
+          %{"op" => "jump", "target" => fail_idx}
+        ]
+
+    # bit_size checks
+    size_reg = next
+    next = next + 1
+    need_reg = next
+    next = next + 1
+    cmp_reg = next
+    next = next + 1
+
+    code =
+      code ++
+        [
+          %{"op" => "call", "dest" => size_reg, "fun" => "bit_size/1", "args" => [scr]},
+          %{"op" => "load_lit", "reg" => need_reg, "lit" => %{"int" => fixed_bits}}
+        ]
+
+    {code, next, cmp_reg} =
+      if has_rest do
+        # size >= fixed_bits
+        code =
+          code ++
+            [
+              %{
+                "op" => "call",
+                "dest" => cmp_reg,
+                "fun" => ">=/2",
+                "args" => [size_reg, need_reg]
+              }
+            ]
+
+        ok = length(code) + 2
+
+        code =
+          code ++
+            [
+              %{
+                "op" => "jump_if_eq",
+                "target" => ok,
+                "reg" => cmp_reg,
+                "lit" => %{"bool" => true}
+              },
+              %{"op" => "jump", "target" => fail_idx}
+            ]
+
+        {code, next, cmp_reg}
+      else
+        # size == fixed_bits
+        code =
+          code ++
+            [
+              %{
+                "op" => "call",
+                "dest" => cmp_reg,
+                "fun" => "==/2",
+                "args" => [size_reg, need_reg]
+              }
+            ]
+
+        ok = length(code) + 2
+
+        code =
+          code ++
+            [
+              %{
+                "op" => "jump_if_eq",
+                "target" => ok,
+                "reg" => cmp_reg,
+                "lit" => %{"bool" => true}
+              },
+              %{"op" => "jump", "target" => fail_idx}
+            ]
+
+        {code, next, cmp_reg}
+      end
+
+    _ = cmp_reg
+
+    # Walk segments: lit equality + drop; vars only drop (bind later).
+    case Enum.reduce_while(parsed, {:ok, code, env, next, scr}, fn
+           seg, {:ok, code, env, next, cur} ->
+             case emit_bitstring_seg_test(seg, cur, fail_idx, env, next, code) do
+               {:ok, code, env, next, cur} -> {:cont, {:ok, code, env, next, cur}}
+               {:error, _} = err -> {:halt, err}
+             end
+         end) do
+      {:ok, code, env, next, _cur} ->
+        {:ok, code, env, next, fail_idx}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp emit_bitstring_seg_test({:rest, _name}, cur, fail_idx, env, next, code) do
+    # Remaining must be aligned binary (string already excluded on original scr;
+    # cursor is always a bitstring from bs_drop).
+    tag_reg = next
+    next = next + 1
+    code = code ++ [%{"op" => "is_tag", "dest" => tag_reg, "reg" => cur, "tag" => "binary"}]
+    ok = length(code) + 2
+
+    code =
+      code ++
+        [
+          %{
+            "op" => "jump_if_eq",
+            "target" => ok,
+            "reg" => tag_reg,
+            "lit" => %{"bool" => true}
+          },
+          %{"op" => "jump", "target" => fail_idx}
+        ]
+
+    {:ok, code, env, next, cur}
+  end
+
+  defp emit_bitstring_seg_test({:lit, value, size}, cur, fail_idx, env, next, code) do
+    size_reg = next
+    next = next + 1
+    val_reg = next
+    next = next + 1
+    drop_reg = next
+    next = next + 1
+
+    code =
+      code ++
+        [
+          %{"op" => "load_lit", "reg" => size_reg, "lit" => %{"int" => size}},
+          %{
+            "op" => "call",
+            "dest" => val_reg,
+            "fun" => "bs_get_integer/2",
+            "args" => [cur, size_reg]
+          }
+        ]
+
+    ok = length(code) + 2
+
+    code =
+      code ++
+        [
+          %{
+            "op" => "jump_if_eq",
+            "target" => ok,
+            "reg" => val_reg,
+            "lit" => %{"int" => value}
+          },
+          %{"op" => "jump", "target" => fail_idx},
+          %{
+            "op" => "call",
+            "dest" => drop_reg,
+            "fun" => "bs_drop/2",
+            "args" => [cur, size_reg]
+          }
+        ]
+
+    {:ok, code, env, next, drop_reg}
+  end
+
+  defp emit_bitstring_seg_test({:var, _name, size}, cur, _fail_idx, env, next, code) do
+    size_reg = next
+    next = next + 1
+    drop_reg = next
+    next = next + 1
+
+    # Size already enforced by total bit_size check; just advance the cursor.
+    code =
+      code ++
+        [
+          %{"op" => "load_lit", "reg" => size_reg, "lit" => %{"int" => size}},
+          %{
+            "op" => "call",
+            "dest" => drop_reg,
+            "fun" => "bs_drop/2",
+            "args" => [cur, size_reg]
+          }
+        ]
+
+    {:ok, code, env, next, drop_reg}
+  end
+
+  defp emit_bitstring_pattern_binds(segs, scr, env, next, code) do
+    case classify_bitstring_pattern(segs) do
+      {:exact, _} ->
+        {:ok, code, env, next}
+
+      {:ok, parsed} ->
+        Enum.reduce_while(parsed, {:ok, code, env, next, scr}, fn
+          seg, {:ok, code, env, next, cur} ->
+            case emit_bitstring_seg_bind(seg, cur, env, next, code) do
+              {:ok, code, env, next, cur} -> {:cont, {:ok, code, env, next, cur}}
+              {:error, _} = err -> {:halt, err}
+            end
+        end)
+        |> case do
+          {:ok, code, env, next, _cur} -> {:ok, code, env, next}
+          {:error, _} = err -> err
+        end
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp emit_bitstring_seg_bind({:rest, name}, cur, env, next, code) do
+    env = Map.put(env, name, cur)
+    {:ok, code, env, next, cur}
+  end
+
+  defp emit_bitstring_seg_bind({:lit, _value, size}, cur, env, next, code) do
+    size_reg = next
+    next = next + 1
+    drop_reg = next
+    next = next + 1
+
+    code =
+      code ++
+        [
+          %{"op" => "load_lit", "reg" => size_reg, "lit" => %{"int" => size}},
+          %{
+            "op" => "call",
+            "dest" => drop_reg,
+            "fun" => "bs_drop/2",
+            "args" => [cur, size_reg]
+          }
+        ]
+
+    {:ok, code, env, next, drop_reg}
+  end
+
+  defp emit_bitstring_seg_bind({:var, :_, size}, cur, env, next, code) do
+    # Same as lit: advance cursor only.
+    size_reg = next
+    next = next + 1
+    drop_reg = next
+    next = next + 1
+
+    code =
+      code ++
+        [
+          %{"op" => "load_lit", "reg" => size_reg, "lit" => %{"int" => size}},
+          %{
+            "op" => "call",
+            "dest" => drop_reg,
+            "fun" => "bs_drop/2",
+            "args" => [cur, size_reg]
+          }
+        ]
+
+    {:ok, code, env, next, drop_reg}
+  end
+
+  defp emit_bitstring_seg_bind({:var, name, size}, cur, env, next, code) do
+    size_reg = next
+    next = next + 1
+    val_reg = next
+    next = next + 1
+    drop_reg = next
+    next = next + 1
+
+    code =
+      code ++
+        [
+          %{"op" => "load_lit", "reg" => size_reg, "lit" => %{"int" => size}},
+          %{
+            "op" => "call",
+            "dest" => val_reg,
+            "fun" => "bs_get_integer/2",
+            "args" => [cur, size_reg]
+          },
+          %{
+            "op" => "call",
+            "dest" => drop_reg,
+            "fun" => "bs_drop/2",
+            "args" => [cur, size_reg]
+          }
+        ]
+
+    env = Map.put(env, name, val_reg)
+    {:ok, code, env, next, drop_reg}
+  end
+
+  defp classify_bitstring_pattern(segs) do
+    case literal_bitstring_lit(segs) do
+      {:ok, jlit} ->
+        {:exact, jlit}
+
+      {:error, _} ->
+        case parse_bitstring_match_segs(segs) do
+          {:ok, parsed} -> {:ok, parsed}
+          {:error, _} = err -> err
+        end
+    end
+  end
+
+  defp parse_bitstring_match_segs(segs) do
+    case Enum.reduce_while(segs, {:ok, []}, fn seg, {:ok, acc} ->
+           if Enum.any?(acc, &match?({:rest, _}, &1)) do
+             {:halt, {:error, "rest::binary must be last in bitstring pattern"}}
+           else
+             case classify_bitstring_match_seg(seg) do
+               {:ok, item} -> {:cont, {:ok, acc ++ [item]}}
+               {:error, _} = err -> {:halt, err}
+             end
+           end
+         end) do
+      {:ok, parsed} ->
+        rests = Enum.count(parsed, &match?({:rest, _}, &1))
+
+        cond do
+          rests > 1 ->
+            {:error, "at most one rest::binary in bitstring pattern"}
+
+          parsed == [] ->
+            # empty <<>> — treat as exact empty binary via lit path normally
+            {:ok, []}
+
+          true ->
+            {:ok, parsed}
+        end
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp classify_bitstring_match_seg(n) when is_integer(n) and n >= 0 and n <= 255,
+    do: {:ok, {:lit, n, 8}}
+
+  defp classify_bitstring_match_seg({:"::", _, [n]})
+       when is_integer(n) and n >= 0 and n <= 255,
+       do: {:ok, {:lit, n, 8}}
+
+  defp classify_bitstring_match_seg({:"::", _, [n, spec]}) when is_integer(n) do
+    case segment_size(spec) do
+      {:ok, size} when size >= 1 and size <= 8 ->
+        max = Bitwise.bsl(1, size)
+
+        if n < 0 or n >= max do
+          {:error, "integer #{n} does not fit in ::#{size} in bitstring pattern"}
+        else
+          {:ok, {:lit, n, size}}
+        end
+
+      {:ok, size} ->
+        {:error, "unsupported bitstring pattern size #{size} (teaching subset: 1..8)"}
+
+      :error ->
+        {:error, "unsupported bitstring pattern segment specifier"}
+    end
+  end
+
+  defp classify_bitstring_match_seg({:"::", _, [{name, _, ctx}, spec]})
+       when is_atom(name) and (is_atom(ctx) or is_nil(ctx)) do
+    cond do
+      binary_type_spec?(spec) ->
+        if name == :_ do
+          {:error, "anonymous rest::binary not supported; bind a variable"}
+        else
+          {:ok, {:rest, name}}
+        end
+
+      true ->
+        case segment_size(spec) do
+          {:ok, size} when size >= 1 and size <= 8 ->
+            if name == :_ do
+              {:ok, {:var, :_, size}}
+            else
+              {:ok, {:var, name, size}}
+            end
+
+          {:ok, size} ->
+            {:error, "unsupported bitstring pattern size #{size} (teaching subset: 1..8)"}
+
+          :error ->
+            {:error, "unsupported bitstring pattern segment on variable"}
+        end
+    end
+  end
+
+  defp classify_bitstring_match_seg({name, _, ctx})
+       when is_atom(name) and name != :_ and (is_atom(ctx) or is_nil(ctx)) do
+    # Bare `<<x>>` ⇒ `<<x::8>>`
+    {:ok, {:var, name, 8}}
+  end
+
+  defp classify_bitstring_match_seg(_),
+    do: {:error, "unsupported bitstring pattern segment (teaching: lit ints / var::N / rest::binary)"}
+
+  defp binary_type_spec?(:binary), do: true
+  defp binary_type_spec?({:binary, _, _}), do: true
+  defp binary_type_spec?(_), do: false
 
   defp emit_map_pattern_test(pairs, scr, env, next, code) do
     tag_reg = next
@@ -3494,7 +4001,17 @@ defmodule AutumnCompiler.Lower do
     do: MapSet.union(free_vars_pattern(h, bound), free_vars_pattern(t, bound))
 
   defp free_vars_pattern({:in, _, [var, _]}, bound), do: free_vars_pattern(var, bound)
+
+  defp free_vars_pattern({:<<>>, _, segs}, bound) when is_list(segs) do
+    Enum.reduce(segs, MapSet.new(), fn seg, acc ->
+      MapSet.union(acc, free_vars_bitstring_seg(seg, bound))
+    end)
+  end
+
   defp free_vars_pattern(_, _), do: MapSet.new()
+
+  defp free_vars_bitstring_seg({:^, _, _} = pin, bound), do: free_vars_pattern(pin, bound)
+  defp free_vars_bitstring_seg(_, _), do: MapSet.new()
 
   defp pattern_vars({name, _, nil}) when is_atom(name) and name != :_, do: MapSet.new([name])
   defp pattern_vars({:^, _, _}), do: MapSet.new()
@@ -3514,5 +4031,22 @@ defmodule AutumnCompiler.Lower do
 
   defp pattern_vars({:|, _, [h, t]}), do: MapSet.union(pattern_vars(h), pattern_vars(t))
   defp pattern_vars({:in, _, [var, _]}), do: pattern_vars(var)
+
+  defp pattern_vars({:<<>>, _, segs}) when is_list(segs) do
+    Enum.reduce(segs, MapSet.new(), fn seg, acc ->
+      MapSet.union(acc, pattern_vars_bitstring_seg(seg))
+    end)
+  end
+
   defp pattern_vars(_), do: MapSet.new()
+
+  defp pattern_vars_bitstring_seg({:"::", _, [{name, _, ctx}, _spec]})
+       when is_atom(name) and name != :_ and (is_atom(ctx) or is_nil(ctx)),
+       do: MapSet.new([name])
+
+  defp pattern_vars_bitstring_seg({name, _, ctx})
+       when is_atom(name) and name != :_ and (is_atom(ctx) or is_nil(ctx)),
+       do: MapSet.new([name])
+
+  defp pattern_vars_bitstring_seg(_), do: MapSet.new()
 end

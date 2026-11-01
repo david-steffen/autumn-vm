@@ -41,6 +41,7 @@ defmodule Mix.Tasks.Autumn.Smoke do
     {"float_string", "5"},
     {"binary_basic", "4"},
     {"bitstring_partial", "4"},
+    {"binary_match", "42"},
     {"genserver_stdlib", "7", [Path.join(@stdlib, "genserver.ex")]},
     {"genserver_stdlib_down", "0", [Path.join(@stdlib, "genserver.ex")]},
     {"genserver_behaviour", "8", [Path.join(@stdlib, "genserver.ex")]},
@@ -67,6 +68,8 @@ defmodule Mix.Tasks.Autumn.Smoke do
      [Path.join(@stdlib, "genserver.ex"), Path.join(@stdlib, "supervisor.ex")]},
     {"supervisor_start_mfa", "9",
      [Path.join(@stdlib, "genserver.ex"), Path.join(@stdlib, "supervisor.ex")]},
+    {"supervisor_nested", "42",
+     [Path.join(@stdlib, "genserver.ex"), Path.join(@stdlib, "supervisor.ex")]},
     {"ets_basic", "42", [Path.join(@stdlib, "ets.ex")]},
     {"ets_bag", "2", [Path.join(@stdlib, "ets.ex")]},
     {"ets_named", "7", [Path.join(@stdlib, "ets.ex")]},
@@ -74,7 +77,9 @@ defmodule Mix.Tasks.Autumn.Smoke do
     {"ets_guards", "2", [Path.join(@stdlib, "ets.ex")]},
     {"ets_delete_object", "3", [Path.join(@stdlib, "ets.ex")]},
     {"ets_ordered", "1", [Path.join(@stdlib, "ets.ex")]},
-    {"ets_heir", "42", [Path.join(@stdlib, "ets.ex")]}
+    {"ets_heir", "42", [Path.join(@stdlib, "ets.ex")]},
+    {"ets_traverse", "6", [Path.join(@stdlib, "ets.ex")]},
+    {"ets_give_away", "42", [Path.join(@stdlib, "ets.ex")]}
   ]
 
   @impl Mix.Task

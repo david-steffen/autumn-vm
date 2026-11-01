@@ -94,6 +94,30 @@ def deleteObject (t : EtsTable) (key val : Term) : EtsTable :=
 def killTable (t : EtsTable) : EtsTable :=
   { t with alive := false, entries := #[], name := none, heir := none, owner := none }
 
+/-- Unique keys in walk order: `ordered_set` keeps `Term.lt` order; others first-insert order. -/
+def keysInOrder (t : EtsTable) : Array Term :=
+  Id.run do
+    let mut keys : Array Term := #[]
+    for (k, _) in t.entries do
+      if !(keys.any (fun k' => k' == k)) then
+        keys := keys.push k
+    return keys
+
+/-- First key, or atom `"$end_of_table"`. -/
+def firstKey (t : EtsTable) : Term :=
+  let keys := keysInOrder t
+  if keys.size = 0 then .atom "$end_of_table"
+  else keys[0]!
+
+/-- Next distinct key after `key`, or `"$end_of_table"` (unknown key ⇒ end). -/
+def nextKey (t : EtsTable) (key : Term) : Term :=
+  let keys := keysInOrder t
+  match keys.findIdx? (fun k => k == key) with
+  | none => .atom "$end_of_table"
+  | some i =>
+    if i + 1 < keys.size then keys[i + 1]!
+    else .atom "$end_of_table"
+
 /-- Pattern variable index for `:"$1"` … `:"$9"`; `none` if not a `$N` atom. -/
 def patternVar? (s : String) : Option Nat :=
   match s with

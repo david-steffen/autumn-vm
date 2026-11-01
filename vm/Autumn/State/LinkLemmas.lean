@@ -86,6 +86,14 @@ theorem notifyExitPeer_preserves (s : State) (fromPid : Nat) (heap : Heap)
     State.WF (State.notifyExitPeer s fromPid heap reason peerPid) := by
   simpa [State.notifyExitPeer] using notifyExitMailbox_preserves s fromPid heap reason peerPid hs
 
+@[simp] theorem notifyEtsTransfer_module (s : State) (tid fromPid heirPid : Nat) (data : Term) :
+    (State.notifyEtsTransfer s tid fromPid heirPid data).module = s.module := by
+  simp only [State.notifyEtsTransfer]
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  all_goals rfl
+
 /-- `notifyEtsTransfer` only mutates one peer (or no-ops); preserves WF. -/
 theorem notifyEtsTransfer_preserves (s : State) (tid fromPid heirPid : Nat) (data : Term)
     (hs : State.WF s) :

@@ -2,7 +2,7 @@
 
 Versioned bytecode exchanged as JSON between the Mix lowerer and the Lean VM.
 
-Supported `version` values: `1` (literals/calls), `2` (lists, case ops, processes), `3` (`get_list_elem`, `list_size/1`), `4` (`get_list_rest` / cons patterns), `5` (maps), `6` (exceptions: `enter_try` / `leave_try` / `raise`), `7` (selective receive: `recv_peek` / `recv_drop` / `wait`), `8` (process links: `link`; exit signals), `9` (unique refs + process monitors: `monitor` / `demonitor`; DOWN signals), `10` (floats + strings as immediates), `11` (closures: `make_fun` / `apply`), `12` (first-class `modules[]`), `13` (`load_file` / dynamic install), `14` (`Process.flag/2` / `Process.exit/2`; durable drain + OTP-shaped `trap_exit`), `15` (dynamic MFA `apply_mfa` for OTP-shaped behaviours), `16` (aligned binaries / bitstrings), `17` (richer ETS: kinds, named tables, match/select), `18` (ETS tails: guards, `delete_object`, `ordered_set`, owner/heir), and `19` (`wait` timeout register + `Process.hibernate/0`).
+Supported `version` values: `1` (literals/calls), `2` (lists, case ops, processes), `3` (`get_list_elem`, `list_size/1`), `4` (`get_list_rest` / cons patterns), `5` (maps), `6` (exceptions: `enter_try` / `leave_try` / `raise`), `7` (selective receive: `recv_peek` / `recv_drop` / `wait`), `8` (process links: `link`; exit signals), `9` (unique refs + process monitors: `monitor` / `demonitor`; DOWN signals), `10` (floats + strings as immediates), `11` (closures: `make_fun` / `apply`), `12` (first-class `modules[]`), `13` (`load_file` / dynamic install), `14` (`Process.flag/2` / `Process.exit/2`; durable drain + OTP-shaped `trap_exit`), `15` (dynamic MFA `apply_mfa` for OTP-shaped behaviours), `16` (aligned binaries / bitstrings), `17` (richer ETS: kinds, named tables, match/select), `18` (ETS tails: guards, `delete_object`, `ordered_set`, owner/heir), `19` (`wait` timeout register + `Process.hibernate/0`), `20` (binary / bitstring matching builtins), and `21` (ETS `first` / `next` / `give_away`).
 
 ## Module
 
@@ -177,10 +177,20 @@ When a process **exits**, each monitorer in its inbound monitor list receives `{
 
 - `Term.bitstring` / `Value.bitstring` are **immediates** (`Autumn.Term.Bitstring`: `bytes` + `trailingBits`). `trailingBits = 0` is an aligned **binary**; `1…7` is a partial bitstring with unused low bits cleared (`Valid`).
 - JSON: aligned `{"binary": [0–255, …]}`; partial `{"bitstring": {"bytes": […], "trailing_bits": k}}`.
-- Mix: `<<1, 2, "ab">>` (integer bytes + UTF-8 chunks) → `binary` lit; bumps image to v16. Integer segments with `::N` / `::size(N)` for **N ∈ 1…8** (default 8); a trailing partial (**N ∈ 1…7**) packs MSB-first into `{"bitstring":{"bytes":[…],"trailing_bits":k}}` with unused low bits cleared. Mid-construct partials, sizes outside 1…8, and `::binary` are rejected. Binary **matching** is out of scope.
+- Mix: `<<1, 2, "ab">>` (integer bytes + UTF-8 chunks) → `binary` lit; bumps image to v16. Integer segments with `::N` / `::size(N)` for **N ∈ 1…8** (default 8); a trailing partial (**N ∈ 1…7**) packs MSB-first into `{"bitstring":{"bytes":[…],"trailing_bits":k}}` with unused low bits cleared. Mid-construct partials, sizes outside 1…8, and `::binary` are rejected. Binary **matching** → v20.
 - `<>/2` also concatenates two **aligned** bitstrings → bitstring (`trailingBits ≠ 0` → `:badarg`). String↔binary mix → `:badarg`.
 - `is_binary/1` → `is_tag` `"binary"`: true for UTF-8 `string` **or** aligned bitstring (Elixir-like). `is_bitstring/1` → `"bitstring"`: true for `string` or any bitstring.
 - Tags: `binary` / `bitstring` added to `is_tag` (alongside `string`).
+
+### v20 binary matching
+
+Teaching subset (no new Instr — builtins only):
+
+- `bit_size/1` — `Term.bitstring` → int bit count; else catchable `:badarg` (UTF-8 `string` is **not** accepted).
+- `bs_get_integer/2` — `(bitstring, nbits)` MSB-first integer prefix; short / wrong type / negative `nbits` → `:badarg`.
+- `bs_drop/2` — `(bitstring, nbits)` → remaining bitstring (`Valid`); short / wrong type → `:badarg`.
+- Mix: `<<x::N, rest::binary>>` (literal `N ∈ 1…8`), exact lit `<<1,2>>`, and exact-size `<<x::N>>` in `case` / `=` / heads; miss → `:match_error`. Patterns apply to raw bitstrings only (exclude `string` via `is_tag`). Bumps image to v20 when these builtins appear.
+- Out of scope: comprehensions, `::utf8` match, dynamic sizes, `<>/2` of partials, full BEAM binary syntax.
 
 ### v11 closures
 
@@ -229,6 +239,13 @@ Teaching subset (not full OTP). Tables live in `State.etsTables`; tid = array in
 - **`ets_delete_object/2`:** `(tab, {key,val})` removes one exact matching entry.
 - **Owner / heir:** creator pid owns the table. `ets_heir/2` sets `{heirPid, data}` or `:none`. On owner exit: live heir → transfer ownership, clear heir, deliver `{:ETS-TRANSFER, tid, fromPid, data}` to heir mailbox; else mark table dead (`alive=false`, clear entries/name; tid slot kept). Ops on dead tid → `:badarg`. Mix bumps to v18 for `ets_delete_object/2` / `ets_heir/2` / `:ordered_set`.
 
+### v21 ETS traversal + give_away
+
+- **`ets_first/1`:** first key in walk order, or atom `"$end_of_table"` if empty. `ordered_set` uses key order; other kinds use first-insert order of distinct keys.
+- **`ets_next/2`:** `(tab, key)` → next distinct key, or `"$end_of_table"` (unknown key → end).
+- **`ets_give_away/3`:** `(tab, pid, data)` — caller must be owner; target must be live; sets owner, clears heir, delivers `{:ETS-TRANSFER, tid, fromPid, data}` (same shape as heir-on-exit). → `:true`; else `:badarg`.
+- Mix bumps to v21 for these MFAs. Private tables still out of scope.
+
 ## Builtins
 
 | MFA | Meaning |
@@ -257,6 +274,9 @@ Teaching subset (not full OTP). Tables live in `State.etsTables`; tid = array in
 | `ets_delete/2` | `(tab, key)` → `:true` (drop all entries with key) |
 | `ets_delete_object/2` | `(tab, {key,val})` → `:true` (drop one exact object; v18) |
 | `ets_match_object/2` | `(tab, pattern)` → list of matching `{key,val}` (v17) |
+| `ets_first/1` | `(tab)` → first key or `"$end_of_table"` (v21) |
+| `ets_next/2` | `(tab, key)` → next key or `"$end_of_table"` (v21) |
+| `ets_give_away/3` | `(tab, pid, data)` → `:true` + `ETS-TRANSFER` (v21; owner only) |
 | `ets_select/2` | `(tab, match_spec)` → list of results (v17+; v18 teaching guards; bad spec → `:badarg`) |
 | `ets_heir/2` | `(tab, {pid, data} \| :none)` → `:true` (v18 owner-exit transfer) |
 

@@ -88,6 +88,29 @@ def builtin (h : Heap) (selfPid : Nat) (name : FunName) (args : Array Value) :
         | some c => .ok (.bitstring c)
         | none => .badarg
       | _, _ => .badarg
+  | "bit_size/1" =>
+    if args.size != 1 then .error (.badArity name 1 args.size)
+    else match args[0]! with
+      | .bitstring b => .ok (.int (Term.Bitstring.bitSize b))
+      | _ => .badarg
+  | "bs_get_integer/2" =>
+    if args.size != 2 then .error (.badArity name 2 args.size)
+    else match args[0]!, args[1]! with
+      | .bitstring b, .int n =>
+        if n < 0 then .badarg
+        else match Term.Bitstring.getInteger? b n.toNat with
+          | some v => .ok (.int v)
+          | none => .badarg
+      | _, _ => .badarg
+  | "bs_drop/2" =>
+    if args.size != 2 then .error (.badArity name 2 args.size)
+    else match args[0]!, args[1]! with
+      | .bitstring b, .int n =>
+        if n < 0 then .badarg
+        else match Term.Bitstring.drop? b n.toNat with
+          | some rest => .ok (.bitstring rest)
+          | none => .badarg
+      | _, _ => .badarg
   | "tuple_size/1" =>
     if args.size != 1 then .error (.badArity name 1 args.size)
     else match args[0]! with
@@ -397,6 +420,47 @@ def etsHeir (s : State) (p : Process) (frame : Frame) (dest : Reg)
       let frame := { frame with ip := frame.ip + 1 }
       .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
 
+/-- `ets_first/1` — first key or `"$end_of_table"`. -/
+def etsFirst (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV : Value) : Except StepError State :=
+  let tabT := Heap.toTerm p.heap tabV
+  match State.etsResolve s tabT with
+  | none => raiseValue s p frame (.atom "badarg")
+  | some tid =>
+    match State.etsFirst s tid with
+    | none => raiseValue s p frame (.atom "badarg")
+    | some k => finishWithTerm s p frame dest k
+
+/-- `ets_next/2` — next key or `"$end_of_table"`. -/
+def etsNext (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV keyV : Value) : Except StepError State :=
+  let tabT := Heap.toTerm p.heap tabV
+  match State.etsResolve s tabT with
+  | none => raiseValue s p frame (.atom "badarg")
+  | some tid =>
+    let keyT := Heap.toTerm p.heap keyV
+    match State.etsNext s tid keyT with
+    | none => raiseValue s p frame (.atom "badarg")
+    | some k => finishWithTerm s p frame dest k
+
+/-- `ets_give_away/3` — owner transfers; delivers `{:ETS-TRANSFER, …}`. -/
+def etsGiveAway (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV pidV dataV : Value) : Except StepError State :=
+  let tabT := Heap.toTerm p.heap tabV
+  match State.etsResolve s tabT with
+  | none => raiseValue s p frame (.atom "badarg")
+  | some tid =>
+    match Heap.toTerm p.heap pidV with
+    | .pid toPid =>
+      let dataT := Heap.toTerm p.heap dataV
+      match State.etsGiveAway s tid p.pid toPid dataT with
+      | none => raiseValue s p frame (.atom "badarg")
+      | some s =>
+        let frame := setReg! frame dest (.atom "true")
+        let frame := { frame with ip := frame.ip + 1 }
+        .ok (s.setCurrentProcess (State.setCurrentFrame p frame))
+    | _ => raiseValue s p frame (.atom "badarg")
+
 /-- `ets_match_object/2` — list of matching `{key,val}` objects. -/
 def etsMatchObject (s : State) (p : Process) (frame : Frame) (dest : Reg)
     (tabV patV : Value) : Except StepError State :=
@@ -552,6 +616,21 @@ def stepInstr (s : State) (p : Process) (frame : Frame) (instr : Instr) :
         throw (.badArity funName 2 args.size)
       else
         etsHeir s p frame dest args[0]! args[1]!
+    else if funName == "ets_first/1" then
+      if args.size != 1 then
+        throw (.badArity funName 1 args.size)
+      else
+        etsFirst s p frame dest args[0]!
+    else if funName == "ets_next/2" then
+      if args.size != 2 then
+        throw (.badArity funName 2 args.size)
+      else
+        etsNext s p frame dest args[0]! args[1]!
+    else if funName == "ets_give_away/3" then
+      if args.size != 3 then
+        throw (.badArity funName 3 args.size)
+      else
+        etsGiveAway s p frame dest args[0]! args[1]! args[2]!
     else if funName == "make_ref/0" then
       if args.size != 0 then
         throw (.badArity funName 0 args.size)

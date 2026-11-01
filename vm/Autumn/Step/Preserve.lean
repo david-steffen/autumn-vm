@@ -1024,6 +1024,122 @@ theorem etsHeir_preserves
       exact apply_top_frame_preserves s1 p frame2 hs1 hp1 hres hstat htop hfwf2
         (by simp [frame2, frame1, setReg!, hframe]) (by simp [frame2, frame1, setReg!, hframe])
 
+theorem State.etsGiveAway_preserves_WF (s : State) (tid fromPid toPid : Nat) (data : Term)
+    {s'} (hs : State.WF s)
+    (h : State.etsGiveAway s tid fromPid toPid data = some s') :
+    State.WF s' ∧ s'.module = s.module := by
+  unfold State.etsGiveAway at h
+  split at h
+  · rename_i htid
+    split at h
+    · exact nomatch h
+    · split at h
+      · exact nomatch h
+      · split at h
+        · exact nomatch h
+        · cases h
+          have hs1 : State.WF
+              { s with
+                etsTables :=
+                  s.etsTables.set tid
+                    { (s.etsTables[tid]'htid) with owner := some toPid, heir := none }
+                    htid } :=
+            etsTables_preserves s _ hs
+          have hs2 := notifyEtsTransfer_preserves _ tid fromPid toPid data hs1
+          exact ⟨hs2, by simp [notifyEtsTransfer_module]⟩
+  · exact nomatch h
+
+/-- Successful `ets_first/1` preserves WF. -/
+theorem etsFirst_preserves
+    (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV : Value) {s'}
+    (hs : State.WF s) (hp : Process.WF s.module p) (hfwf : Frame.WF s.module frame)
+    (hres : p.result = none) (hstat : p.status = .runnable)
+    (htop : p.stack.size > 0) (hframe : p.stack[p.stack.size - 1]! = frame)
+    (hip : frame.ip + 1 < frame.function.code.size)
+    (h : etsFirst s p frame dest tabV = .ok s') :
+    State.WF s' := by
+  simp [etsFirst] at h
+  cases hr : State.etsResolve s (Heap.toTerm p.heap tabV) with
+  | none =>
+    simp [hr] at h
+    exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+  | some tid =>
+    simp [hr] at h
+    cases hf : State.etsFirst s tid with
+    | none =>
+      simp [hf] at h
+      exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+    | some k =>
+      simp [hf] at h
+      exact finishWithTerm_preserves s p frame dest k
+        hs hp hfwf hres hstat htop hframe hip h
+
+/-- Successful `ets_next/2` preserves WF. -/
+theorem etsNext_preserves
+    (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV keyV : Value) {s'}
+    (hs : State.WF s) (hp : Process.WF s.module p) (hfwf : Frame.WF s.module frame)
+    (hres : p.result = none) (hstat : p.status = .runnable)
+    (htop : p.stack.size > 0) (hframe : p.stack[p.stack.size - 1]! = frame)
+    (hip : frame.ip + 1 < frame.function.code.size)
+    (h : etsNext s p frame dest tabV keyV = .ok s') :
+    State.WF s' := by
+  simp [etsNext] at h
+  cases hr : State.etsResolve s (Heap.toTerm p.heap tabV) with
+  | none =>
+    simp [hr] at h
+    exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+  | some tid =>
+    simp [hr] at h
+    cases hn : State.etsNext s tid (Heap.toTerm p.heap keyV) with
+    | none =>
+      simp [hn] at h
+      exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+    | some k =>
+      simp [hn] at h
+      exact finishWithTerm_preserves s p frame dest k
+        hs hp hfwf hres hstat htop hframe hip h
+
+/-- Successful `ets_give_away/3` preserves WF. -/
+theorem etsGiveAway_preserves
+    (s : State) (p : Process) (frame : Frame) (dest : Reg)
+    (tabV pidV dataV : Value) {s'}
+    (hs : State.WF s) (hp : Process.WF s.module p) (hfwf : Frame.WF s.module frame)
+    (hres : p.result = none) (hstat : p.status = .runnable)
+    (htop : p.stack.size > 0) (hframe : p.stack[p.stack.size - 1]! = frame)
+    (hip : frame.ip + 1 < frame.function.code.size)
+    (h : etsGiveAway s p frame dest tabV pidV dataV = .ok s') :
+    State.WF s' := by
+  simp [etsGiveAway] at h
+  cases hr : State.etsResolve s (Heap.toTerm p.heap tabV) with
+  | none =>
+    simp [hr] at h
+    exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+  | some tid =>
+    simp [hr] at h
+    cases hpid : Heap.toTerm p.heap pidV with
+    | pid toPid =>
+      simp [hpid] at h
+      cases hg : State.etsGiveAway s tid p.pid toPid (Heap.toTerm p.heap dataV) with
+      | none =>
+        simp [hg] at h
+        exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+      | some s1 =>
+        simp [hg] at h; cases h
+        have ⟨hs1, hmod⟩ := State.etsGiveAway_preserves_WF s tid p.pid toPid _ hs hg
+        have hp1 : Process.WF s1.module p := by simpa [hmod] using hp
+        have hfwf1 : Frame.WF s1.module frame := by simpa [hmod] using hfwf
+        let frame1 := setReg! frame dest (.atom "true")
+        let frame2 := { frame1 with ip := frame1.ip + 1 }
+        have hfwf2 : Frame.WF s1.module frame2 :=
+          bumpIp_frame _ _ (setReg!_WF _ _ _ _ hfwf1) (by simpa [frame1, setReg!] using hip)
+        exact apply_top_frame_preserves s1 p frame2 hs1 hp1 hres hstat htop hfwf2
+          (by simp [frame2, frame1, setReg!, hframe]) (by simp [frame2, frame1, setReg!, hframe])
+    | _ =>
+      simp [hpid] at h
+      exact raiseValue_preserves _ _ _ _ hs hp hres hstat htop h
+
 /-- Successful `ets_match_object/2` preserves WF. -/
 theorem etsMatchObject_preserves
     (s : State) (p : Process) (frame : Frame) (dest : Reg)

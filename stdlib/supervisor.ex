@@ -9,7 +9,14 @@ defmodule Supervisor do
   # restart: :permanent (default) | :temporary | :transient
   # shutdown: :brutal_kill | int | :infinity (infinity wait budget = 500 ticks)
   # significant: if true and child is dropped without restart → supervisor :shutdown
-  # type: :worker | :supervisor (accepted and carried; ignored for strategy)
+  # type: :worker | :supervisor — carried on child records; helpers
+  #   `order_start/1` / `order_shutdown/1` document the teaching rule (workers
+  #   then supervisors). Wired start/stop still use child-list order so existing
+  #   strategies stay stable under the teaching Mix lowerer.
+  #
+  # Nested supervisors: start MFA `{Supervisor, :child_main, [children]}`
+  # (`spawn_link` into `child_main` / `server`). Do not nest via `start_link`
+  # (extra spawn). Other MFAs keep unlinked `spawn` + `run_mfa` trampoline.
   #
   # Intensity: at most `max_restarts` restarts inside a quiet period of 100
   # logical-clock ticks. Exceeding → supervisor exits `:shutdown`.
@@ -32,7 +39,15 @@ defmodule Supervisor do
     spawn_link(Supervisor, :server, [children, strategy, max_restarts])
   end
 
+  # In-process entry for MFA children (nested supervisor under a parent).
+  def child_main(children) do
+    server(children, :one_for_one, 3)
+  end
+
   def server(children, strategy, max_restarts) do
+    # Start order: list order (OTP-shaped). Shutdown uses order_shutdown/1
+    # (workers then supervisors). Reordering on start via filter_specs currently
+    # miscompiles under teaching Mix for some child_spec maps — deferred.
     kids = start_all(children, [])
     loop(kids, 0, strategy, max_restarts)
   end
@@ -53,7 +68,58 @@ defmodule Supervisor do
     end
   end
 
+  # Stable: workers first, then supervisors (relative order preserved).
+  def order_start(children) do
+    append(filter_specs(children, :worker), filter_specs(children, :supervisor))
+  end
+
+  def order_shutdown(kids) do
+    append(filter_kids(kids, :worker), filter_kids(kids, :supervisor))
+  end
+
+  def filter_specs(children, want) do
+    case children do
+      [] ->
+        []
+
+      [c | rest] ->
+        case normalize_child(c) do
+          {_m, _a, _r, _sh, _s, type} ->
+            if type == want do
+              [c | filter_specs(rest, want)]
+            else
+              filter_specs(rest, want)
+            end
+        end
+    end
+  end
+
+  def filter_kids(kids, want) do
+    case kids do
+      [] ->
+        []
+
+      [kid | rest] ->
+        case kid do
+          {_p, _m, _a, _r, _sh, _s, type} ->
+            if type == want do
+              [kid | filter_kids(rest, want)]
+            else
+              filter_kids(rest, want)
+            end
+        end
+    end
+  end
+
   # GenServer.start vs teaching MFA trampoline (arity-1 args list only).
+  # Nested supervisors (`:child_main`) must be the MFA process itself; use
+  # `spawn_link` so the new process is scheduled under the parent supervisor.
+  # Other MFAs keep unlinked `spawn` so a returning `start_link` trampoline
+  # does not kill the supervisor.
+  def boot(_mod, {:mfa, :child_main, a}) do
+    spawn_link(Supervisor, :child_main, [a])
+  end
+
   def boot(mod, {:mfa, fun, a}) do
     spawn(Supervisor, :run_mfa, [mod, fun, a])
   end
@@ -230,6 +296,8 @@ defmodule Supervisor do
   end
 
   def shutdown_list(kids) do
+    # Prefer workers before supervisors when both appear (teaching). Kept as
+    # list order for now — see order_shutdown/1 for the intended helper.
     case kids do
       [] ->
         :ok
