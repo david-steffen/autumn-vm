@@ -11,7 +11,7 @@ inductive Tag where
   | tuple | list | map | pid | ref | fun
   deriving Repr, BEq, Inhabited
 
-/-- IR v7/v19 `wait` timeout: infinity, immediate ticks, or register holding a non-neg int. -/
+/-- `wait` timeout: infinity, immediate ticks, or register holding a non-neg int. -/
 inductive WaitTimeout where
   | infinity
   | lit (n : Nat)
@@ -24,39 +24,39 @@ inductive Instr where
   | call (dest : Reg) (funName : FunName) (args : Array Reg)
   | return_ (reg : Reg)
   | halt (reg : Reg)
-  -- IR v2 sequential
+  -- sequential
   | jump (target : Label)
   | jumpIfEq (target : Label) (reg : Reg) (lit : Term)
   | getTupleElem (dest : Reg) (tupleReg : Reg) (index : Nat)
   | isTag (dest : Reg) (reg : Reg) (tag : Tag)
-  -- IR v2 processes
+  -- processes
   | spawn (dest : Reg) (funName : FunName) (args : Array Reg)
   | send (pidReg msgReg : Reg)
   | recv (dest : Reg)
-  -- IR v3 list patterns
+  -- list patterns
   | getListElem (dest : Reg) (listReg : Reg) (index : Nat)
-  -- IR v4 cons / list rest
+  -- cons / list rest
   | getListRest (dest : Reg) (listReg : Reg) (index : Nat)
-  -- IR v6 exceptions
+  -- exceptions
   | enterTry (rescueIp : Label) (excReg : Reg)
   | leaveTry
   | raise (reg : Reg)
-  -- IR v7 selective receive
+  -- selective receive
   | recvPeek (dest : Reg) (indexReg : Reg) (empty : Label)
   | recvDrop (indexReg : Reg)
   /-- Park until message (`retry`) or logical-clock timeout (`after`). -/
   | wait (retry after : Label) (timeout : WaitTimeout)
-  -- IR v8 process links
+  -- process links
   | link (pidReg : Reg)
-  -- IR v9 monitors
+  -- monitors
   | monitor (dest : Reg) (pidReg : Reg)
   | demonitor (refReg : Reg)
-  -- IR v11 closures
+  -- closures
   | makeFun (dest : Reg) (funName : FunName) (captures : Array Reg)
   | apply (dest : Reg) (funReg : Reg) (args : Array Reg)
-  -- IR v13 dynamic load (`Code.load_file`); IO runner services the read
+  -- dynamic load (`Code.load_file`); IO runner services the read
   | loadFile (dest pathReg : Reg)
-  -- IR v15 dynamic MFA: mod/fun atoms → `"#{mod}.#{fun}/#{arity}"`
+  -- dynamic MFA: mod/fun atoms → `"#{mod}.#{fun}/#{arity}"`
   | applyMfa (dest : Reg) (modReg funReg : Reg) (args : Array Reg)
   deriving Repr, BEq, Inhabited
 
@@ -67,15 +67,16 @@ structure Function where
   code : Array Instr
   deriving Repr, BEq, Inhabited
 
-/-- Named code unit inside a loadable image (IR v12). -/
+/-- Named code unit inside a loadable image. -/
 structure CodeModule where
   name : String
   functions : Array Function
   deriving Repr, BEq, Inhabited
 
-/-- Loadable program image: one or more named modules + entry MFA. -/
+/-- Loadable program image: one or more named modules + entry MFA.
+`format` is a rare wire-shape id (currently always `1`), not a per-construct ladder. -/
 structure Module where
-  version : Nat
+  format : Nat
   entry : FunName
   modules : Array CodeModule
   deriving Repr, BEq, Inhabited
@@ -90,8 +91,8 @@ def allFunctions (m : Module) : Array Function :=
 def findFunction (m : Module) (name : FunName) : Option Function :=
   m.allFunctions.toList.find? (fun f => f.name == name)
 
-/-- Build a single-module image (legacy / Examples helper). -/
-def ofFunctions (version : Nat) (entry : FunName) (functions : Array Function)
+/-- Build a single-module image (legacy / Examples helper). Always `format := 1`. -/
+def ofFunctions (entry : FunName) (functions : Array Function)
     (modName : String := "") : Module :=
   let name :=
     if modName != "" then modName
@@ -100,10 +101,10 @@ def ofFunctions (version : Nat) (entry : FunName) (functions : Array Function)
       let parts := head.splitOn "."
       if parts.length ≤ 1 then head
       else String.intercalate "." parts.dropLast
-  { version, entry, modules := #[{ name, functions }] }
+  { format := 1, entry, modules := #[{ name, functions }] }
 
 /-- Install `incoming` code modules into `host`: replace same `name`, else append.
-Keeps `host.entry`. Bumps version to at least 13. -/
+Keeps `host.entry` and `host.format`. -/
 def installModules (host incoming : Module) : Module :=
   let mods :=
     incoming.modules.foldl
@@ -112,9 +113,7 @@ def installModules (host incoming : Module) : Module :=
         | some i => acc.set! i cm
         | none => acc.push cm)
       host.modules
-  { host with
-    modules := mods
-    version := max host.version (max incoming.version 13) }
+  { host with modules := mods }
 
 end Module
 

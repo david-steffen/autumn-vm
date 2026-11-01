@@ -1,7 +1,7 @@
 defmodule Ets do
   # Teaching ETS: set / bag / duplicate_bag / ordered_set, named tables,
   # list lookup, match_object + select (teaching guards), delete_object, heir,
-  # first/next walk, give_away (IR v21).
+ # first/next walk, give_away.
 
   def new do
     ets_new()

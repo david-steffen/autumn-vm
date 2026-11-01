@@ -30,7 +30,7 @@ theorem floatBinop_ne_error (op : Term.FiniteFloat → Term.FiniteFloat → Opti
 
 /-- Builtins operate on materialized views where needed; arithmetic uses immediates.
 `selfPid` is the calling process id (used by `self/0`).
-Language-shaped type mismatches yield `.badarg` (IR v14); IR corruption stays `.error`. -/
+Language-shaped type mismatches yield `.badarg`; IR corruption stays `.error`. -/
 def builtin (h : Heap) (selfPid : Nat) (name : FunName) (args : Array Value) :
     BuiltinResult :=
   match name with
@@ -175,7 +175,7 @@ def setReg! (f : Frame) (r : Reg) (v : Value) : Frame :=
   { f with regs := f.regs.setIfInBounds r v }
 
 /-- Catchable language exception (same control as the `raise` opcode).
-Uncaught: exit the process and schedule next (IR v14: entry exit does not halt the machine). -/
+Uncaught: exit the process and schedule next (entry exit does not halt the machine). -/
 def raiseValue (s : State) (p : Process) (_frame : Frame) (v : Value) :
     Except StepError State :=
   if p.handlers.isEmpty then
@@ -273,7 +273,7 @@ def processExit (s : State) (p : Process) (frame : Frame) (dest : Reg)
       State.scheduleNext s s.current
   | _ => raiseValue s p frame (.atom "badarg")
 
-/-- IR v19 teaching `Process.hibernate/0`: GC current process, return `:ok`. -/
+/-- Teaching `Process.hibernate/0`: GC current process, return `:ok`. -/
 def processHibernate (s : State) (p : Process) (frame : Frame) (dest : Reg) :
     Except StepError State :=
   let p := State.setCurrentFrame p frame

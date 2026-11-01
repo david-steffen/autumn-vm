@@ -87,7 +87,7 @@ defmodule AutumnCompiler do
   end
 
   @doc """
-  Compile multiple Elixir source files into one IR image (IR v12 `modules[]`
+  Compile multiple Elixir source files into one IR image (`modules[]`
   when more than one `defmodule` is present).
   """
   def compile_files(paths) when is_list(paths) and paths != [] do

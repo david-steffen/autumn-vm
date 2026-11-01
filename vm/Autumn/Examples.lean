@@ -2,9 +2,9 @@ import Autumn.Instr
 
 namespace Autumn
 
-/-- Hand-built `add_main` module (same as tests/fixtures/add_main.bc.json). -/
+/-- Hand-built add demo for `--lean-demo` (Lean-authored; not a fixture golden). -/
 def addMainModule : Module :=
-  Module.ofFunctions 1 "Main.main/0" #[
+  Module.ofFunctions "Main.main/0" #[
     {
       name := "Main.add/2"
       arity := 2
@@ -27,9 +27,9 @@ def addMainModule : Module :=
     }
   ]
 
-/-- Hand-built `try_rescue` module (same as tests/fixtures/try_rescue.bc.json). -/
+/-- Hand-built try/rescue demo for Lean authoring. -/
 def tryRescueModule : Module :=
-  Module.ofFunctions 6 "Main.main/0" #[
+  Module.ofFunctions "Main.main/0" #[
     {
       name := "Main.boom/0"
       arity := 0

@@ -20,7 +20,7 @@ defmodule GenServer do
   # Tuple return patterns rely on Mix arity checks (tuple_size before get_tuple_elem).
   #
   # `use GenServer` options: restart:, shutdown:, significant:, type: → child_spec keys.
-  # Client: call/2, cast/2, reply/3. Dispatch uses IR v15 apply_mfa.
+ # Client: call/2, cast/2, reply/3. Dispatch uses apply_mfa.
 
   def child_spec({mod, arg}) do
     m = map_put(%{}, :id, mod)

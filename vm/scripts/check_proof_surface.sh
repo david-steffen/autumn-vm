@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify curated public lemma names still exist in allowlisted modules.
+# Rename tripwire only — does not certify exhaustiveness or semantic stability.
 # Golden: vm/tests/proof_surface.names (one theorem name per line).
 set -euo pipefail
 

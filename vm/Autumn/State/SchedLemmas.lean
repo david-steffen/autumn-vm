@@ -24,7 +24,7 @@ theorem clock_preserves (s : State) (n : Nat) (hs : State.WF s) :
     State.WF { s with clock := n } :=
   ⟨hs.1, hs.2.1, hs.2.2.1, hs.2.2.2⟩
 
-/-- Phase 2 scheduler: error is always `noRunnable`. -/
+/-- Scheduler: error is always `noRunnable`. -/
 theorem scheduleNext_error_is_noRunnable (s : State) (fromIdx : Nat) {e}
     (h : State.scheduleNext s fromIdx = .error e) : e = .noRunnable := by
   unfold State.scheduleNext at h
@@ -108,7 +108,7 @@ theorem scheduleNext_preserves (s : State) (fromIdx : Nat) {s'}
         · exact nomatch h
       · exact nomatch h
 
-/-! ## Durable drain (IR v14): machine result is entry exit `toTerm` -/
+/-! ## Durable drain: machine result is entry exit `toTerm` -/
 
 /--
 When `scheduleNext` publishes a machine `result` from a state with no machine
@@ -149,7 +149,7 @@ theorem scheduleNext_result_is_toTerm
         · exact nomatch h
       · exact nomatch h
 
-/-! ## ScheduleChoice / `scheduleNextWith` (Phase 27) -/
+/-! ## ScheduleChoice / `scheduleNextWith` -/
 
 @[simp] theorem scheduleNextWith_roundRobin (s : State) (fromIdx : Nat) :
     State.scheduleNextWith s fromIdx .roundRobin = State.scheduleNext s fromIdx :=

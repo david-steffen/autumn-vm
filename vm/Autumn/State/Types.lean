@@ -36,18 +36,18 @@ structure Process where
   handlers : Array Handler
   /-- Absolute machine clock deadline for selective `wait` (`none` = infinity / not waiting on a timer). -/
   waitDeadline : Option Nat := none
-  /-- Linked peer pids (IR v8). EXIT signals go here on exit. -/
+  /-- Linked peer pids. EXIT signals go here on exit. -/
   links : Array Nat := #[]
-  /-- Outbound monitors (IR v9): `(targetPid, refId)`. -/
+  /-- Outbound monitors: `(targetPid, refId)`. -/
   monitors : Array (Nat × Nat) := #[]
-  /-- Inbound monitors (IR v9): `(fromPid, refId)`. DOWN signals go here on exit. -/
+  /-- Inbound monitors: `(fromPid, refId)`. DOWN signals go here on exit. -/
   monitoredBy : Array (Nat × Nat) := #[]
-  /-- IR v14: when true, linked EXIT is delivered as `{:EXIT, …}` (OTP `trap_exit`).
+  /-- When true, linked EXIT is delivered as `{:EXIT, …}` (OTP `trap_exit`).
   Default false — linked EXIT kills the peer. -/
   trapExit : Bool := false
   deriving Repr, Inhabited
 
-/-- ETS table kind (IR v17/v18 teaching subset). -/
+/-- ETS table kind (teaching subset). -/
 inductive EtsKind where
   | set
   | bag
@@ -61,11 +61,11 @@ structure EtsTable where
   name : Option String := none
   kind : EtsKind := .set
   entries : Array (Term × Term) := #[]
-  /-- Creator process pid (IR v18). -/
+  /-- Creator process pid. -/
   owner : Option Nat := none
-  /-- Heir pid + opaque data delivered on owner exit (IR v18). -/
+  /-- Heir pid + opaque data delivered on owner exit. -/
   heir : Option (Nat × Term) := none
-  /-- False after owner exit without heir; tid slot kept (IR v18). -/
+  /-- False after owner exit without heir; tid slot kept. -/
   alive : Bool := true
   deriving Repr, Inhabited
 
@@ -80,14 +80,14 @@ structure State where
   /-- Entry process pid (machine result comes from this process). -/
   entryPid : Nat
   /-- Machine-level result once the machine is idle and the entry process has exited.
-  Entry exit alone does not halt the machine (IR v14 durable drain). -/
+  Entry exit alone does not halt the machine (durable drain). -/
   result : Option Term
   nextPid : Nat
-  /-- Next unique reference id (IR v9). -/
+  /-- Next unique reference id. -/
   nextRef : Nat := 0
   /-- Logical clock for `wait` timeouts (advanced each step / idle jump). -/
   clock : Nat := 0
-  /-- Public ETS tables (IR v17); tid = index into this array. -/
+  /-- Public ETS tables; tid = index into this array. -/
   etsTables : Array EtsTable := #[]
   deriving Repr, Inhabited
 

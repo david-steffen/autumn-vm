@@ -3,7 +3,7 @@ import Autumn.Term.Bitstring
 
 namespace Autumn
 
-/-- Runtime terms (IR v1–v16). Unique `reference` is distinct from heap pointers.
+/-- Runtime terms. Unique `reference` is distinct from heap pointers.
 UTF-8 `string` stays a separate immediate; raw bytes use `bitstring` (aligned ⇒ binary). -/
 inductive Term where
   | nil

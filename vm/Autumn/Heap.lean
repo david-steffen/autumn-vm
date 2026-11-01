@@ -15,7 +15,7 @@ inductive Value where
   | string (s : String)
   | bitstring (b : Term.Bitstring)
   | pid (id : Nat)
-  /-- Unique reference (IR v9); not a heap pointer. -/
+  /-- Unique reference; not a heap pointer. -/
   | reference (id : Nat)
   | ref (r : Ref)
   deriving Repr, BEq, Inhabited

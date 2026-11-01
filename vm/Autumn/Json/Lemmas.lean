@@ -10,7 +10,7 @@ import Init.Data.Order.LemmasExtra
 
 JSON is the Mix ↔ Lean contract. Prefer `decode*_encode*` theorems here over
 hand-rolled lit parsers. Tags and literals (including exact-field floats)
-roundtrip under the stated fuel / locals / version hypotheses. `Term.FloatFree`
+roundtrip under the stated fuel / locals / format hypotheses. `Term.FloatFree`
 allows floats (exact-field encode); name kept for stable signatures.
 See `AGENTS.md` (“Public proof surface”).
 -/
@@ -1196,14 +1196,10 @@ theorem decodeInstr_encodeInstr (i : Instr) (hi : Instr.FloatFree i)
 
 
 
-theorem versionOk_not_rejected (v : Nat) (h : Module.versionOk v) :
-    (v != 1 && v != 2 && v != 3 && v != 4 && v != 5 && v != 6 && v != 7 && v != 8 &&
-      v != 9 && v != 10 && v != 11 && v != 12 && v != 13 && v != 14 && v != 15 &&
-      v != 16 && v != 17 && v != 18 && v != 19 && v != 20 && v != 21) = false := by
-  simp only [Module.versionOk] at h
-  rcases h with
-    h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;>
-      simp [h]
+theorem formatOk_not_rejected (v : Nat) (h : Module.formatOk v) :
+    (v != 1) = false := by
+  simp only [Module.formatOk] at h
+  simp [h]
 
 theorem decodeFunction_encodeFunction (f : Function)
     (hf : Function.FloatFree f) (hfuel : Function.LitFuelOk f)
@@ -1261,22 +1257,22 @@ theorem decodeCodeModule_encodeCodeModule (cm : CodeModule)
 
 theorem decodeModule_encodeModule (m : Module) (hm : Module.FloatFree m)
     (hfuel : Module.LitFuelOk m) (hloc : Module.LocalsOk m)
-    (hv : Module.versionOk m.version) (hne : 0 < m.modules.size) :
+    (hv : Module.formatOk m.format) (hne : 0 < m.modules.size) :
     Decode.decodeModule (Encode.encodeModule m) = Except.ok m := by
   simp only [Encode.encodeModule, Decode.decodeModule]
-  have hdist : [("version", (m.version : Json)), ("entry", (m.entry : Json)),
+  have hdist : [("format", (m.format : Json)), ("entry", (m.entry : Json)),
       ("modules", Json.arr (m.modules.map Encode.encodeCodeModule))].Pairwise
       (fun a b : String × Json => a.1 ≠ b.1) := by simp [List.pairwise_cons]
-  have hvis := getObjVal?_of_mem [("version", (m.version : Json)), ("entry", (m.entry : Json)),
+  have hfmt := getObjVal?_of_mem [("format", (m.format : Json)), ("entry", (m.entry : Json)),
       ("modules", Json.arr (m.modules.map Encode.encodeCodeModule))]
-    "version" (m.version : Json) (by simp) hdist
-  have hentry := getObjVal?_of_mem [("version", (m.version : Json)), ("entry", (m.entry : Json)),
+    "format" (m.format : Json) (by simp) hdist
+  have hentry := getObjVal?_of_mem [("format", (m.format : Json)), ("entry", (m.entry : Json)),
       ("modules", Json.arr (m.modules.map Encode.encodeCodeModule))]
     "entry" (m.entry : Json) (by simp) hdist
-  have hmods := getObjVal?_of_mem [("version", (m.version : Json)), ("entry", (m.entry : Json)),
+  have hmods := getObjVal?_of_mem [("format", (m.format : Json)), ("entry", (m.entry : Json)),
       ("modules", Json.arr (m.modules.map Encode.encodeCodeModule))]
     "modules" (Json.arr (m.modules.map Encode.encodeCodeModule)) (by simp) hdist
-  have hvok := versionOk_not_rejected m.version hv
+  have hvok := formatOk_not_rejected m.format hv
   have hmap : (m.modules.map Encode.encodeCodeModule).mapM Decode.decodeCodeModule =
       Except.ok m.modules := by
     rw [Array.mapM_map]
@@ -1290,7 +1286,7 @@ theorem decodeModule_encodeModule (m : Module) (hm : Module.FloatFree m)
     intro heq
     rw [heq] at hne
     simp at hne
-  simp [Decode.field, hvis, hentry, hmods, asString_coe, asNat_coe, asArray_arr,
+  simp [Decode.field, hfmt, hentry, hmods, asString_coe, asNat_coe, asArray_arr,
     Bind.bind, Pure.pure, Except.bind, Except.pure, hvok, hmap, hempty]
 
 
@@ -1311,11 +1307,11 @@ theorem decodeInstr_encodeInstr (i : Instr) (hi : Instr.FloatFree i)
 /-- Decode ∘ encode for the `modules[]` image `encodeModule` emits (float-free lits). -/
 theorem decodeModule_encodeModule (m : Module) (hm : Module.FloatFree m)
     (hfuel : Module.LitFuelOk m) (hloc : Module.LocalsOk m)
-    (hv : Module.versionOk m.version) (hne : 0 < m.modules.size) :
+    (hv : Module.formatOk m.format) (hne : 0 < m.modules.size) :
     Json.Decode.decodeModule (Json.Encode.encodeModule m) = .ok m :=
   Json.decodeModule_encodeModule m hm hfuel hloc hv hne
 
-/-! ## Float literals (Phase 25)
+/-! ## Float literals
 
 Exact IEEE field encode/decode is bit-identical (`neg` / `exp` / `frac`).
 -/

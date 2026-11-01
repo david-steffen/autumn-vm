@@ -185,28 +185,19 @@ def uniqueModuleNames (m : Module) : Prop :=
   ∀ i j : Fin m.modules.size,
     i ≠ j → m.modules[i].name ≠ m.modules[j].name
 
-def versionOk (v : Nat) : Prop :=
-  v = 1 ∨ v = 2 ∨ v = 3 ∨ v = 4 ∨ v = 5 ∨ v = 6 ∨ v = 7 ∨ v = 8 ∨ v = 9 ∨
-    v = 10 ∨ v = 11 ∨ v = 12 ∨ v = 13 ∨ v = 14 ∨ v = 15 ∨ v = 16 ∨ v = 17 ∨
-    v = 18 ∨ v = 19 ∨ v = 20 ∨ v = 21
+def formatOk (v : Nat) : Prop :=
+  v = 1
 
-def versionOkB (v : Nat) : Bool :=
-  (1 ≤ v) && (v ≤ 21)
+def formatOkB (v : Nat) : Bool :=
+  v == 1
 
-theorem versionOkB_sound (v : Nat) (h : versionOkB v = true) : versionOk v := by
-  simp only [versionOkB, Bool.and_eq_true, decide_eq_true_eq] at h
-  match v with
-  | 0 => omega
-  | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 =>
-    simp [versionOk]
-  | n + 22 => omega
+theorem formatOkB_sound (v : Nat) (h : formatOkB v = true) : formatOk v := by
+  simp only [formatOkB, beq_iff_eq] at h
+  exact h
 
-theorem versionOkB_complete (v : Nat) (h : versionOk v) : versionOkB v = true := by
-  simp only [versionOk] at h
-  simp only [versionOkB, Bool.and_eq_true, decide_eq_true_eq]
-  rcases h with
-    h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;>
-      subst h <;> decide
+theorem formatOkB_complete (v : Nat) (h : formatOk v) : formatOkB v = true := by
+  simp only [formatOk, formatOkB, beq_iff_eq] at h ⊢
+  exact h
 
 def uniqueFunNamesB (m : Module) : Bool :=
   (List.range m.allFunctions.size).all fun i =>
@@ -277,7 +268,7 @@ theorem uniqueModuleNamesB_complete (m : Module) (h : uniqueModuleNames m) :
     exact h ⟨i, hi'⟩ ⟨j, hj'⟩ (Fin.ne_of_val_ne heq)
 
 def WF (m : Module) : Prop :=
-  versionOk m.version ∧
+  formatOk m.format ∧
   0 < m.modules.size ∧
   (m.findFunction m.entry).isSome ∧
   uniqueModuleNames m ∧
@@ -286,7 +277,7 @@ def WF (m : Module) : Prop :=
 
 /-- Decidable module well-formedness (used to reject bad `load_file` installs). -/
 def checkWF (m : Module) : Bool :=
-  versionOkB m.version &&
+  formatOkB m.format &&
   (0 < m.modules.size) &&
   (m.findFunction m.entry).isSome &&
   uniqueModuleNamesB m &&
@@ -296,7 +287,7 @@ def checkWF (m : Module) : Bool :=
 
 theorem checkWF_sound (m : Module) (h : checkWF m = true) : WF m := by
   simp only [checkWF, Bool.and_eq_true, decide_eq_true_eq] at h
-  refine ⟨versionOkB_sound _ h.1.1.1.1.1, h.1.1.1.1.2, h.1.1.1.2,
+  refine ⟨formatOkB_sound _ h.1.1.1.1.1, h.1.1.1.1.2, h.1.1.1.2,
     uniqueModuleNamesB_sound _ h.1.1.2, uniqueFunNamesB_sound _ h.1.2, ?_⟩
   intro i
   have hall := (List.all_eq_true).1 h.2
@@ -307,7 +298,7 @@ theorem checkWF_sound (m : Module) (h : checkWF m = true) : WF m := by
 
 theorem checkWF_complete (m : Module) (h : WF m) : checkWF m = true := by
   simp only [checkWF, Bool.and_eq_true, decide_eq_true_eq]
-  refine ⟨⟨⟨⟨⟨versionOkB_complete _ h.1, h.2.1⟩, h.2.2.1⟩,
+  refine ⟨⟨⟨⟨⟨formatOkB_complete _ h.1, h.2.1⟩, h.2.2.1⟩,
     uniqueModuleNamesB_complete _ h.2.2.2.1⟩, uniqueFunNamesB_complete _ h.2.2.2.2.1⟩, ?_⟩
   apply (List.all_eq_true).2
   intro i hi

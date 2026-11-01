@@ -88,36 +88,20 @@ defmodule AutumnCompiler.Lower do
   end
 
   @doc """
-  Assemble code modules into an IR image.
-
-  * One module → legacy flat `"functions"` (keeps existing goldens).
-  * Two or more → IR v12 `"modules"` with `version = max(opcode_needs, 12)`.
+  Assemble code modules into an IR image (`format` is always `1`).
+  Always emits `"modules"` (one or more named code modules).
   """
   def assemble(code_modules, entry \\ nil) do
     code_modules = List.wrap(code_modules)
 
     with :ok <- validate_code_modules(code_modules),
          {:ok, entry} <- resolve_entry(code_modules, entry) do
-      all_funs = Enum.flat_map(code_modules, & &1["functions"])
-      opcode_v = module_version(all_funs)
-
-      case code_modules do
-        [cm] ->
-          {:ok,
-           %{
-             "version" => opcode_v,
-             "entry" => entry,
-             "functions" => cm["functions"]
-           }}
-
-        many ->
-          {:ok,
-           %{
-             "version" => max(opcode_v, 12),
-             "entry" => entry,
-             "modules" => many
-           }}
-      end
+      {:ok,
+       %{
+         "format" => 1,
+         "entry" => entry,
+         "modules" => code_modules
+       }}
     end
   end
 
@@ -401,229 +385,6 @@ defmodule AutumnCompiler.Lower do
     id
   end
 
-  defp module_version(funs) do
-    cond do
-      needs_v21?(funs) -> 21
-      needs_v20?(funs) -> 20
-      needs_v19?(funs) -> 19
-      needs_v18?(funs) -> 18
-      needs_v17?(funs) -> 17
-      needs_v16?(funs) -> 16
-      needs_v15?(funs) -> 15
-      needs_v14?(funs) -> 14
-      needs_v13?(funs) -> 13
-      needs_v11?(funs) -> 11
-      needs_v10?(funs) -> 10
-      needs_v9?(funs) -> 9
-      needs_v8?(funs) -> 8
-      needs_v7?(funs) -> 7
-      needs_v6?(funs) -> 6
-      needs_v5?(funs) -> 5
-      needs_v4?(funs) -> 4
-      needs_v3?(funs) -> 3
-      needs_v2?(funs) -> 2
-      true -> 1
-    end
-  end
-
-  defp needs_v21?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn
-        %{"op" => "call", "fun" => fun}
-        when fun in ~w(ets_first/1 ets_next/2 ets_give_away/3) ->
-          true
-
-        _ ->
-          false
-      end)
-    end)
-  end
-
-  defp needs_v20?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn
-        %{"op" => "call", "fun" => fun}
-        when fun in ~w(bit_size/1 bs_get_integer/2 bs_drop/2) ->
-          true
-
-        _ ->
-          false
-      end)
-    end)
-  end
-
-  defp needs_v19?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn
-        %{"op" => "wait", "timeout" => %{"reg" => _}} -> true
-        %{"op" => "call", "fun" => "Process.hibernate/0"} -> true
-        _ -> false
-      end)
-    end)
-  end
-
-  defp needs_v18?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn
-        %{"op" => "call", "fun" => fun}
-        when fun in ~w(ets_delete_object/2 ets_heir/2) ->
-          true
-
-        %{"op" => "load_lit", "lit" => %{"atom" => "ordered_set"}} ->
-          true
-
-        _ ->
-          false
-      end)
-    end)
-  end
-
-  defp needs_v17?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn
-        %{"op" => "call", "fun" => fun}
-        when fun in ~w(ets_new/2 ets_match_object/2 ets_select/2) ->
-          true
-
-        _ ->
-          false
-      end)
-    end)
-  end
-
-  defp needs_v16?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn
-        %{"op" => "load_lit", "lit" => %{"binary" => _}} -> true
-        %{"op" => "load_lit", "lit" => %{"bitstring" => _}} -> true
-        %{"op" => "is_tag", "tag" => tag} when tag in ~w(binary bitstring) -> true
-        _ -> false
-      end)
-    end)
-  end
-
-  defp needs_v15?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn
-        %{"op" => "apply_mfa"} -> true
-        _ -> false
-      end)
-    end)
-  end
-
-  defp needs_v14?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn
-        %{"op" => "call", "fun" => fun}
-        when fun in ~w(Process.flag/2 Process.exit/2) ->
-          true
-
-        _ ->
-          false
-      end)
-    end)
-  end
-
-  defp needs_v13?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn
-        %{"op" => "load_file"} -> true
-        _ -> false
-      end)
-    end)
-  end
-
-  defp needs_v11?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn
-        %{"op" => op} when op in ~w(make_fun apply) -> true
-        %{"op" => "is_tag", "tag" => "fun"} -> true
-        _ -> false
-      end)
-    end)
-  end
-
-  defp needs_v10?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn
-        %{"op" => "load_lit", "lit" => %{"float" => _}} -> true
-        %{"op" => "load_lit", "lit" => %{"string" => _}} -> true
-        %{"op" => "call", "fun" => "<>/2"} -> true
-        %{"op" => "is_tag", "tag" => tag} when tag in ~w(float string) -> true
-        _ -> false
-      end)
-    end)
-  end
-
-  defp needs_v9?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn
-        %{"op" => op} when op in ~w(monitor demonitor) -> true
-        %{"op" => "call", "fun" => "make_ref/0"} -> true
-        %{"op" => "load_lit", "lit" => %{"ref" => _}} -> true
-        %{"op" => "is_tag", "tag" => "ref"} -> true
-        _ -> false
-      end)
-    end)
-  end
-
-  defp needs_v8?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn instr -> instr["op"] == "link" end)
-    end)
-  end
-
-  defp needs_v7?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn instr ->
-        instr["op"] in ~w(recv_peek recv_drop wait)
-      end)
-    end)
-  end
-
-  defp needs_v6?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn instr ->
-        instr["op"] in ~w(enter_try leave_try raise)
-      end)
-    end)
-  end
-
-  defp needs_v5?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn
-        %{"op" => "load_lit", "lit" => %{"map" => _}} -> true
-        %{"op" => "call", "fun" => fun} when fun in ~w(map_size/1 map_get/2 map_put/3) -> true
-        %{"op" => "is_tag", "tag" => "map"} -> true
-        _ -> false
-      end)
-    end)
-  end
-
-  defp needs_v4?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn instr -> instr["op"] == "get_list_rest" end)
-    end)
-  end
-
-  defp needs_v3?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn instr -> instr["op"] == "get_list_elem" end)
-    end)
-  end
-
-  defp needs_v2?(funs) do
-    Enum.any?(funs, fn f ->
-      Enum.any?(f["code"], fn instr ->
-        instr["op"] in ~w(jump jump_if_eq get_tuple_elem is_tag spawn send recv) or
-          list_lit?(instr)
-      end)
-    end)
-  end
-
-  defp list_lit?(%{"op" => "load_lit", "lit" => %{"list" => _}}), do: true
-  defp list_lit?(_), do: false
-
   defp module_name({:__aliases__, _, parts}), do: Enum.map_join(parts, ".", &to_string/1)
 
   defp flatten_block({:__block__, _, stmts}), do: stmts
@@ -849,7 +610,7 @@ defmodule AutumnCompiler.Lower do
   defp expr(s, env, next, code) when is_binary(s),
     do: emit_lit(%{"string" => s}, env, next, code)
 
-  # Binary / partial bitstring literal `<<…>>` (IR v16). Integer segments size 1…8
+  # Binary / partial bitstring literal `<<…>>`. Integer segments size 1…8
   # (default 8) + UTF-8 string chunks; trailing partial sizes 1…7 → `bitstring` lit.
   defp expr({:<<>>, _, segs}, env, next, code) when is_list(segs) do
     case literal_bitstring_lit(segs) do
@@ -932,7 +693,7 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
-  # Code.load_file(path) — IR v13; loads a .bc.json image at runtime
+  # Code.load_file(path) — loads a .bc.json image at runtime
   defp expr(
          {{:., _, [{:__aliases__, _, [:Code]}, :load_file]}, _, [path_ast]},
          env,
@@ -1035,7 +796,7 @@ defmodule AutumnCompiler.Lower do
     lower_call_named("#{mod}.#{fun}/#{arity}", args, env, next, code)
   end
 
-  # apply(mod, fun, [a, b, ...]) with a literal arg list → apply_mfa (IR v15)
+  # apply(mod, fun, [a, b, ...]) with a literal arg list → apply_mfa
   defp expr({:apply, _, [mod_ast, fun_ast, args_list]}, env, next, code)
        when is_list(args_list) do
     with {:ok, code, env, next, mod_reg} <- expr(mod_ast, env, next, code),
@@ -1065,7 +826,7 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
-  # `fn` → lift + make_fun (IR v11). Multi-clause / patterned heads → synthetic case.
+  # `fn` → lift + make_fun. Multi-clause / patterned heads → synthetic case.
   defp expr({:fn, _, clauses}, env, next, code) when is_list(clauses) and clauses != [] do
     case clauses do
       [{:->, _, [params, body]}] ->
@@ -1622,7 +1383,7 @@ defmodule AutumnCompiler.Lower do
 
   # receive do clauses after timeout -> body end
   # Empty `do` (after-only) allowed. Scan loop: recv_peek; clauses; else idx++; wait.
-  # Timeout may be a non-neg int lit or an expression (IR v19 `{"reg": R}`).
+  # Timeout may be a non-neg int lit or an expression (`{"reg": R}`).
   defp lower_receive(opts, env, next, code) do
     clauses =
       case Keyword.get(opts, :do, []) do
@@ -2342,7 +2103,7 @@ defmodule AutumnCompiler.Lower do
     emit_map_pattern_test(pairs, scr, env, next, code)
   end
 
-  # Bitstring patterns `<<…>>` (IR v20 teaching subset).
+  # Bitstring patterns `<<…>>` (teaching subset).
   defp emit_pattern_test({:<<>>, _, segs}, scr, env, next, code) when is_list(segs) do
     emit_bitstring_pattern_test(segs, scr, env, next, code)
   end
@@ -3554,7 +3315,7 @@ defmodule AutumnCompiler.Lower do
   defp lit_value({a, b}), do: lit_value({:{}, [], [a, b]})
   defp lit_value(_), do: :error
 
-  # Pack `<<…>>` into IR v16 `binary` or partial `bitstring` lit (MSB-first).
+  # Pack `<<…>>` into `binary` or partial `bitstring` lit (MSB-first).
   defp literal_bitstring_lit(segs) do
     case pack_bitstring_segments(segs) do
       {:ok, bytes, 0} ->

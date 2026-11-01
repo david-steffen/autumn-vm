@@ -137,10 +137,10 @@ def encodeCodeModule (cm : CodeModule) : Json :=
     ("functions", Json.arr (cm.functions.map encodeFunction))
   ]
 
-/-- Always emit first-class `modules[]` (IR v12 shape). -/
+/-- Always emit first-class `modules[]`. -/
 def encodeModule (m : Module) : Json :=
   Json.mkObj [
-    ("version", m.version),
+    ("format", m.format),
     ("entry", m.entry),
     ("modules", Json.arr (m.modules.map encodeCodeModule))
   ]

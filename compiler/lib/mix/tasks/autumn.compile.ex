@@ -6,7 +6,7 @@ defmodule Mix.Tasks.Autumn.Compile do
       mix autumn.compile path/to/file.ex [output.bc.json]
       mix autumn.compile a.ex b.ex [output.bc.json]
 
-  Multiple `.ex` inputs are assembled into one image (IR v12 `modules[]`
+  Multiple `.ex` inputs are assembled into one image (`modules[]`
   when more than one `defmodule` is present).
   """
 

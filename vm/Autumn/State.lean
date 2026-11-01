@@ -133,7 +133,7 @@ def dropByRef (arr : Array (Nat × Nat)) (refId : Nat) : Array (Nat × Nat) :=
 def dropMonitoredBy (arr : Array (Nat × Nat)) (fromPid refId : Nat) : Array (Nat × Nat) :=
   arr.filter (fun (p, r) => !(p == fromPid && r == refId))
 
-/-- Deliver `{:ETS-TRANSFER, tid, fromPid, data}` to heir and wake if waiting (IR v18). -/
+/-- Deliver `{:ETS-TRANSFER, tid, fromPid, data}` to heir and wake if waiting. -/
 def notifyEtsTransfer (s : State) (tid fromPid heirPid : Nat) (data : Term) : State :=
   match s.findProcessIdx heirPid with
   | none => s
@@ -164,7 +164,7 @@ def processLive (s : State) (pid : Nat) : Bool :=
     else
       false
 
-/-- One table index: transfer to live heir or kill (IR v18). -/
+/-- One table index: transfer to live heir or kill. -/
 def etsOnOwnerExit.one (s : State) (fromPid i : Nat) : State :=
   if h : i < s.etsTables.size then
     let t := s.etsTables[i]'h
@@ -189,7 +189,7 @@ def etsOnOwnerExit.go (s : State) (fromPid : Nat) : List Nat → State
   | [] => s
   | i :: rest => etsOnOwnerExit.go (etsOnOwnerExit.one s fromPid i) fromPid rest
 
-/-- After owner exit: transfer to live heir or kill the table (IR v18). -/
+/-- After owner exit: transfer to live heir or kill the table. -/
 def etsOnOwnerExit (s : State) (fromPid : Nat) : State :=
   etsOnOwnerExit.go s fromPid (List.range s.etsTables.size)
 
@@ -336,7 +336,7 @@ end
 
 /--
 Notify linked peers and monitorers that the process at `exitedIdx` has exited with `reason`.
-IR v14: trapping peers get `{:EXIT, …}`; non-trapping linked peers are killed and cascade.
+Trapping peers get `{:EXIT, …}`; non-trapping linked peers are killed and cascade.
 -/
 def propagateExit (s : State) (exitedIdx : Nat) (reason : Value) : State :=
   if hlt : exitedIdx < s.processes.size then
@@ -351,7 +351,7 @@ def propagateExit (s : State) (exitedIdx : Nat) (reason : Value) : State :=
     let s :=
       propagateExit.from s.processes.size s fromPid heap reason
         linkPids.toList downs.toList outs.toList
-    -- IR v18: ETS owner exit → heir transfer or kill table.
+    -- ETS owner exit → heir transfer or kill table.
     etsOnOwnerExit s fromPid
   else
     s
@@ -436,7 +436,7 @@ def isDownRefMsg (h : Heap) (v : Value) (refId : Nat) : Bool :=
 def flushDownRef (h : Heap) (mailbox : Array Value) (refId : Nat) : Array Value :=
   mailbox.filter (fun v => !(isDownRefMsg h v refId))
 
-/-! ## ETS (public tables; tid = index; IR v17/v18) -/
+/-! ## ETS (public tables; tid = index; ) -/
 
 /-- Anonymous `:set` table (compat `ets_new/0`); `owner` = creator pid. -/
 def etsNew (s : State) (ownerPid : Nat) : State × Nat :=
@@ -444,7 +444,7 @@ def etsNew (s : State) (ownerPid : Nat) : State × Nat :=
   let t : EtsTable := { owner := some ownerPid }
   ({ s with etsTables := s.etsTables.push t }, tid)
 
-/-- IR v17/v18 `ets_new/2`: `name` is `none` (anonymous) or atom text; fails on dup name. -/
+/-- `ets_new/2`: `name` is `none` (anonymous) or atom text; fails on dup name. -/
 def etsNewNamed (s : State) (ownerPid : Nat) (name : Option String) (kind : EtsKind) :
     Option (State × Nat) :=
   match name with
@@ -546,7 +546,7 @@ def etsHeir (s : State) (tid : Nat) (heirT : Term) : Option State :=
   else
     none
 
-/-- IR v21 `ets_first/1` — first key or `"$end_of_table"`. -/
+/-- `ets_first/1` — first key or `"$end_of_table"`. -/
 def etsFirst (s : State) (tid : Nat) : Option Term :=
   if h : tid < s.etsTables.size then
     if !(s.etsTables[tid]'h).alive then none
@@ -554,7 +554,7 @@ def etsFirst (s : State) (tid : Nat) : Option Term :=
   else
     none
 
-/-- IR v21 `ets_next/2` — next key after `key` or `"$end_of_table"`. -/
+/-- `ets_next/2` — next key after `key` or `"$end_of_table"`. -/
 def etsNext (s : State) (tid : Nat) (key : Term) : Option Term :=
   if h : tid < s.etsTables.size then
     if !(s.etsTables[tid]'h).alive then none
@@ -562,7 +562,7 @@ def etsNext (s : State) (tid : Nat) (key : Term) : Option Term :=
   else
     none
 
-/-- IR v21 `ets_give_away/3` — owner transfers table; delivers `ETS-TRANSFER`. -/
+/-- `ets_give_away/3` — owner transfers table; delivers `ETS-TRANSFER`. -/
 def etsGiveAway (s : State) (tid : Nat) (fromPid toPid : Nat) (data : Term) :
     Option State :=
   if h : tid < s.etsTables.size then

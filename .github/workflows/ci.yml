@@ -38,6 +38,9 @@ jobs:
       - name: Proof surface names
         working-directory: vm
         run: ./scripts/check_proof_surface.sh
+      - name: Builtins inventory sync
+        working-directory: vm
+        run: ./scripts/check_builtins.sh
       - name: Fetch Mix deps
         working-directory: compiler
         run: mix deps.get

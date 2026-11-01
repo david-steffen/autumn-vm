@@ -1,2 +1,4 @@
 .expert
 .lake
+# Derived IR — regenerate in smoke/CI; do not commit
+tests/fixtures/**/*.bc.json

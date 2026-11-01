@@ -1,0 +1,39 @@
+# Canonical builtin MFA names (Autumn IR). One name/arity per line.
+# Process.* are Lean/runtime call-specials (Mix lowers Process.flag/exit/hibernate
+# as ordinary calls to these MFAs). make_tuple/N is a prefix rule in Lean only.
++/2
+-/2
+*/2
+==/2
+</2
+>/2
+<=/2
+>=/2
+tuple_size/1
+list_size/1
+elem/2
+map_size/1
+map_get/2
+map_put/3
+self/0
+make_ref/0
+<>/2
+bit_size/1
+bs_get_integer/2
+bs_drop/2
+cons/2
+Process.flag/2
+Process.exit/2
+Process.hibernate/0
+ets_new/0
+ets_new/2
+ets_insert/3
+ets_lookup/2
+ets_delete/2
+ets_delete_object/2
+ets_match_object/2
+ets_select/2
+ets_heir/2
+ets_first/1
+ets_next/2
+ets_give_away/3

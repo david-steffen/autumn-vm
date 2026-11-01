@@ -9,24 +9,10 @@ Thin `stepInstr_preserves` dispatcher. **External proofs** should call these
 `*_preserves` / `*_step_preserves` lemmas (or `stepInstr_preserves` /
 `step_preserves`) rather than unfolding `stepInstr`.
 
-## Audit (Phase 26)
-
-Every `Instr` constructor has a preserve case (mirrored by
-`*_error_not_structural` in `ProgressInstr`):
-
-`loadLit`, `move`, `call`, `return_`, `halt`, `jump`, `jumpIfEq`,
-`getTupleElem`, `isTag`, `spawn`, `send`, `recv`, `getListElem`, `getListRest`,
-`enterTry`, `leaveTry`, `raise`, `recvPeek`, `recvDrop`, `wait`, `link`,
-`monitor`, `demonitor`, `makeFun`, `apply`, `loadFile`, `applyMfa`.
-
-Call-specials via `call_preserves` → helpers in `Step.Preserve`: `map_put/3`,
-`cons/2`, `Process.flag/2`, `Process.exit/2`, `Process.hibernate/0`, `ets_new/0`, `ets_new/2`,
-`ets_insert/3`, `ets_lookup/2`, `ets_delete/2`, `ets_delete_object/2`,
-`ets_match_object/2`, `ets_select/2`, `ets_heir/2`, `ets_first/1`, `ets_next/2`,
-`ets_give_away/3`, `make_ref/0`; other MFAs use `builtin` +
-`builtin_error_not_structural` / `floatBinop_ne_error`.
-
-See `AGENTS.md` (“Public proof surface”).
+Every `Instr` constructor needs a preserve case (mirrored by
+`*_error_not_structural` in `ProgressInstr`). Call-specials go through
+`call_preserves` → helpers in `Step.Preserve`. Builtin MFA inventory:
+`vm/builtins.mfa`. See `AGENTS.md` (“Public proof surface”).
 -/
 
 /-- `loadLit` case of `stepInstr_preserves`. -/

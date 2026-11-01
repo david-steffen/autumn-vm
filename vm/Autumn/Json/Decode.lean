@@ -254,33 +254,17 @@ def decodeCodeModule (j : Json) : Except StepError CodeModule := do
   let functions ← (← asArray (← field j "functions")).mapM decodeFunction
   pure { name, functions }
 
-/-- `Mod.path.fun/N` → `Mod.path`. -/
-def moduleNameFromEntry (entry : FunName) : String :=
-  let head := (entry.splitOn "/").headD entry
-  let parts := head.splitOn "."
-  if parts.length ≤ 1 then head
-  else String.intercalate "." parts.dropLast
-
 def decodeModule (j : Json) : Except StepError Module := do
-  let version ← asNat (← field j "version")
-  if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 &&
-      version != 6 && version != 7 && version != 8 && version != 9 && version != 10 &&
-      version != 11 && version != 12 && version != 13 && version != 14 &&
-      version != 15 && version != 16 && version != 17 && version != 18 &&
-      version != 19 && version != 20 && version != 21 then
-    err s!"unsupported IR version: {version}"
+  let format ← asNat (← field j "format")
+  if format != 1 then
+    err s!"unsupported IR format: {format}"
   let entry ← asString (← field j "entry")
-  match j.getObjVal? "modules" with
-  | .ok mods =>
-    let modules ← (← asArray mods).mapM decodeCodeModule
-    if modules.isEmpty then
-      err "modules array must be non-empty"
-    else
-      pure { version, entry, modules }
-  | .error _ =>
-    -- Legacy flat `functions` (IR v1–11): wrap as one CodeModule.
-    let functions ← (← asArray (← field j "functions")).mapM decodeFunction
-    pure (Module.ofFunctions version entry functions (moduleNameFromEntry entry))
+  let mods ← field j "modules"
+  let modules ← (← asArray mods).mapM decodeCodeModule
+  if modules.isEmpty then
+    err "modules array must be non-empty"
+  else
+    pure { format, entry, modules }
 
 def fromString (s : String) : Except StepError Module :=
   match Json.parse s with

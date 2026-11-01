@@ -1,5 +1,5 @@
 defmodule Main do
-  # Tagged request/reply messages (Phase 6).
+  # Tagged request/reply messages.
   def server(n) do
     receive do
       {from, :add, x} ->

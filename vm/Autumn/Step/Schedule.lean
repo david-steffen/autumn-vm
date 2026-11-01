@@ -4,7 +4,7 @@ import Autumn.State.Lemmas
 namespace Autumn
 namespace Step
 
-/-! # Schedule-quantified runners (Phase 27)
+/-! # Schedule-quantified runners
 
 `State.ScheduleChoice` / `scheduleNextWith` live on `State`. This module provides
 runners that consume a choice tape at **top-level** schedule points (`step`
