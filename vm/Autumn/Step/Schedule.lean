@@ -13,6 +13,10 @@ wait / process exit) still use deterministic `scheduleNext` — full instr-bound
 threading is deferred so existing preserve/progress proofs stay stable.
 
 Default `run` / smoke paths are unchanged.
+
+Public schedule lemmas: `covers_*`, `afterInstrWith_preserves`,
+`stepScheduled_deschedule_roundRobin` (see also `stepScheduled_preserves` in
+`Step/Lemmas`). Names are listed in `vm/tests/proof_surface.names`.
 -/
 
 open State
@@ -82,6 +86,29 @@ def applyScheduleChoices (choices : List ScheduleChoice) (s : State) (fromIdx : 
 /-- Every process index appears as `.prefer` at least once. -/
 def covers (choices : List ScheduleChoice) (nprocs : Nat) : Prop :=
   ∀ i, i < nprocs → choices.any (fun c => c == .prefer i) = true
+
+@[simp] theorem covers_nil (nprocs : Nat) :
+    covers ([] : List ScheduleChoice) nprocs ↔ nprocs = 0 := by
+  constructor
+  · intro h
+    cases nprocs with
+    | zero => rfl
+    | succ _ =>
+      have := h 0 (by omega)
+      simp at this
+  · intro h; subst h; intro i hi; omega
+
+theorem covers_cons_prefer (idx : Nat) (rest : List ScheduleChoice) (nprocs : Nat)
+    (hrest : covers rest nprocs) :
+    covers (.prefer idx :: rest) nprocs := by
+  intro i hi
+  rw [List.any_cons, Bool.or_eq_true]
+  exact Or.inr (hrest i hi)
+
+theorem covers_mono (choices : List ScheduleChoice) {n m : Nat}
+    (hle : n ≤ m) (h : covers choices m) : covers choices n := by
+  intro i hi
+  exact h i (Nat.lt_of_lt_of_le hi hle)
 
 @[simp] theorem afterInstrWith_roundRobin (s : State) :
     afterInstrWith .roundRobin s = afterInstr s := by

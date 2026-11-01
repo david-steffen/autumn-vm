@@ -96,6 +96,8 @@ External / multi-step proofs should use the **named lemma API**, not unfold priv
 
 **Rule:** when adding an opcode or call-special builtin, land a matching preserve + progress lemma in the same PR (or a follow-up that blocks merge). The `stepInstr_*` dispatchers must case on every `Instr` constructor. Call-specials (`map_put/3`, `cons/2`, `Process.*`, `ets_*` including v17–v18 `ets_new/2` / `ets_match_object/2` / `ets_select/2` / `ets_delete_object/2` / `ets_heir/2`, `make_ref/0`) keep helpers in `Step/Preserve` and are reached via `call_preserves` / `call_error_not_structural`.
 
+Curated public names are frozen in [`vm/tests/proof_surface.names`](vm/tests/proof_surface.names); CI runs [`vm/scripts/check_proof_surface.sh`](vm/scripts/check_proof_surface.sh) after `lake build`. Rename/add surface lemmas → update the golden in the same PR.
+
 ## Skills
 
 Agent skills live under [`.agents/skills/`](.agents/skills/). Read and follow the matching skill when the task fits:

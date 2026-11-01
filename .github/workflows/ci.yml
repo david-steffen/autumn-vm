@@ -35,6 +35,9 @@ jobs:
         run: |
           elan toolchain install "$(cat lean-toolchain)"
           lake build
+      - name: Proof surface names
+        working-directory: vm
+        run: ./scripts/check_proof_surface.sh
       - name: Fetch Mix deps
         working-directory: compiler
         run: mix deps.get

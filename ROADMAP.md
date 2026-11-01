@@ -213,7 +213,7 @@ Make opcode/builtin lemmas the stable API (Lynx-style expose / public-lemma disc
 
 1. [x] Document “proofs use Preserve/Progress helpers, not private `stepInstr` unfolds” in `AGENTS.md` / lemma module headers
 2. [x] Audit `Step/PreserveInstr` + `ProgressInstr` + key State/Heap lemmas — every `Instr` has preserve + progress; call-specials + `builtin_error_not_structural` documented in `PreserveInstr` header
-3. [ ] Optional (deferred): Lean test snapshot of exported proof names once the surface stabilizes further
+3. [x] Lean test snapshot of exported proof names — `vm/tests/proof_surface.names` + `vm/scripts/check_proof_surface.sh` (Phase 35)
 
 ## Phase 27 — Schedule-quantified observational specs
 
@@ -291,6 +291,14 @@ No new IR version. Stdlib + Mix expand.
 3. [x] OTP gaps: start MFA (`{Mod,Fun,[arg]}`), `:type` carry, `Process.hibernate/0` + GenServer `:hibernate` tails
 4. [x] Fixtures `receive_after_var` → `1` / `genserver_hibernate` → `4` / `supervisor_shutdown_wait` → `4` / `supervisor_start_mfa` → `9`; ROADMAP/AGENTS/IR.md
 5. [x] Out of scope: true BEAM hibernate, nested supervisor `:type` ordering, dynamic MFA spawn from non-literal Mix args, rewriting historical v7 wait JSON
+
+## Phase 35 — Proof surface polish
+
+No new IR. Close Phase 26.3 + thin Phase 27 schedule tails.
+
+1. [x] Hybrid proof-name golden (`vm/tests/proof_surface.names`) + `vm/scripts/check_proof_surface.sh`; CI after `lake build`; AGENTS one-liner
+2. [x] `covers_nil` / `covers_cons_prefer` / `covers_mono`; `stepScheduled_preserves` (WF)
+3. [x] Out of scope: full `runScheduled_*` tower, OTP-fixture schedule laws, Meta/`Environment` dump tooling
 
 ## Later (deprioritized)
 

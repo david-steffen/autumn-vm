@@ -1,5 +1,6 @@
 import Autumn.Step.ProgressInstr
 import Autumn.Step.PreserveInstr
+import Autumn.Step.Schedule
 import Autumn.Examples
 import Autumn.Json.Lemmas
 
@@ -8,8 +9,9 @@ namespace Step
 
 /-! # Step safety: progress + preservation barrel (public proof surface)
 
-Imports `ProgressInstr` + `PreserveInstr`. Prefer `step_preserves` /
-`step_progress` / `run_*` here over unfolding `step` / `stepInstr`.
+Imports `ProgressInstr` + `PreserveInstr` + `Schedule`. Prefer `step_preserves` /
+`step_progress` / `run_*` / `stepScheduled_preserves` here over unfolding
+`step` / `stepInstr` / `stepScheduled`.
 
 Larger Mix goldens stay on disk under `tests/fixtures/*.bc.json` (Mix +
 `lake exe autumn`), not embedded here. See `AGENTS.md` (“Public proof surface”).
@@ -82,6 +84,78 @@ theorem afterInstr_preserves (s s' : State)
     · cases h
       exact reductions_preserves { s with clock := s.clock + 1 } (s.reductions - 1)
         (clock_preserves s (s.clock + 1) hs)
+
+/-- Preservation: successful `stepScheduled` stays well-formed. -/
+theorem stepScheduled_preserves (choices : List State.ScheduleChoice) (s : State)
+    {s' : State} {rest : List State.ScheduleChoice}
+    (hs : State.WF s) (h : stepScheduled choices s = .ok (s', rest)) :
+    State.WF s' := by
+  by_cases hdone : s.result.isSome = true
+  · simp [stepScheduled, hdone] at h
+    rcases h with ⟨rfl, rfl⟩
+    exact hs
+  · have hr : s.result = none := by
+      cases hx : s.result with
+      | none => rfl
+      | some _ => simp [Option.isSome, hx] at hdone
+    have hcur := hs.2.2.1
+    have hres : s.result.isSome = false := by simp [Option.isSome, hr]
+    simp only [stepScheduled, hres, ↓reduceIte, hcur, ↓reduceDIte] at h
+    by_cases hnr :
+        ((s.processes[s.current]).status != .runnable) = true ∨
+          (s.processes[s.current]).result.isSome = true
+    · have hpark : ((s.processes[s.current]).status != .runnable ||
+          (s.processes[s.current]).result.isSome) = true := by
+        cases hnr with
+        | inl hp => simp [hp]
+        | inr hp => simp [hp]
+      simp [hpark] at h
+      cases hpop : State.popChoice choices with
+      | mk c rest0 =>
+        simp only [hpop] at h
+        split at h
+        · cases h
+        · rename_i s1 hsch
+          rcases h with ⟨rfl, rfl⟩
+          exact scheduleNextWith_preserves s s.current c hs hsch
+    · have hpark : ((s.processes[s.current]).status != .runnable ||
+          (s.processes[s.current]).result.isSome) = false := by
+        cases hst : (s.processes[s.current]).status != .runnable <;>
+          cases hr' : (s.processes[s.current]).result.isSome <;>
+            simp_all
+      simp [hpark] at h
+      have hp := hs.2.2.2 s.current hcur
+      have ⟨hrun, hnone⟩ := status_runnable_of_not_deschedule _ _ hnr
+      have hsz := runnable_stack_pos hp hrun hnone
+      have hempty : ¬((s.processes[s.current]).stack = #[]) := by
+        intro heq
+        have hsz0 : (s.processes[s.current]).stack.size = 0 := by simp [heq]
+        exact (Nat.ne_of_gt hsz) hsz0
+      simp [hempty] at h
+      have hfwf := runnable_top_WF hp hrun hnone
+      have hipok :
+          ¬(((s.processes[s.current]).stack[
+              (s.processes[s.current]).stack.size - 1]!).function.code.size ≤
+            ((s.processes[s.current]).stack[
+              (s.processes[s.current]).stack.size - 1]!).ip) := by
+        have := hfwf.2.2.1; omega
+      simp [hipok] at h
+      split at h
+      · cases h
+      · rename_i s1 hsi
+        have hs1 : State.WF s1 :=
+          stepInstr_preserves s (s.processes[s.current])
+            ((s.processes[s.current]).stack[(s.processes[s.current]).stack.size - 1]!)
+            _
+            hs hp hfwf hnone hrun hsz rfl rfl hsi
+        cases hpop : State.popChoice choices with
+        | mk c rest0 =>
+          simp only [hpop] at h
+          split at h
+          · cases h
+          · rename_i s2 hai
+            rcases h with ⟨rfl, rfl⟩
+            exact afterInstrWith_preserves c s1 hs1 hai
 
 /-- Well-formed states never fail `run` structurally (only fuel or non-structural errors). -/
 theorem run_progress (fuel : Nat) (s : State) (hs : State.WF s) {e : StepError}
