@@ -1,0 +1,6 @@
+{
+  "extras": [
+    "stdlib/ets.ex"
+  ],
+  "runs": 40
+}

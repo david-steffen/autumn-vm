@@ -36,6 +36,8 @@ mix autumn.compile ../tests/fixtures/add_main.ex /tmp/add.bc.json
 # multi-file (stdlib + app):
 #   iex> AutumnCompiler.compile_files!(["../stdlib/genserver.ex", "../tests/fixtures/genserver_stdlib.ex"], "/tmp/gs.bc.json")
 mix autumn.smoke   # fresh-compile fixtures with .expect; run Lean VM (build VM first)
+mix autumn.bench   # time tests/bench/*.ex via `autumn --bench N` (build VM first)
+mix autumn.bench_compare  # same benches on Autumn vs host BEAM
 ```
 
 **VM** (from `vm/`, Lean 4.35):
@@ -43,6 +45,7 @@ mix autumn.smoke   # fresh-compile fixtures with .expect; run Lean VM (build VM 
 ```bash
 lake build
 lake exe autumn /tmp/add.bc.json
+lake exe autumn --bench 50 /tmp/add.bc.json
 lake exe autumn --roundtrip /tmp/add.bc.json
 lake exe autumn --lean-demo
 lake exe autumn --repl   # EVAL/LOAD/QUIT line protocol (usually via Mix)

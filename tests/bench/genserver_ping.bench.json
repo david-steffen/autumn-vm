@@ -1,0 +1,6 @@
+{
+  "extras": [
+    "stdlib/genserver.ex"
+  ],
+  "runs": 40
+}

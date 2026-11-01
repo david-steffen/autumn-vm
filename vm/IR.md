@@ -165,6 +165,7 @@ Teaching subset (no new Instr — builtins / call-specials):
 - Construct: mid-partial integer segments (`<<1::3, 2::5>>`) when bits concatenate; byte/string segments still require alignment. `<<cp::utf8>>` packs a literal codepoint to UTF-8 bytes.
 - Match: `<<x::size(n)>>` when `n` is a bound variable (runtime `bs_get_integer` / `bs_drop` with that register).
 - Mix: `for x <- xs, filter?, do: body` — one generator, simple var pattern, boolean filters; lowers via lifted `__for_map__/2` / `__for_filter__/2` (no new opcodes). Nested generators / `into:` rejected.
+- Mix: `with pat <- expr, … do body [else …]` — nested `case` desugar (no new opcodes). Only `<-` generators; without `else`, a miss returns the unmatched value (Elixir-like). Non-`<-` with clauses rejected.
 - Out of scope: nested `for` generators, `into:`, full BEAM binary syntax.
 
 ### Closures

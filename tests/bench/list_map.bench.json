@@ -1,0 +1,6 @@
+{
+  "extras": [
+    "stdlib/enum.ex"
+  ],
+  "runs": 40
+}

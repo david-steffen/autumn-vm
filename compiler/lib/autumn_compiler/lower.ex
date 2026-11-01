@@ -877,8 +877,16 @@ defmodule AutumnCompiler.Lower do
     end
   end
 
-  defp expr({:with, _, _}, _env, _next, _code) do
-    {:error, "with is not supported yet"}
+  # `with pat <- expr, … do body [else …]` → nested `case` (no new opcodes).
+  # Teaching: only `<-` generators; else clauses optional (miss → return value).
+  defp expr({:with, _, args}, env, next, code) when is_list(args) do
+    case parse_with(args) do
+      {:ok, %{gens: gens, body: body, else: else_clauses}} ->
+        expr(desugar_with(gens, body, else_clauses), env, next, code)
+
+      {:error, _} = err ->
+        err
+    end
   end
 
   defp expr({name, _meta, args}, env, next, code)
@@ -1023,6 +1031,69 @@ defmodule AutumnCompiler.Lower do
     end
 
     fun_name
+  end
+
+  # Parse `with` args: one+ `pat <- expr`, trailing `[do: body]` / optional `else:`.
+  defp parse_with(args) when is_list(args) and args != [] do
+    case List.pop_at(args, -1) do
+      {opts, clauses} when is_list(opts) ->
+        case Keyword.fetch(opts, :do) do
+          {:ok, body} ->
+            else_clauses =
+              case Keyword.fetch(opts, :else) do
+                {:ok, elses} -> List.wrap(elses)
+                :error -> nil
+              end
+
+            gens = Enum.filter(clauses, &match?({:<-, _, [_, _]}, &1))
+            other = Enum.reject(clauses, &match?({:<-, _, [_, _]}, &1))
+
+            cond do
+              other != [] ->
+                {:error, "with: only pat <- expr generators supported (teaching subset)"}
+
+              gens == [] ->
+                {:error, "with requires at least one pat <- expr generator"}
+
+              true ->
+                {:ok, %{gens: gens, body: body, else: else_clauses}}
+            end
+
+          :error ->
+            {:error, "with requires do: body"}
+        end
+
+      _ ->
+        {:error, "with requires do: body"}
+    end
+  end
+
+  # Nest case: success continues; miss → else case or return the unmatched value.
+  defp desugar_with([], body, _else_clauses), do: body
+
+  defp desugar_with([{:<-, meta, [pat, scr]} | rest], body, else_clauses) do
+    fail_var = {:__with_other__, meta, nil}
+    success = desugar_with(rest, body, else_clauses)
+
+    fail_body =
+      case else_clauses do
+        nil ->
+          fail_var
+
+        clauses ->
+          {:case, meta, [fail_var, [do: clauses]]}
+      end
+
+    {:case, meta,
+     [
+       scr,
+       [
+         do: [
+           {:->, meta, [[pat], success]},
+           {:->, meta, [[fail_var], fail_body]}
+         ]
+       ]
+     ]}
   end
 
   # Parse `for` args: one `x <- enum`, zero+ filters, trailing `[do: body]`.

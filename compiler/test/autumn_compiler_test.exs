@@ -536,6 +536,29 @@ defmodule AutumnCompilerTest do
     assert msg =~ "nested"
   end
 
+  test "lowers with to nested case" do
+    path = Path.join(@fixtures, "with_basic.ex")
+    assert {:ok, module} = AutumnCompiler.compile_file(path)
+    code = all_code(module)
+    assert Enum.any?(code, &(&1["op"] == "is_tag"))
+    assert Enum.any?(code, &(&1["op"] == "jump_if_eq"))
+  end
+
+  test "rejects with assignment clauses" do
+    src = """
+    defmodule Main do
+      def main do
+        with x = 1 do
+          x
+        end
+      end
+    end
+    """
+
+    assert {:error, msg} = AutumnCompiler.Lower.lower(Code.string_to_quoted!(src))
+    assert msg =~ "with"
+  end
+
   test "lowers if_else / cond_main" do
     path = Path.join(@fixtures, "if_else.ex")
     assert {:ok, module} = AutumnCompiler.compile_file(path)
